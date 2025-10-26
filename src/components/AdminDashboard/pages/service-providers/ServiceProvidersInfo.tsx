@@ -1,7 +1,8 @@
 import { Truck, ArrowLeft, MapPin } from "lucide-react";
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { DataTableSection } from "../../../sections/DataTableSection";
+import { fetchProviderStations } from "../../../../services/firestore";
 
 interface ServiceProvidersInfoProps {
   providerData: any;
@@ -101,15 +102,46 @@ const stationColumns = [
   },
 ];
 
-// Mock data fetching function
-const fetchStationLocations = async (): Promise<StationLocation[]> => {
-  return mockStationLocations;
+// Fetch real station data for a provider
+const fetchStationLocations = async (
+  providerEmail: string
+): Promise<StationLocation[]> => {
+  const realStations = await fetchProviderStations(providerEmail);
+
+  // Map real stations to the interface, ensuring all fields are populated
+  return realStations.map((station, index) => ({
+    id: station.id || index + 1,
+    stationName: station.stationName || "-",
+    address: station.address || "-",
+    fuel91Consumed: station.fuel91Consumed || 0,
+    fuel95Consumed: station.fuel95Consumed || 0,
+    dieselConsumed: station.dieselConsumed || 0,
+    stationStatus: station.stationStatus || { active: true, text: "نشط" },
+  }));
 };
 
 export const ServiceProvidersInfo = ({
   providerData,
 }: ServiceProvidersInfoProps): JSX.Element => {
   const navigate = useNavigate();
+  const [stationsFetchFunction, setStationsFetchFunction] = useState<
+    () => Promise<StationLocation[]>
+  >(() => async () => []);
+
+  // Set up the fetch function when component mounts or providerData changes
+  useEffect(() => {
+    // Get provider email or UID to fetch stations
+    const providerEmail =
+      providerData.email || providerData.uId || providerData.uid || "";
+
+    if (providerEmail) {
+      // Create a fetch function that uses the provider's email
+      const fetchStations = async (): Promise<StationLocation[]> => {
+        return await fetchStationLocations(providerEmail);
+      };
+      setStationsFetchFunction(() => fetchStations);
+    }
+  }, [providerData]);
 
   // Handler for toggling station status
   const handleToggleStatus = (stationId: number) => {
@@ -352,7 +384,7 @@ export const ServiceProvidersInfo = ({
           entityNamePlural="محطات"
           icon={MapPin}
           columns={stationColumns}
-          fetchData={fetchStationLocations}
+          fetchData={stationsFetchFunction}
           onToggleStatus={handleToggleStatus}
           addNewRoute=""
           viewDetailsRoute={(id) => `/service-provider-station/${id}`}

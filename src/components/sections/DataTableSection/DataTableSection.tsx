@@ -19,6 +19,11 @@ import { createPortal } from "react-dom";
 import { TimeFilter } from "../../shared/TimeFilter/TimeFilter";
 import { RTLSelect } from "../../shared/Form/RTLSelect";
 import { StatusToggle } from "../../shared/StatusToggle";
+import {
+  acceptStationsCompanyRequest,
+  declineStationsCompanyRequest,
+} from "../../../services/firestore";
+import { useToast } from "../../../context/ToastContext";
 
 // Generic props interface for DataTableSection
 export interface DataTableSectionProps<T> {
@@ -69,7 +74,9 @@ const ActionMenu = <
   const [isOpen, setIsOpen] = useState(false);
   const [buttonRef, setButtonRef] = useState<HTMLButtonElement | null>(null);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+  const [isProcessing, setIsProcessing] = useState(false);
   const navigate = useNavigate();
+  const { addToast } = useToast();
 
   const handleAction = (action: string) => {
     console.log(
@@ -82,18 +89,78 @@ const ActionMenu = <
     setIsOpen(false);
   };
 
-  const handleAcceptRequest = () => {
-    console.log("Accepting request for:", item);
-    // TODO: Implement accept request logic
-    alert(`تم قبول طلب الانضمام بنجاح`);
-    setIsOpen(false);
+  const handleAcceptRequest = async () => {
+    if (isProcessing) return;
+
+    setIsProcessing(true);
+    try {
+      console.log("Accepting request for:", item);
+
+      const success = await acceptStationsCompanyRequest(String(item.id));
+
+      if (success) {
+        addToast({
+          type: "success",
+          message: "تم قبول طلب الانضمام بنجاح",
+          duration: 3000,
+        });
+        // Refresh the page to update the data
+        window.location.reload();
+      } else {
+        addToast({
+          type: "error",
+          message: "فشل في قبول طلب الانضمام",
+          duration: 3000,
+        });
+      }
+    } catch (error) {
+      console.error("Error accepting request:", error);
+      addToast({
+        type: "error",
+        message: "حدث خطأ أثناء قبول طلب الانضمام",
+        duration: 3000,
+      });
+    } finally {
+      setIsProcessing(false);
+      setIsOpen(false);
+    }
   };
 
-  const handleRejectRequest = () => {
-    console.log("Rejecting request for:", item);
-    // TODO: Implement reject request logic
-    alert(`تم رفض طلب الانضمام`);
-    setIsOpen(false);
+  const handleRejectRequest = async () => {
+    if (isProcessing) return;
+
+    setIsProcessing(true);
+    try {
+      console.log("Rejecting request for:", item);
+
+      const success = await declineStationsCompanyRequest(String(item.id));
+
+      if (success) {
+        addToast({
+          type: "success",
+          message: "تم رفض طلب الانضمام",
+          duration: 3000,
+        });
+        // Refresh the page to update the data
+        window.location.reload();
+      } else {
+        addToast({
+          type: "error",
+          message: "فشل في رفض طلب الانضمام",
+          duration: 3000,
+        });
+      }
+    } catch (error) {
+      console.error("Error rejecting request:", error);
+      addToast({
+        type: "error",
+        message: "حدث خطأ أثناء رفض طلب الانضمام",
+        duration: 3000,
+      });
+    } finally {
+      setIsProcessing(false);
+      setIsOpen(false);
+    }
   };
 
   const handleModifyService = () => {
@@ -174,16 +241,32 @@ const ActionMenu = <
                   <>
                     <button
                       onClick={handleAcceptRequest}
-                      className="w-full px-4 py-2 text-right text-sm text-green-600 hover:bg-green-50 flex items-center justify-end gap-2 transition-colors"
+                      disabled={isProcessing}
+                      className={`w-full px-4 py-2 text-right text-sm flex items-center justify-end gap-2 transition-colors ${
+                        isProcessing
+                          ? "text-gray-400 cursor-not-allowed bg-gray-50"
+                          : "text-green-600 hover:bg-green-50"
+                      }`}
                     >
-                      <span>قبول طلب الانضمام</span>
+                      <span>
+                        {isProcessing
+                          ? "جاري المعالجة..."
+                          : "قبول طلب الانضمام"}
+                      </span>
                       <CheckCircle className="w-4 h-4" />
                     </button>
                     <button
                       onClick={handleRejectRequest}
-                      className="w-full px-4 py-2 text-right text-sm text-red-600 hover:bg-red-50 flex items-center justify-end gap-2 transition-colors"
+                      disabled={isProcessing}
+                      className={`w-full px-4 py-2 text-right text-sm flex items-center justify-end gap-2 transition-colors ${
+                        isProcessing
+                          ? "text-gray-400 cursor-not-allowed bg-gray-50"
+                          : "text-red-600 hover:bg-red-50"
+                      }`}
                     >
-                      <span>رفض طلب الانضمام</span>
+                      <span>
+                        {isProcessing ? "جاري المعالجة..." : "رفض طلب الانضمام"}
+                      </span>
                       <XCircle className="w-4 h-4" />
                     </button>
                   </>
@@ -622,62 +705,75 @@ export const DataTableSection = <
         {/* RTLSelect Filters Section */}
         {filterOptions.length > 0 && (
           <div className="flex flex-col gap-4 relative self-stretch w-full flex-[0_0_auto]">
-            {Array.from({ length: Math.ceil(filterOptions.length / 5) }, (_, rowIndex) => (
-              <div key={rowIndex} className="flex items-center gap-[13px] relative self-stretch w-full flex-[0_0_auto]">
-                {filterOptions.slice(rowIndex * 5, (rowIndex + 1) * 5).map((filter, index) => (
-                  <div key={rowIndex * 5 + index} className="flex-1 min-w-0">
-                    <RTLSelect
-                      label={filter.label}
-                      value={
-                        filters[
-                          filter.label === "نوع التقرير"
-                            ? "reportType"
-                            : filter.label === "اسم المنتج"
-                            ? "productName"
-                            : filter.label === "قائمة المحطات"
-                            ? "stationList"
-                            : filter.label === "المدينة"
-                            ? "city"
-                            : filter.label === "رقم العملية"
-                            ? "operationNumber"
-                            : filter.label === "كود العميل"
-                            ? "clientCode"
-                            : filter.label === "نوع العميل"
-                            ? "clientType"
-                            : filter.label === "نوع المركبة"
-                            ? "vehicleType"
-                            : filter.label.toLowerCase().replace(/\s+/g, "")
-                        ]
-                      }
-                      onChange={(value) =>
-                        handleFilterChange(
-                          filter.label === "نوع التقرير"
-                            ? "reportType"
-                            : filter.label === "اسم المنتج"
-                            ? "productName"
-                            : filter.label === "قائمة المحطات"
-                            ? "stationList"
-                            : filter.label === "المدينة"
-                            ? "city"
-                            : filter.label === "رقم العملية"
-                            ? "operationNumber"
-                            : filter.label === "كود العميل"
-                            ? "clientCode"
-                            : filter.label === "نوع العميل"
-                            ? "clientType"
-                            : filter.label === "نوع المركبة"
-                            ? "vehicleType"
-                            : filter.label.toLowerCase().replace(/\s+/g, ""),
-                          value
-                        )
-                      }
-                      options={filter.options}
-                      placeholder={filter.value}
-                    />
-                  </div>
-                ))}
-              </div>
-            ))}
+            {Array.from(
+              { length: Math.ceil(filterOptions.length / 5) },
+              (_, rowIndex) => (
+                <div
+                  key={rowIndex}
+                  className="flex items-center gap-[13px] relative self-stretch w-full flex-[0_0_auto]"
+                >
+                  {filterOptions
+                    .slice(rowIndex * 5, (rowIndex + 1) * 5)
+                    .map((filter, index) => (
+                      <div
+                        key={rowIndex * 5 + index}
+                        className="flex-1 min-w-0"
+                      >
+                        <RTLSelect
+                          label={filter.label}
+                          value={
+                            filters[
+                              filter.label === "نوع التقرير"
+                                ? "reportType"
+                                : filter.label === "اسم المنتج"
+                                ? "productName"
+                                : filter.label === "قائمة المحطات"
+                                ? "stationList"
+                                : filter.label === "المدينة"
+                                ? "city"
+                                : filter.label === "رقم العملية"
+                                ? "operationNumber"
+                                : filter.label === "كود العميل"
+                                ? "clientCode"
+                                : filter.label === "نوع العميل"
+                                ? "clientType"
+                                : filter.label === "نوع المركبة"
+                                ? "vehicleType"
+                                : filter.label.toLowerCase().replace(/\s+/g, "")
+                            ]
+                          }
+                          onChange={(value) =>
+                            handleFilterChange(
+                              filter.label === "نوع التقرير"
+                                ? "reportType"
+                                : filter.label === "اسم المنتج"
+                                ? "productName"
+                                : filter.label === "قائمة المحطات"
+                                ? "stationList"
+                                : filter.label === "المدينة"
+                                ? "city"
+                                : filter.label === "رقم العملية"
+                                ? "operationNumber"
+                                : filter.label === "كود العميل"
+                                ? "clientCode"
+                                : filter.label === "نوع العميل"
+                                ? "clientType"
+                                : filter.label === "نوع المركبة"
+                                ? "vehicleType"
+                                : filter.label
+                                    .toLowerCase()
+                                    .replace(/\s+/g, ""),
+                              value
+                            )
+                          }
+                          options={filter.options}
+                          placeholder={filter.value}
+                        />
+                      </div>
+                    ))}
+                </div>
+              )
+            )}
           </div>
         )}
 

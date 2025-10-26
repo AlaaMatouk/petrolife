@@ -257,6 +257,32 @@ const StatsCardsSection = ({
       };
     }
 
+    // Update tire change operations data
+    if (stat.title === "عمليات تغيير الإطارات" && tireChangeData) {
+      return {
+        ...stat,
+        categories: [
+          { name: "صغيرة", count: tireChangeData.small },
+          { name: "متوسطة", count: tireChangeData.medium },
+          { name: "كبيرة", count: tireChangeData.large },
+          { name: "VIP", count: tireChangeData.vip },
+        ],
+      };
+    }
+
+    // Update oil change operations data
+    if (stat.title === "عمليات تغيير الزيوت" && oilChangeData) {
+      return {
+        ...stat,
+        categories: [
+          { name: "صغيرة", count: oilChangeData.small },
+          { name: "متوسطة", count: oilChangeData.medium },
+          { name: "كبيرة", count: oilChangeData.large },
+          { name: "VIP", count: oilChangeData.vip },
+        ],
+      };
+    }
+
     return stat;
   });
 

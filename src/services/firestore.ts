@@ -3202,6 +3202,424 @@ export const getTotalUsersByType = async (): Promise<{
 };
 
 /**
+ * Get the most consuming clients (individuals) based on orders
+ * Calculates total money spent per client from all their orders
+ * @returns Promise with array of clients sorted by consumption (descending)
+ */
+export const getMostConsumingClients = async (): Promise<
+  {
+    name: string;
+    email: string;
+    price: number;
+    image?: string;
+  }[]
+> => {
+  try {
+    console.log("\n📊 CALCULATING MOST CONSUMING CLIENTS");
+    console.log("====================================");
+
+    // Fetch all clients and orders in parallel
+    const [clientsSnapshot, ordersSnapshot] = await Promise.all([
+      fetchAllClients(),
+      fetchAllOrders(),
+    ]);
+
+    console.log(`👥 Total clients: ${clientsSnapshot.length}`);
+    console.log(`📦 Total orders: ${ordersSnapshot.length}`);
+
+    // Create a map to store client consumption data
+    const clientConsumptionMap = new Map<
+      string,
+      { totalSpent: number; name: string; email: string; image?: string }
+    >();
+
+    // Process each client
+    clientsSnapshot.forEach((client) => {
+      const clientEmail = client.email || "";
+      const clientId = client.id || client.uid || "";
+      const identifier = clientEmail || clientId;
+
+      if (identifier) {
+        clientConsumptionMap.set(identifier, {
+          totalSpent: 0,
+          name: client.name || client.fullName || "-",
+          email: clientEmail,
+          image: client.profileImage || client.image || client.photoURL,
+        });
+      }
+    });
+
+    // Calculate total spent per client from orders
+    ordersSnapshot.forEach((order) => {
+      const clientEmail = order.client?.email || order.clientEmail;
+      const clientId = order.clientId;
+      const orderIdentifier = clientEmail || clientId;
+
+      if (orderIdentifier) {
+        // Check if this order belongs to any client
+        clientConsumptionMap.forEach((value, key) => {
+          // Match by client email or ID
+          const isMatch =
+            orderIdentifier === key ||
+            orderIdentifier === value.email ||
+            orderIdentifier.toLowerCase() === value.email.toLowerCase();
+
+          if (isMatch) {
+            // Calculate total cost from order
+            const totalCost =
+              order.totalCost ??
+              order.totalPrice ??
+              order.price ??
+              order.amount ??
+              0;
+
+            const cost = parseFloat(String(totalCost)) || 0;
+            value.totalSpent += cost;
+          }
+        });
+      }
+    });
+
+    // Convert map to array and sort by total spent (descending)
+    const clientsArray = Array.from(clientConsumptionMap.values())
+      .filter((client) => client.totalSpent > 0) // Only include clients with consumption
+      .sort((a, b) => b.totalSpent - a.totalSpent)
+      .slice(0, 5) // Get top 5
+      .map((client) => ({
+        name: client.name,
+        email: client.email,
+        price: Math.round(client.totalSpent),
+        image: client.image,
+      }));
+
+    console.log(
+      `✅ Top ${clientsArray.length} most consuming clients calculated`
+    );
+    console.log("====================================\n");
+
+    return clientsArray;
+  } catch (error) {
+    console.error("❌ Error calculating most consuming clients:", error);
+    return [];
+  }
+};
+
+/**
+ * Get the most used fuel stations based on orders
+ * Calculates total money spent per station from all their orders
+ * @returns Promise with array of stations sorted by consumption (descending)
+ */
+export const getMostUsedStations = async (): Promise<
+  {
+    name: string;
+    email: string;
+    price: number;
+    image?: string;
+  }[]
+> => {
+  try {
+    console.log("\n📊 CALCULATING MOST USED STATIONS");
+    console.log("====================================");
+
+    // Fetch all stations and orders in parallel
+    const [stationsSnapshot, ordersSnapshot] = await Promise.all([
+      getDocs(collection(db, "carstations")),
+      fetchAllOrders(),
+    ]);
+
+    console.log(`⛽ Total stations: ${stationsSnapshot.size}`);
+    console.log(`📦 Total orders: ${ordersSnapshot.length}`);
+
+    // Create a map to store station consumption data
+    const stationConsumptionMap = new Map<
+      string,
+      { totalSpent: number; name: string; email: string; image?: string }
+    >();
+
+    // Process each station
+    stationsSnapshot.forEach((stationDoc) => {
+      const stationData = stationDoc.data();
+      const stationEmail = stationData.email || "";
+
+      if (stationEmail) {
+        stationConsumptionMap.set(stationEmail, {
+          totalSpent: 0,
+          name: stationData.name || stationData.company || "-",
+          email: stationEmail,
+          image:
+            stationData.logo || stationData.image || stationData.profileImage,
+        });
+      }
+    });
+
+    // Calculate total spent per station from orders
+    ordersSnapshot.forEach((order) => {
+      const stationEmail = order.carStation?.email || order.stationEmail;
+
+      if (stationEmail) {
+        // Check if this order belongs to any station
+        if (stationConsumptionMap.has(stationEmail)) {
+          const station = stationConsumptionMap.get(stationEmail)!;
+
+          // Calculate total cost from order
+          const totalCost =
+            order.totalCost ??
+            order.totalPrice ??
+            order.price ??
+            order.amount ??
+            0;
+
+          const cost = parseFloat(String(totalCost)) || 0;
+          station.totalSpent += cost;
+        }
+      }
+    });
+
+    // Convert map to array and sort by total spent (descending)
+    const stationsArray = Array.from(stationConsumptionMap.values())
+      .filter((station) => station.totalSpent > 0) // Only include stations with consumption
+      .sort((a, b) => b.totalSpent - a.totalSpent)
+      .slice(0, 5) // Get top 5
+      .map((station) => ({
+        name: station.name,
+        email: station.email,
+        price: Math.round(station.totalSpent),
+        image: station.image,
+      }));
+
+    console.log(`✅ Top ${stationsArray.length} most used stations calculated`);
+    console.log("====================================\n");
+
+    return stationsArray;
+  } catch (error) {
+    console.error("❌ Error calculating most used stations:", error);
+    return [];
+  }
+};
+
+/**
+ * Get the latest orders for admin dashboard
+ * Fetches the most recent orders and transforms them for display
+ * @param limit - Number of orders to fetch (default: 5)
+ * @returns Promise with array of recent orders
+ */
+export const getLatestOrders = async (
+  limit: number = 5
+): Promise<
+  {
+    code: string;
+    client: string;
+    service: string;
+    litre: string;
+    totalCost: string;
+    date: string;
+    status: string;
+  }[]
+> => {
+  try {
+    console.log("\n📊 FETCHING LATEST ORDERS");
+    console.log("====================================");
+
+    // Fetch orders ordered by date descending
+    const orders = await fetchAllOrders();
+
+    // Sort by orderDate descending and take the first N orders
+    const latestOrders = orders.slice(0, limit);
+
+    console.log(`📦 Total orders fetched: ${orders.length}`);
+    console.log(`📋 Latest ${latestOrders.length} orders selected`);
+
+    // Transform orders to match table format
+    const transformedOrders = latestOrders.map((order) => {
+      // Get order code (ID or refId)
+      const code = order.id || order.refId || order.orderNumber || "-";
+
+      // Get client name
+      const clientName =
+        order.client?.name ||
+        order.client?.fullName ||
+        order.clientName ||
+        order.customer?.name ||
+        "-";
+
+      // Get service name
+      const serviceName =
+        order.selectedOption?.name?.ar ||
+        order.selectedOption?.name?.en ||
+        order.service?.title?.ar ||
+        order.service?.title?.en ||
+        order.selectedOption?.title?.ar ||
+        order.selectedOption?.title?.en ||
+        order.service?.name ||
+        order.category?.name?.ar ||
+        order.category?.name?.en ||
+        "-";
+
+      // Get litres
+      const litres =
+        order.totalLitre ||
+        order.quantity ||
+        order.selectedOption?.quantity ||
+        order.liters ||
+        "0";
+
+      // Get total cost
+      const totalCost =
+        order.totalCost ||
+        order.totalPrice ||
+        order.price ||
+        order.amount ||
+        "0";
+
+      // Format date
+      let formattedDate = "-";
+      if (order.orderDate) {
+        const date = order.orderDate.toDate
+          ? order.orderDate.toDate()
+          : new Date(order.orderDate);
+        formattedDate = new Intl.DateTimeFormat("ar-SA", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "numeric",
+          minute: "numeric",
+        }).format(date);
+      }
+
+      // Get status
+      const status =
+        order.status ||
+        order.orderStatus ||
+        (order.isCompleted
+          ? "مكتمل"
+          : order.isRejected
+          ? "ملغي"
+          : "جاري المراجعة");
+
+      return {
+        code,
+        client: clientName,
+        service: serviceName,
+        litre: String(litres),
+        totalCost: String(totalCost),
+        date: formattedDate,
+        status,
+      };
+    });
+
+    console.log(`✅ Transformed ${transformedOrders.length} orders`);
+    console.log("====================================\n");
+
+    return transformedOrders;
+  } catch (error) {
+    console.error("❌ Error fetching latest orders:", error);
+    return [];
+  }
+};
+
+/**
+ * Get the most consuming companies based on orders
+ * Calculates total money spent per company from all their orders
+ * @returns Promise with array of companies sorted by consumption (descending)
+ */
+export const getMostConsumingCompanies = async (): Promise<
+  {
+    name: string;
+    email: string;
+    price: number;
+    image?: string;
+  }[]
+> => {
+  try {
+    console.log("\n📊 CALCULATING MOST CONSUMING COMPANIES");
+    console.log("====================================");
+
+    // Fetch all companies and orders in parallel
+    const [companiesSnapshot, ordersSnapshot] = await Promise.all([
+      getDocs(collection(db, "companies")),
+      fetchAllOrders(),
+    ]);
+
+    console.log(`🏢 Total companies: ${companiesSnapshot.size}`);
+    console.log(`📦 Total orders: ${ordersSnapshot.length}`);
+
+    // Create a map to store company consumption data
+    const companyConsumptionMap = new Map<
+      string,
+      { totalSpent: number; name: string; email: string; image?: string }
+    >();
+
+    // Process each company
+    companiesSnapshot.forEach((companyDoc) => {
+      const companyData = companyDoc.data();
+      const companyEmail = companyData.email || "";
+      const companyId = companyDoc.id;
+
+      if (companyEmail) {
+        companyConsumptionMap.set(companyId, {
+          totalSpent: 0,
+          name: companyData.name || companyData.brandName || "-",
+          email: companyEmail,
+          image:
+            companyData.logo || companyData.image || companyData.profileImage,
+        });
+      }
+    });
+
+    // Calculate total spent per company from orders
+    ordersSnapshot.forEach((order) => {
+      const companyUid = order.companyUid;
+
+      if (companyUid) {
+        // Check if this order belongs to any company
+        companyConsumptionMap.forEach((value, key) => {
+          // Match by company ID or email
+          const isMatch =
+            companyUid === key ||
+            companyUid === value.email ||
+            companyUid.toLowerCase() === value.email.toLowerCase();
+
+          if (isMatch) {
+            // Calculate total cost from order
+            const totalCost =
+              order.totalCost ??
+              order.totalPrice ??
+              order.price ??
+              order.amount ??
+              0;
+
+            const cost = parseFloat(String(totalCost)) || 0;
+            value.totalSpent += cost;
+          }
+        });
+      }
+    });
+
+    // Convert map to array and sort by total spent (descending)
+    const companiesArray = Array.from(companyConsumptionMap.values())
+      .filter((company) => company.totalSpent > 0) // Only include companies with consumption
+      .sort((a, b) => b.totalSpent - a.totalSpent)
+      .slice(0, 5) // Get top 5
+      .map((company) => ({
+        name: company.name,
+        email: company.email,
+        price: Math.round(company.totalSpent),
+        image: company.image,
+      }));
+
+    console.log(
+      `✅ Top ${companiesArray.length} most consuming companies calculated`
+    );
+    console.log("====================================\n");
+
+    return companiesArray;
+  } catch (error) {
+    console.error("❌ Error calculating most consuming companies:", error);
+    return [];
+  }
+};
+
+/**
  * Calculate car wash operations by car size from all orders
  * Uses same logic as companies dashboard calculateCarWashStatistics but without filtering by company
  * @returns Promise with car wash operations breakdown
@@ -3334,6 +3752,188 @@ export const getCarWashOperationsBySize = async (): Promise<{
     };
   } catch (error) {
     console.error("❌ Error calculating car wash operations:", error);
+    return {
+      small: 0,
+      medium: 0,
+      large: 0,
+      vip: 0,
+    };
+  }
+};
+
+/**
+ * Calculate tire change operations by car size from all orders
+ * Uses same logic as companies dashboard calculateTireChangeStatistics but without filtering by company
+ * @returns Promise with tire change operations breakdown
+ */
+export const getTireChangeOperationsBySize = async (): Promise<{
+  small: number;
+  medium: number;
+  large: number;
+  vip: number;
+}> => {
+  try {
+    const orders = await fetchAllOrders();
+
+    console.log("\n🚗 TIRE CHANGE OPERATIONS CALCULATION");
+    console.log("====================================");
+    console.log(`📦 Total orders: ${orders.length}`);
+
+    // Filter tire change orders using same logic as companies dashboard
+    const checkTireService = (value: any): boolean => {
+      if (!value) return false;
+      const str = typeof value === "string" ? value : "";
+      return (
+        str.includes("تغيير الإطارات") ||
+        str.includes("Tire Change") ||
+        str.includes("تغيير إطار") ||
+        str.includes("Change Tire") ||
+        str.includes("إطارات") ||
+        str.includes("Tires") ||
+        str.toLowerCase().includes("tire") ||
+        str.toLowerCase().includes("tyre")
+      );
+    };
+
+    const tireOrders = orders.filter(
+      (order) =>
+        checkTireService(order.service?.title?.ar) ||
+        checkTireService(order.service?.title?.en) ||
+        checkTireService(order.service?.name?.ar) ||
+        checkTireService(order.service?.name?.en) ||
+        checkTireService(order.category?.ar) ||
+        checkTireService(order.category?.en) ||
+        checkTireService(order.selectedOption?.title?.ar) ||
+        checkTireService(order.selectedOption?.title?.en) ||
+        checkTireService(order.selectedOption?.name?.ar) ||
+        checkTireService(order.selectedOption?.name?.en) ||
+        checkTireService(order.selectedOption?.label)
+    );
+
+    console.log(`🎯 Tire change orders found: ${tireOrders.length}`);
+
+    // Group by car size
+    const sizeMap: Record<string, number> = {
+      صغيرة: 0,
+      متوسطة: 0,
+      كبيرة: 0,
+      VIP: 0,
+    };
+
+    tireOrders.forEach((order) => {
+      // Extract car size from multiple possible paths
+      let carSize = order.car?.size || order.size || "";
+
+      if (carSize) {
+        const normalizedSize = normalizeCarSize(carSize);
+        if (sizeMap.hasOwnProperty(normalizedSize)) {
+          sizeMap[normalizedSize]++;
+        }
+      }
+    });
+
+    console.log("Tire change stats:", sizeMap);
+
+    return {
+      small: sizeMap.صغيرة,
+      medium: sizeMap.متوسطة,
+      large: sizeMap.كبيرة,
+      vip: sizeMap.VIP,
+    };
+  } catch (error) {
+    console.error("❌ Error calculating tire change operations:", error);
+    return {
+      small: 0,
+      medium: 0,
+      large: 0,
+      vip: 0,
+    };
+  }
+};
+
+/**
+ * Calculate oil change operations by car size from all orders
+ * Uses same logic as companies dashboard calculateOilChangeStatistics but without filtering by company
+ * @returns Promise with oil change operations breakdown
+ */
+export const getOilChangeOperationsBySize = async (): Promise<{
+  small: number;
+  medium: number;
+  large: number;
+  vip: number;
+}> => {
+  try {
+    const orders = await fetchAllOrders();
+
+    console.log("\n🛢️ OIL CHANGE OPERATIONS CALCULATION");
+    console.log("====================================");
+    console.log(`📦 Total orders: ${orders.length}`);
+
+    // Filter oil change orders - looking for specific category names and service titles
+    const checkOilService = (value: any): boolean => {
+      if (!value) return false;
+      const str = typeof value === "string" ? value : "";
+      return (
+        str === "الزيوت" ||
+        str === "زيوت" ||
+        str === "زيت بترولايف" ||
+        str === "زيت الماكينة" ||
+        str.includes("زيت الماكينة") ||
+        str.includes("الزيوت") ||
+        str.includes("زيوت")
+      );
+    };
+
+    const oilOrders = orders.filter((order) => {
+      // Check category name (Ar and En)
+      const categoryMatches =
+        checkOilService(order.category?.ar) ||
+        checkOilService(order.category?.en) ||
+        checkOilService(order.service?.category?.name?.ar) ||
+        checkOilService(order.service?.category?.name?.en) ||
+        checkOilService(order.selectedOption?.category?.name?.ar) ||
+        checkOilService(order.selectedOption?.category?.name?.en);
+
+      // Check service title specifically for "زيت الماكينة"
+      const serviceTitleMatches =
+        checkOilService(order.service?.title?.ar) ||
+        checkOilService(order.service?.title?.en);
+
+      return categoryMatches || serviceTitleMatches;
+    });
+
+    console.log(`🎯 Oil change orders found: ${oilOrders.length}`);
+
+    // Group by car size
+    const sizeMap: Record<string, number> = {
+      صغيرة: 0,
+      متوسطة: 0,
+      كبيرة: 0,
+      VIP: 0,
+    };
+
+    oilOrders.forEach((order) => {
+      // Extract car size from multiple possible paths
+      let carSize = order.car?.size || order.size || "";
+
+      if (carSize) {
+        const normalizedSize = normalizeCarSize(carSize);
+        if (sizeMap.hasOwnProperty(normalizedSize)) {
+          sizeMap[normalizedSize]++;
+        }
+      }
+    });
+
+    console.log("Oil change stats:", sizeMap);
+
+    return {
+      small: sizeMap.صغيرة,
+      medium: sizeMap.متوسطة,
+      large: sizeMap.كبيرة,
+      vip: sizeMap.VIP,
+    };
+  } catch (error) {
+    console.error("❌ Error calculating oil change operations:", error);
     return {
       small: 0,
       medium: 0,
@@ -3685,33 +4285,42 @@ export const fetchDriverById = async (driverId: string) => {
 };
 
 /**
- * Fetch multiple drivers by their IDs
+ * Fetch multiple drivers by their IDs from companies-drivers collection
  * @param driverIds - Array of driver document IDs
  * @returns Promise with array of driver data
  */
 export const fetchDriversByIds = async (driverIds: string[]) => {
   try {
     if (!driverIds || driverIds.length === 0) {
-      // console.log('No driver IDs provided');
+      console.log("No driver IDs provided");
       return [];
     }
 
-    // console.log('Fetching drivers by IDs:', driverIds);
-
-    const driverPromises = driverIds.map((id) =>
-      fetchDriverById(id).catch((err) => {
-        console.error(`Error fetching driver ${id}:`, err);
-        return null;
-      })
+    // Filter out null, undefined, and empty string IDs
+    const validDriverIds = driverIds.filter(
+      (id) => id && typeof id === "string" && id.trim() !== ""
     );
-    const drivers = await Promise.all(driverPromises);
 
-    // Filter out null values (failed fetches)
-    const validDrivers = drivers.filter((driver) => driver !== null);
+    if (validDriverIds.length === 0) {
+      console.log("No valid driver IDs found after filtering");
+      return [];
+    }
 
-    // console.log('Fetched drivers:', validDrivers);
+    console.log("Fetching drivers by IDs:", validDriverIds);
 
-    return validDrivers;
+    // Fetch all company drivers first
+    const allDrivers = await fetchCompaniesDrivers();
+    console.log("All company drivers fetched:", allDrivers.length);
+
+    // Filter drivers by matching their IDs with the provided driverIds
+    const carDrivers = allDrivers.filter((driver) =>
+      validDriverIds.includes(driver.id)
+    );
+
+    console.log("Car drivers found:", carDrivers.length);
+    console.log("Car drivers:", carDrivers);
+
+    return carDrivers;
   } catch (error) {
     console.error("Error fetching drivers by IDs:", error);
     throw error;
@@ -5336,6 +5945,14 @@ export const fetchStationsCompanyData = async (): Promise<
       `✅ Processed ${serviceProvidersData.length} service providers with counts`
     );
 
+    // Sort by creation date descending (newest first)
+    serviceProvidersData.sort((a, b) => {
+      // Try to get created date from metadata or fallback to 0
+      const dateA = (a as any).createdAt?.toDate?.() || new Date(0);
+      const dateB = (b as any).createdAt?.toDate?.() || new Date(0);
+      return dateB.getTime() - dateA.getTime();
+    });
+
     return serviceProvidersData;
   } catch (error) {
     console.error("❌ Error fetching stations company data:", error);
@@ -5498,6 +6115,17 @@ export const fetchStationsCompanyRequests = async (): Promise<
 
     requestsSnapshot.forEach((doc) => {
       const data = doc.data();
+      const status = data.status || data.requestStatus || "معلق";
+
+      // Only include pending requests (exclude accepted and declined)
+      if (
+        status === "accepted" ||
+        status === "declined" ||
+        status === "مقبول" ||
+        status === "مرفوض"
+      ) {
+        return;
+      }
 
       // Transform the data to match our interface
       const requestData: StationsCompanyRequestData = {
@@ -5511,7 +6139,7 @@ export const fetchStationsCompanyRequests = async (): Promise<
         email: data.email || data.emailAddress || "غير محدد",
         stations:
           data.stations || data.stationsCount || data.numberOfStations || 0,
-        status: data.status || data.requestStatus || "معلق",
+        status: status,
         createdAt: data.createdAt || data.created_at,
         updatedAt: data.updatedAt || data.updated_at,
         ...data, // Include all other fields
@@ -5533,6 +6161,360 @@ export const fetchStationsCompanyRequests = async (): Promise<
     return joinRequestsData;
   } catch (error) {
     console.error("❌ Error fetching stations company join requests:", error);
+    throw error;
+  }
+};
+
+/**
+ * Accept a stations company join request
+ * Updates the request status to "accepted" and adds the company to stationscompany collection
+ * @param requestId - The ID of the request to accept
+ * @returns Promise<boolean> - Success status
+ */
+export const acceptStationsCompanyRequest = async (
+  requestId: string
+): Promise<boolean> => {
+  try {
+    console.log(`✅ Accepting stations company request: ${requestId}`);
+
+    // Get the request document
+    const requestRef = doc(db, "stations-company-requests", requestId);
+    const requestSnap = await getDoc(requestRef);
+
+    if (!requestSnap.exists()) {
+      console.error(`❌ Request with ID ${requestId} not found`);
+      return false;
+    }
+
+    const requestData = requestSnap.data();
+    console.log("📋 Request data:", requestData);
+
+    // Update the request status to "accepted"
+    await updateDoc(requestRef, {
+      status: "accepted",
+      updatedAt: serverTimestamp(),
+    });
+
+    console.log(`✅ Request ${requestId} status updated to accepted`);
+
+    // Add the company to stationscompany collection
+    const stationsCompanyData = {
+      providerName:
+        requestData.providerName ||
+        requestData.name ||
+        requestData.companyName ||
+        "غير محدد",
+      type:
+        requestData.type ||
+        requestData.providerType ||
+        requestData.serviceType ||
+        "غير محدد",
+      address: requestData.address || requestData.location || "غير محدد",
+      phoneNumber:
+        requestData.phoneNumber ||
+        requestData.phone ||
+        requestData.mobile ||
+        "غير محدد",
+      email: requestData.email || requestData.emailAddress || "غير محدد",
+      stations:
+        requestData.stations ||
+        requestData.stationsCount ||
+        requestData.numberOfStations ||
+        0,
+      status: "نشط", // Set as active
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    // Filter out undefined values from additional fields
+    const additionalFields = { ...requestData };
+    Object.keys(additionalFields).forEach((key) => {
+      if (additionalFields[key] === undefined) {
+        delete additionalFields[key];
+      }
+    });
+
+    // Merge additional fields (excluding undefined values)
+    const finalData = { ...stationsCompanyData, ...additionalFields };
+
+    // Add to stationscompany collection
+    const stationsCompanyRef = collection(db, "stationscompany");
+    const newCompanyDoc = await addDoc(stationsCompanyRef, finalData);
+
+    console.log(
+      `✅ Company added to stationscompany collection with ID: ${newCompanyDoc.id}`
+    );
+
+    return true;
+  } catch (error) {
+    console.error(
+      `❌ Error accepting stations company request ${requestId}:`,
+      error
+    );
+    throw error;
+  }
+};
+
+/**
+ * Calculate fuel consumption by type for a specific station
+ * @param stationEmail - The station email or UID to calculate consumption for
+ * @returns Promise with fuel consumption breakdown by type
+ */
+export const calculateStationFuelConsumption = async (
+  stationEmail: string
+): Promise<{
+  fuel91Consumed: number;
+  fuel95Consumed: number;
+  dieselConsumed: number;
+}> => {
+  try {
+    console.log(`⛽ Calculating fuel consumption for station: ${stationEmail}`);
+
+    // Fetch all orders using the same method as company dashboard
+    const orders = await fetchAllOrders();
+
+    console.log(`📦 Total orders fetched: ${orders.length}`);
+
+    let fuel91Consumed = 0;
+    let fuel95Consumed = 0;
+    let dieselConsumed = 0;
+
+    // Filter orders for this specific station (same pattern as company dashboard)
+    const stationOrders = orders.filter((order) => {
+      const orderStationEmail =
+        order.carStation?.email ||
+        order.stationEmail ||
+        order.createdUserId ||
+        "";
+
+      const orderStationId = order.carStation?.id || order.stationId;
+
+      // Check if station email matches (primary method)
+      const emailMatch =
+        orderStationEmail &&
+        stationEmail &&
+        orderStationEmail.toLowerCase() === stationEmail.toLowerCase();
+
+      // Check if station ID matches (fallback method)
+      const idMatch =
+        orderStationId && stationEmail && orderStationId === stationEmail;
+
+      return emailMatch || idMatch;
+    });
+
+    console.log(`📍 Orders matched to station: ${stationOrders.length}`);
+
+    // Use the same calculation method as company dashboard
+    stationOrders.forEach((order) => {
+      // Extract fuel type with multiple fallbacks (same as company dashboard)
+      let fuelType = "";
+      if (order?.selectedOption?.name?.ar) {
+        fuelType = order.selectedOption.name.ar;
+      } else if (order?.selectedOption?.name?.en) {
+        fuelType = order.selectedOption.name.en;
+      } else if (order?.selectedOption?.label) {
+        fuelType = order.selectedOption.label;
+      } else if (order?.selectedOption?.title?.ar) {
+        fuelType = order.selectedOption.title.ar;
+      } else if (order?.selectedOption?.title?.en) {
+        fuelType = order.selectedOption.title.en;
+      } else if (order?.service?.title?.ar) {
+        fuelType = order.service.title.ar;
+      } else if (order?.service?.title?.en) {
+        fuelType = order.service.title.en;
+      } else if (order?.fuelType) {
+        fuelType = order.fuelType;
+      } else if (order?.productType) {
+        fuelType = order.productType;
+      }
+
+      // Extract litres from multiple possible fields (same as company dashboard)
+      const rawLitres =
+        order?.totalLitre ??
+        order?.totalLiter ??
+        order?.quantity ??
+        order?.selectedOption?.quantity ??
+        order?.liters ??
+        0;
+      const liters = parseFloat(String(rawLitres)) || 0;
+
+      // Categorize by fuel type (same as company dashboard)
+      const normalizedType = String(fuelType).toLowerCase().trim();
+
+      if (
+        normalizedType.includes("ديزل") ||
+        normalizedType.includes("diesel")
+      ) {
+        dieselConsumed += liters;
+      } else if (
+        normalizedType.includes("95") ||
+        normalizedType.includes("بنزين 95") ||
+        normalizedType.includes("gasoline 95")
+      ) {
+        fuel95Consumed += liters;
+      } else if (
+        normalizedType.includes("91") ||
+        normalizedType.includes("بنزين 91") ||
+        normalizedType.includes("gasoline 91")
+      ) {
+        fuel91Consumed += liters;
+      }
+    });
+
+    console.log(
+      `✅ Station ${stationEmail} consumption: 91=${fuel91Consumed}L, 95=${fuel95Consumed}L, Diesel=${dieselConsumed}L`
+    );
+
+    return {
+      fuel91Consumed,
+      fuel95Consumed,
+      dieselConsumed,
+    };
+  } catch (error) {
+    console.error(
+      `❌ Error calculating fuel consumption for station ${stationEmail}:`,
+      error
+    );
+    return {
+      fuel91Consumed: 0,
+      fuel95Consumed: 0,
+      dieselConsumed: 0,
+    };
+  }
+};
+
+/**
+ * Fetch stations for a specific service provider
+ * @param providerEmail - The email or UID of the service provider
+ * @returns Promise with array of station data
+ */
+export const fetchProviderStations = async (
+  providerEmail: string
+): Promise<any[]> => {
+  try {
+    console.log(`🏪 Fetching stations for provider: ${providerEmail}`);
+
+    // Fetch all carstations documents
+    const carStationsSnapshot = await getDocs(collection(db, "carstations"));
+
+    const stations: any[] = [];
+
+    // Process each station
+    for (const stationDoc of carStationsSnapshot.docs) {
+      const stationData = stationDoc.data();
+      const stationCreatedUserId =
+        stationData.createdUserId || stationData.uId || stationData.uid;
+
+      // Match stations that belong to this provider
+      if (stationCreatedUserId === providerEmail) {
+        // Get the station email to match with orders
+        const stationEmail =
+          stationData.email || stationCreatedUserId || stationDoc.id;
+
+        console.log(
+          `🔍 Calculating consumption for station: ${stationData.name}, email: ${stationEmail}`
+        );
+
+        // Calculate fuel consumption for this station
+        const consumption = await calculateStationFuelConsumption(stationEmail);
+
+        stations.push({
+          id: stationDoc.id,
+          stationName: stationData.name || "-",
+          address: stationData.address || stationData.location || "-",
+          fuel91Consumed: consumption.fuel91Consumed,
+          fuel95Consumed: consumption.fuel95Consumed,
+          dieselConsumed: consumption.dieselConsumed,
+          stationStatus: {
+            active: stationData.isActive !== false,
+            text: stationData.isActive !== false ? "نشط" : "متوقف",
+          },
+        });
+      }
+    }
+
+    console.log(
+      `✅ Found ${stations.length} stations for provider ${providerEmail}`
+    );
+    return stations;
+  } catch (error) {
+    console.error("❌ Error fetching provider stations:", error);
+    return [];
+  }
+};
+
+/**
+ * Fetch the count of pending requests from stations-company-requests collection
+ * @returns Promise<number> - Count of pending requests
+ */
+export const fetchPendingRequestsCount = async (): Promise<number> => {
+  try {
+    console.log("📊 Fetching pending requests count...");
+
+    // Fetch all documents from stations-company-requests collection
+    const requestsSnapshot = await getDocs(
+      collection(db, "stations-company-requests")
+    );
+
+    let pendingCount = 0;
+    requestsSnapshot.forEach((doc) => {
+      const data = doc.data();
+      const status = data.status || data.requestStatus || "معلق";
+
+      // Only count pending requests (exclude accepted and declined)
+      if (
+        status !== "accepted" &&
+        status !== "declined" &&
+        status !== "مقبول" &&
+        status !== "مرفوض"
+      ) {
+        pendingCount++;
+      }
+    });
+
+    console.log(`✅ Pending requests count: ${pendingCount}`);
+    return pendingCount;
+  } catch (error) {
+    console.error("❌ Error fetching pending requests count:", error);
+    return 0;
+  }
+};
+
+/**
+ * Decline a stations company join request
+ * Updates the request status to "declined"
+ * @param requestId - The ID of the request to decline
+ * @returns Promise<boolean> - Success status
+ */
+export const declineStationsCompanyRequest = async (
+  requestId: string
+): Promise<boolean> => {
+  try {
+    console.log(`❌ Declining stations company request: ${requestId}`);
+
+    // Get the request document
+    const requestRef = doc(db, "stations-company-requests", requestId);
+    const requestSnap = await getDoc(requestRef);
+
+    if (!requestSnap.exists()) {
+      console.error(`❌ Request with ID ${requestId} not found`);
+      return false;
+    }
+
+    // Update the request status to "declined"
+    await updateDoc(requestRef, {
+      status: "declined",
+      updatedAt: serverTimestamp(),
+    });
+
+    console.log(`✅ Request ${requestId} status updated to declined`);
+
+    return true;
+  } catch (error) {
+    console.error(
+      `❌ Error declining stations company request ${requestId}:`,
+      error
+    );
     throw error;
   }
 };

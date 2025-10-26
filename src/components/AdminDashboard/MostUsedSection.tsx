@@ -7,17 +7,20 @@ interface StationData {
   name: string;
   email: string;
   price: number;
+  image?: string;
 }
 
 interface DriverData {
   name: string;
   email: string;
   price: number;
+  image?: string;
 }
 interface CompanyData {
   name: string;
   email: string;
   price: number;
+  image?: string;
 }
 
 interface MostUsedSectionProps {
@@ -52,7 +55,7 @@ const MostUsedSection = ({
       render: (_value: any, station: any) => (
         <div className="text-right">
           <div className="font-bold text-[16px] text-[#6C32A9]">
-            {station?.price || "N/A"}
+            {station?.price ? `${station.price} ر.س` : "N/A"}
           </div>
         </div>
       ),
@@ -70,9 +73,17 @@ const MostUsedSection = ({
               {station?.email || "N/A"}
             </div>
           </div>
-          <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-            <Fuel className="w-5 h-5 text-gray-500" />
-          </div>
+          {station?.image ? (
+            <img
+              src={station.image}
+              alt={station.name}
+              className="w-10 h-10 rounded-full object-cover border-2 border-gray-200"
+            />
+          ) : (
+            <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+              <Fuel className="w-5 h-5 text-gray-500" />
+            </div>
+          )}
         </div>
       ),
     },
@@ -86,7 +97,7 @@ const MostUsedSection = ({
       render: (_value: any, driver: any) => (
         <div className="text-right">
           <div className="font-bold text-[16px] text-[#6C32A9]">
-            {driver?.price || "N/A"}
+            {driver?.price ? `${driver.price} ر.س` : "N/A"}
           </div>
         </div>
       ),
@@ -104,9 +115,17 @@ const MostUsedSection = ({
               {driver?.email || "N/A"}
             </div>
           </div>
-          <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-            <Users className="w-5 h-5 text-gray-500" />
-          </div>
+          {driver?.image ? (
+            <img
+              src={driver.image}
+              alt={driver.name}
+              className="w-10 h-10 rounded-full object-cover border-2 border-gray-200"
+            />
+          ) : (
+            <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+              <Users className="w-5 h-5 text-gray-500" />
+            </div>
+          )}
         </div>
       ),
     },
@@ -120,7 +139,7 @@ const MostUsedSection = ({
       render: (_value: any, company: any) => (
         <div className="text-right">
           <div className="font-bold text-[16px] text-[#6C32A9]">
-            {company?.price || "N/A"}
+            {company?.price ? `${company.price} ر.س` : "N/A"}
           </div>
         </div>
       ),
@@ -138,9 +157,17 @@ const MostUsedSection = ({
               {company?.email || "N/A"}
             </div>
           </div>
-          <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-            <Users className="w-5 h-5 text-gray-500" />
-          </div>
+          {company?.image ? (
+            <img
+              src={company.image}
+              alt={company.name}
+              className="w-10 h-10 rounded-full object-cover border-2 border-gray-200"
+            />
+          ) : (
+            <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+              <Users className="w-5 h-5 text-gray-500" />
+            </div>
+          )}
         </div>
       ),
     },
@@ -166,7 +193,11 @@ const MostUsedSection = ({
           </div>
         </div>
 
-        <Table columns={stationsColumns} data={stationsData} className="mb-4 " />
+        <Table
+          columns={stationsColumns}
+          data={stationsData}
+          className="mb-4 "
+        />
       </div>
 
       {/* Most Consuming Drivers */}
@@ -208,7 +239,11 @@ const MostUsedSection = ({
           </div>
         </div>
 
-        <Table columns={companiesColumns} data={companiesData} className="mb-4" />
+        <Table
+          columns={companiesColumns}
+          data={companiesData}
+          className="mb-4"
+        />
       </div>
     </section>
   );

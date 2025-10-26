@@ -16,7 +16,7 @@ export const CarDetails = (): JSX.Element => {
   useEffect(() => {
     const loadCarData = async () => {
       if (!id) {
-        setError('Car ID is missing');
+        setError("Car ID is missing");
         setIsLoading(false);
         return;
       }
@@ -27,8 +27,8 @@ export const CarDetails = (): JSX.Element => {
         setCarData(data);
         setError(null);
       } catch (err: any) {
-        console.error('Error loading car:', err);
-        setError(err.message || 'Failed to load car data');
+        console.error("Error loading car:", err);
+        setError(err.message || "Failed to load car data");
       } finally {
         setIsLoading(false);
       }
@@ -41,7 +41,7 @@ export const CarDetails = (): JSX.Element => {
     <div className="flex flex-col w-full items-start gap-5">
       {/* Back Button */}
       <button
-        onClick={() => navigate('/cars')}
+        onClick={() => navigate("/cars")}
         className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
       >
         <ArrowLeft className="w-4 h-4" />
@@ -71,7 +71,7 @@ export const CarDetails = (): JSX.Element => {
       {!isLoading && !error && carData && (
         <>
           <CarInformationSection carData={carData} />
-          <CarDriversSection carId={id || ''} />
+          <CarDriversSection carData={carData} />
         </>
       )}
     </div>

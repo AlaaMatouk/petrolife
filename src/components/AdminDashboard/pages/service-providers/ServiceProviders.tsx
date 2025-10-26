@@ -4,7 +4,9 @@ import { useNavigate } from "react-router-dom";
 import {
   fetchStationsCompanyData,
   ServiceProviderData,
+  fetchPendingRequestsCount,
 } from "../../../../services/firestore";
+import { useState, useEffect } from "react";
 
 // Define the ServiceProvider data type (compatible with existing interface)
 export interface ServiceProvider {
@@ -252,11 +254,26 @@ const handleToggleStatus = (id: string | number) => {
 
 export const ServiceProviders = () => {
   const navigate = useNavigate();
+  const [pendingCount, setPendingCount] = useState<number>(0);
 
-  // Calculate count of disabled accounts (معطل status)
-  const pendingCount = mockServiceProvidersData.filter(
-    (provider) => !provider.accountStatus.active
-  ).length;
+  // Fetch the actual count of pending requests
+  useEffect(() => {
+    const fetchCount = async () => {
+      try {
+        const count = await fetchPendingRequestsCount();
+        setPendingCount(count);
+      } catch (error) {
+        console.error("Error fetching pending requests count:", error);
+      }
+    };
+
+    fetchCount();
+
+    // Refresh count every 30 seconds to show real-time updates
+    const interval = setInterval(fetchCount, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const handleJoinRequestsClick = () => {
     navigate("/service-providers/add");
