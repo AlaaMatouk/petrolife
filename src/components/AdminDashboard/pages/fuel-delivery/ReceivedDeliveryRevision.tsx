@@ -1,9 +1,15 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Eye, X } from "lucide-react";
+import {
+  fetchOrderById,
+  updateOrderStatus,
+} from "../../../../services/firestore";
+import { LoadingSpinner } from "../../../shared";
+import { useToast } from "../../../../context/ToastContext";
 
 interface ReceivedDeliveryRequestData {
-  id: number;
+  id: string;
   recipientName: string;
   recipientPhone: string;
   fuelType: string;
@@ -17,57 +23,211 @@ interface ReceivedDeliveryRequestData {
   transferImage: string;
 }
 
-const mockReceivedDeliveryRequestData: ReceivedDeliveryRequestData = {
-  id: 1,
-  recipientName: "احمد محمد",
-  recipientPhone: "002548665824",
-  fuelType: "ديزل",
-  licenseNumber: "2153",
-  siteType: "مصنع",
-  orderDate: "25 فبراير 2025، 10:25 ص",
-  quantityRequired: "20",
-  expectedMonthlyQuantity: "200",
-  deliveryAddress: "12 ش الميدان ، محافظة القاهرة",
-  status: "قيد المراجعة",
-  transferImage:
-    "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400&h=300&fit=crop",
+// Helper function to format Firestore timestamp
+const formatDate = (timestamp: any): string => {
+  if (!timestamp) return "-";
+
+  try {
+    if (timestamp.toDate && typeof timestamp.toDate === "function") {
+      return new Date(timestamp.toDate()).toLocaleString("ar-EG", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    }
+    if (timestamp instanceof Date) {
+      return timestamp.toLocaleString("ar-EG", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    }
+    return new Date(timestamp).toLocaleString("ar-EG", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch (error) {
+    return String(timestamp);
+  }
+};
+
+// Helper function to extract fuel type from selectedOption
+const extractFuelType = (order: any): string => {
+  if (order.selectedOption?.title?.ar) {
+    return order.selectedOption.title.ar;
+  } else if (order.selectedOption?.title?.en) {
+    return order.selectedOption.title.en;
+  } else if (order.selectedOption?.name?.ar) {
+    return order.selectedOption.name.ar;
+  } else if (order.selectedOption?.name?.en) {
+    return order.selectedOption.name.en;
+  }
+  return "-";
 };
 
 export const ReceivedDeliveryRevision = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [deliveryRequestData, setDeliveryRequestData] =
+    useState<ReceivedDeliveryRequestData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  // In a real app, you would fetch the delivery request data based on the ID
-  const deliveryRequestData = mockReceivedDeliveryRequestData;
+  useEffect(() => {
+    const fetchOrderData = async () => {
+      if (!id) {
+        setError("No order ID provided");
+        setIsLoading(false);
+        return;
+      }
 
-  const handleAccept = () => {
-    // Handle accept logic here
-    console.log("Accepting delivery request:", id);
-    // Navigate back or show success message
-    navigate("/fuel-delivery-requests/received-delivery-requests");
+      try {
+        setIsLoading(true);
+        setError(null);
+        const orderData = await fetchOrderById(id);
+
+        // Map order data to display format
+        const mappedData: ReceivedDeliveryRequestData = {
+          id: orderData.id,
+          recipientName: orderData.client?.name || "-",
+          recipientPhone: orderData.client?.phoneNumber || "-",
+          fuelType: extractFuelType(orderData),
+          licenseNumber: "-",
+          siteType: "-",
+          orderDate: formatDate(orderData.orderDate),
+          quantityRequired: orderData.totalLitre?.toString() || "0",
+          expectedMonthlyQuantity: "-",
+          deliveryAddress:
+            orderData.location?.address || orderData.address || "-",
+          status: orderData.status || "-",
+          transferImage: "-",
+        };
+
+        setDeliveryRequestData(mappedData);
+      } catch (err) {
+        console.error("Error fetching order:", err);
+        setError("فشل في تحميل بيانات الطلب");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchOrderData();
+  }, [id]);
+
+  const handleAccept = async () => {
+    if (!id) {
+      addToast({
+        type: "error",
+        message: "لا يوجد معرف للطلب",
+        duration: 3000,
+      });
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      await updateOrderStatus(id, "done");
+      addToast({
+        type: "success",
+        message: "تم قبول الطلب بنجاح",
+        duration: 3000,
+      });
+      navigate("/fuel-delivery-requests/received-delivery-requests");
+    } catch (error) {
+      console.error("Error accepting order:", error);
+      addToast({
+        type: "error",
+        message: "فشل في قبول الطلب",
+        duration: 3000,
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleReject = () => {
     setIsRejectModalOpen(true);
-    // navigate("/fuel-delivery-requests/received-delivery-requests");
-
   };
 
-  const handleRejectSubmit = () => {
-    // Handle reject logic here with reason
-    console.log("Rejecting delivery request:", id, "Reason:", rejectionReason);
-    // Navigate back or show success message
-    setIsRejectModalOpen(false);
-    setRejectionReason("");
-    navigate("/fuel-delivery-requests/received-delivery-requests");
+  const handleRejectSubmit = async () => {
+    if (!id) {
+      addToast({
+        type: "error",
+        message: "لا يوجد معرف للطلب",
+        duration: 3000,
+      });
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      await updateOrderStatus(id, "cancelled");
+      addToast({
+        type: "success",
+        message: "تم رفض الطلب بنجاح",
+        duration: 3000,
+      });
+      setIsRejectModalOpen(false);
+      setRejectionReason("");
+      navigate("/fuel-delivery-requests/received-delivery-requests");
+    } catch (error) {
+      console.error("Error rejecting order:", error);
+      addToast({
+        type: "error",
+        message: "فشل في رفض الطلب",
+        duration: 3000,
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleRejectCancel = () => {
     setIsRejectModalOpen(false);
     setRejectionReason("");
   };
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="max-w-[582px] ml-auto" dir="rtl">
+        <LoadingSpinner message="جاري تحميل بيانات الطلب..." />
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error || !deliveryRequestData) {
+    return (
+      <div className="max-w-[582px] ml-auto" dir="rtl">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+          <div className="text-center py-8">
+            <p className="text-red-600">{error || "لم يتم العثور على الطلب"}</p>
+            <button
+              onClick={() =>
+                navigate("/fuel-delivery-requests/received-delivery-requests")
+              }
+              className="mt-4 px-4 py-2 bg-[#5A66C1] text-white rounded-md"
+            >
+              العودة إلى القائمة
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-[582px] ml-auto" dir="rtl">
@@ -208,31 +368,36 @@ export const ReceivedDeliveryRevision = () => {
         {/* Action Buttons */}
         <div className="flex flex-col sm:flex-row gap-4 mt-5 justify-between">
           <button
-            onClick={handleReject}
+            onClick={() =>
+              navigate("/fuel-delivery-requests/received-delivery-requests")
+            }
             className="px-[10px] py-3 bg-white text-[#5B738B] border-[0.8px] border-[#5B738B] font-normal rounded-[8px] w-[104px]"
             style={{ border: "0.8px solid #5B738B" }}
+            disabled={isProcessing}
           >
             رجوع
           </button>
           <div className="flex flex-col sm:flex-row gap-[10px] justify-between">
             <button
               onClick={handleReject}
-              className="px-[10px] py-3 bg-[#EE3939] text-white font-normal rounded-[8px] w-[104px]"
+              className="px-[10px] py-3 bg-[#EE3939] text-white font-normal rounded-[8px] w-[104px] disabled:opacity-50"
+              disabled={isProcessing}
             >
-              رفض الطلب
+              {isProcessing ? "جاري المعالجة..." : "رفض الطلب"}
             </button>
             <button
               onClick={handleAccept}
-              className="px-[10px] py-3 bg-[#5A66C1] text-white font-normal rounded-[8px] w-[104px]"
+              className="px-[10px] py-3 bg-[#5A66C1] text-white font-normal rounded-[8px] w-[104px] disabled:opacity-50"
+              disabled={isProcessing}
             >
-              قبول الطلب
+              {isProcessing ? "جاري المعالجة..." : "قبول الطلب"}
             </button>
           </div>
         </div>
       </div>
 
-       {/* Rejection Reason Modal */}
-       {isRejectModalOpen && (
+      {/* Rejection Reason Modal */}
+      {isRejectModalOpen && (
         <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100000000]"
           dir="rtl"
@@ -261,15 +426,16 @@ export const ReceivedDeliveryRevision = () => {
             <div className="flex gap-3 justify-end">
               <button
                 onClick={handleRejectSubmit}
-                className="px-4 py-2 flex-1 bg-[#EE3939] text-white rounded-md hover:bg-red-600 transition-colors"
-                disabled={!rejectionReason.trim()}
+                className="px-4 py-2 flex-1 bg-[#EE3939] text-white rounded-md hover:bg-red-600 transition-colors disabled:opacity-50"
+                disabled={!rejectionReason.trim() || isProcessing}
               >
-                ارسال
+                {isProcessing ? "جاري المعالجة..." : "ارسال"}
               </button>
               <button
                 onClick={handleRejectCancel}
-                className="px-4 py-2 bg-white flex-1 text-[#5B738B] border border-[#5B738B] rounded-md hover:bg-gray-50 transition-colors"
+                className="px-4 py-2 bg-white flex-1 text-[#5B738B] border border-[#5B738B] rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50"
                 style={{ border: "0.8px solid #5B738B" }}
+                disabled={isProcessing}
               >
                 رجوع
               </button>

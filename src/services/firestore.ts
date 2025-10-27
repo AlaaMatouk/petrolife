@@ -2513,6 +2513,348 @@ export const fetchAdminWalletReports = async () => {
 };
 
 /**
+ * Fetch all companies-wallets-requests data for admin dashboard
+ * @returns Promise with all wallet requests data
+ */
+export const fetchAllAdminWalletRequests = async () => {
+  try {
+    console.log(
+      "\n🔄 Fetching admin wallet requests from companies-wallets-requests..."
+    );
+
+    const requestsRef = collection(db, "companies-wallets-requests");
+    const q = query(requestsRef, orderBy("actionDate", "desc"));
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
+
+    const allRequestsData: any[] = [];
+
+    // Helper function to format Firestore timestamp
+    const formatDate = (timestamp: any): string => {
+      if (!timestamp) return "-";
+
+      try {
+        if (timestamp.toDate && typeof timestamp.toDate === "function") {
+          return new Date(timestamp.toDate()).toLocaleString("ar-EG", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        }
+        if (timestamp instanceof Date) {
+          return timestamp.toLocaleString("ar-EG", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        }
+        return new Date(timestamp).toLocaleString("ar-EG", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      } catch (error) {
+        return String(timestamp);
+      }
+    };
+
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      allRequestsData.push({
+        id: doc.id,
+        requestNumber: doc.id, // رقم العملية
+        clientName: data.requestedUser?.name || "-", // العميل
+        orderType: "-", // نوع الشحن
+        oldBalance: data.requestedUser?.balance || "-", // الرصيد القديم
+        addedBalance: data.value || "-", // الرصيد المضاف
+        requestDate: formatDate(data.actionDate), // تاريخ الانشاء
+        status: data.requestedUser?.status || "-", // حالة الطلب
+        responsible: data.actionUser?.name || "-", // المسؤول
+      });
+    });
+
+    console.log(
+      `✅ Total admin wallet requests found: ${allRequestsData.length}`
+    );
+    return allRequestsData;
+  } catch (error) {
+    console.error("❌ Error fetching admin wallet requests:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all fuel delivery requests (توصيل الوقود) for admin dashboard
+ * Filters by service.title.ar == "توصيل الوقود" or serviceId == "76WpaQ5NQs4TJUQJn6hV"
+ * @returns Promise with all fuel delivery requests data
+ */
+export const fetchAdminFuelDeliveryRequests = async () => {
+  try {
+    console.log(
+      "\n🔄 Fetching admin fuel delivery requests from orders collection..."
+    );
+
+    const ordersRef = collection(db, "orders");
+    const q = query(ordersRef, orderBy("orderDate", "desc"));
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
+
+    const allOrdersData: any[] = [];
+
+    // Helper function to format Firestore timestamp
+    const formatDate = (timestamp: any): string => {
+      if (!timestamp) return "-";
+
+      try {
+        if (timestamp.toDate && typeof timestamp.toDate === "function") {
+          return new Date(timestamp.toDate()).toLocaleString("ar-EG", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        }
+        if (timestamp instanceof Date) {
+          return timestamp.toLocaleString("ar-EG", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        }
+        return new Date(timestamp).toLocaleString("ar-EG", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      } catch (error) {
+        return String(timestamp);
+      }
+    };
+
+    // Filter for fuel delivery orders
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+
+      // Check if this is a fuel delivery order
+      const isFuelDelivery =
+        data.service?.title?.ar === "توصيل الوقود" ||
+        data.service?.title?.en === "Fuel Delivery" ||
+        data.serviceId === "76WpaQ5NQs4TJUQJn6hV";
+
+      if (isFuelDelivery) {
+        // Extract fuel type from selectedOption
+        let fuelType = "-";
+        if (data.selectedOption?.title?.ar) {
+          fuelType = data.selectedOption.title.ar;
+        } else if (data.selectedOption?.title?.en) {
+          fuelType = data.selectedOption.title.en;
+        } else if (data.selectedOption?.name?.ar) {
+          fuelType = data.selectedOption.name.ar;
+        } else if (data.selectedOption?.name?.en) {
+          fuelType = data.selectedOption.name.en;
+        }
+
+        // Extract delivery address from location
+        let deliveryAddress = "-";
+        if (data.location?.address) {
+          deliveryAddress = data.location.address;
+        } else if (data.address) {
+          deliveryAddress = data.address;
+        }
+
+        allOrdersData.push({
+          id: doc.id,
+          requestNumber: data.refId || doc.id, // رقم العملية
+          driverName: "-", // السائق الحالي
+          driverType: "-", // نوع السائق
+          fuelType: fuelType, // نوع الوقود
+          quantity: data.totalLitre?.toString() || "0", // الكمية (لتر)
+          deliveryAddress: deliveryAddress, // عنوان التوصيل
+          requestDate: formatDate(data.orderDate), // تاريخ الطلب
+          status: data.status || "-", // حالة الطلب
+        });
+      }
+    });
+
+    console.log(
+      `✅ Total admin fuel delivery requests found: ${allOrdersData.length}`
+    );
+    return allOrdersData;
+  } catch (error) {
+    console.error("❌ Error fetching admin fuel delivery requests:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch pending fuel delivery requests (توصيل الوقود) for admin dashboard
+ * Filters by service.title.ar == "توصيل الوقود" AND status == "pending"
+ * @returns Promise with pending fuel delivery requests data
+ */
+export const fetchAdminReceivedDeliveryRequests = async () => {
+  try {
+    console.log(
+      "\n🔄 Fetching admin pending delivery requests from orders collection..."
+    );
+
+    const ordersRef = collection(db, "orders");
+    const q = query(ordersRef, orderBy("orderDate", "desc"));
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
+
+    const allOrdersData: any[] = [];
+
+    // Helper function to format Firestore timestamp
+    const formatDate = (timestamp: any): string => {
+      if (!timestamp) return "-";
+
+      try {
+        if (timestamp.toDate && typeof timestamp.toDate === "function") {
+          return new Date(timestamp.toDate()).toLocaleString("ar-EG", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        }
+        if (timestamp instanceof Date) {
+          return timestamp.toLocaleString("ar-EG", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        }
+        return new Date(timestamp).toLocaleString("ar-EG", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      } catch (error) {
+        return String(timestamp);
+      }
+    };
+
+    // Filter for pending fuel delivery orders
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+
+      // Check if this is a pending fuel delivery order
+      const isFuelDelivery =
+        data.service?.title?.ar === "توصيل الوقود" ||
+        data.service?.title?.en === "Fuel Delivery" ||
+        data.serviceId === "76WpaQ5NQs4TJUQJn6hV";
+      const isPending = data.status === "pending";
+
+      if (isFuelDelivery && isPending) {
+        // Extract fuel type from selectedOption
+        let fuelType = "-";
+        if (data.selectedOption?.title?.ar) {
+          fuelType = data.selectedOption.title.ar;
+        } else if (data.selectedOption?.title?.en) {
+          fuelType = data.selectedOption.title.en;
+        } else if (data.selectedOption?.name?.ar) {
+          fuelType = data.selectedOption.name.ar;
+        } else if (data.selectedOption?.name?.en) {
+          fuelType = data.selectedOption.name.en;
+        }
+
+        // Extract delivery address from location
+        let deliveryAddress = "-";
+        if (data.location?.address) {
+          deliveryAddress = data.location.address;
+        } else if (data.address) {
+          deliveryAddress = data.address;
+        }
+
+        allOrdersData.push({
+          id: doc.id,
+          requestNumber: data.refId || doc.id, // رقم الطلب
+          fuelType: fuelType, // نوع الوقود
+          driverType: "-", // نوع الموقع
+          quantity: data.totalLitre?.toString() || "0", // الكمية المطلوبة (لتر)
+          deliveryAddress: deliveryAddress, // عنوان التوصيل
+          requestDate: formatDate(data.orderDate), // تاريخ الطلب
+        });
+      }
+    });
+
+    console.log(
+      `✅ Total admin pending delivery requests found: ${allOrdersData.length}`
+    );
+    return allOrdersData;
+  } catch (error) {
+    console.error("❌ Error fetching admin pending delivery requests:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a single order by ID from Firestore
+ * @param orderId - The ID of the order to fetch
+ * @returns Promise with the order data
+ */
+export const fetchOrderById = async (orderId: string) => {
+  try {
+    console.log(`🔄 Fetching order with ID: ${orderId}`);
+
+    const orderRef = doc(db, "orders", orderId);
+    const orderSnapshot = await getDoc(orderRef);
+
+    if (!orderSnapshot.exists()) {
+      console.error("❌ Order not found:", orderId);
+      throw new Error("Order not found");
+    }
+
+    const orderData = {
+      id: orderSnapshot.id,
+      ...orderSnapshot.data(),
+    };
+
+    console.log("✅ Order fetched successfully:", orderData.id);
+    return orderData;
+  } catch (error) {
+    console.error("❌ Error fetching order:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update order status in Firestore
+ * @param orderId - The ID of the order to update
+ * @param newStatus - The new status to set (e.g., "done", "cancelled")
+ * @returns Promise with success boolean
+ */
+export const updateOrderStatus = async (orderId: string, newStatus: string) => {
+  try {
+    console.log(`🔄 Updating order ${orderId} status to: ${newStatus}`);
+
+    const orderRef = doc(db, "orders", orderId);
+    await updateDoc(orderRef, {
+      status: newStatus,
+    });
+
+    console.log(`✅ Order ${orderId} status updated to: ${newStatus}`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating order status:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetch current company data from Firestore companies collection
  * @returns Promise with the current company data
  */
@@ -3970,15 +4312,17 @@ const uploadFileToStorage = async (
  * @param googleMapsLink - Google Maps URL
  * @returns Object with lat and lng, or null if parsing fails
  */
-const parseGoogleMapsLink = (googleMapsLink: string): { lat: number; lng: number } | null => {
+const parseGoogleMapsLink = (
+  googleMapsLink: string
+): { lat: number; lng: number } | null => {
   try {
-    if (!googleMapsLink || typeof googleMapsLink !== 'string') {
+    if (!googleMapsLink || typeof googleMapsLink !== "string") {
       return null;
     }
 
     // Clean the URL
     const url = googleMapsLink.trim();
-    
+
     // Handle different Google Maps URL formats
     let lat: number | null = null;
     let lng: number | null = null;
@@ -3986,7 +4330,7 @@ const parseGoogleMapsLink = (googleMapsLink: string): { lat: number; lng: number
     // Format 1: https://www.google.com/maps?q=24.620178,46.709404
     const qMatch = url.match(/[?&]q=([^&]+)/);
     if (qMatch) {
-      const coords = qMatch[1].split(',');
+      const coords = qMatch[1].split(",");
       if (coords.length === 2) {
         lat = parseFloat(coords[0]);
         lng = parseFloat(coords[1]);
@@ -4008,16 +4352,22 @@ const parseGoogleMapsLink = (googleMapsLink: string): { lat: number; lng: number
     }
 
     // Validate coordinates
-    if (lat !== null && lng !== null && 
-        !isNaN(lat) && !isNaN(lng) &&
-        lat >= -90 && lat <= 90 &&
-        lng >= -180 && lng <= 180) {
+    if (
+      lat !== null &&
+      lng !== null &&
+      !isNaN(lat) &&
+      !isNaN(lng) &&
+      lat >= -90 &&
+      lat <= 90 &&
+      lng >= -180 &&
+      lng <= 180
+    ) {
       return { lat, lng };
     }
 
     return null;
   } catch (error) {
-    console.error('Error parsing Google Maps link:', error);
+    console.error("Error parsing Google Maps link:", error);
     return null;
   }
 };
@@ -4407,7 +4757,9 @@ export interface AddStationData {
   location: string; // Google Maps link
   secretNumber: string; // Password for Firebase Auth
   selectedCategories: string[]; // Array of category IDs
-  categoryPrices: { [categoryId: string]: { price: number; companyPrice: number; desc: string } };
+  categoryPrices: {
+    [categoryId: string]: { price: number; companyPrice: number; desc: string };
+  };
 }
 
 /**
@@ -5066,24 +5418,21 @@ export const fetchFuelStationById = async (stationId: string): Promise<FuelStati
 export const fetchUserFuelStations = async (): Promise<FuelStation[]> => {
   try {
     console.log("📍 Fetching user's fuel stations from Firestore...");
-    
+
     // Get current user
     const currentUser = auth.currentUser;
     if (!currentUser || !currentUser.email) {
       console.log("⚠️ No authenticated user found");
       return [];
     }
-    
+
     const userEmail = currentUser.email;
     console.log("👤 Current user email:", userEmail);
 
     // Query with filter at Firestore level
     const carStationsRef = collection(db, "carstations");
-    const q = query(
-      carStationsRef,
-      where("createdUserId", "==", userEmail)
-    );
-    
+    const q = query(carStationsRef, where("createdUserId", "==", userEmail));
+
     const querySnapshot = await getDocs(q);
     const fuelStations: FuelStation[] = [];
 
@@ -5162,11 +5511,11 @@ export const fetchUserFuelStations = async (): Promise<FuelStation[]> => {
 export const fetchFuelCategories = async (): Promise<any[]> => {
   try {
     console.log("🔍 Fetching fuel categories from Firestore...");
-    
+
     const categoriesRef = collection(db, "categories");
     const q = query(categoriesRef, orderBy("createdDate", "desc"));
     const querySnapshot = await getDocs(q);
-    
+
     const categories: any[] = [];
     querySnapshot.forEach((doc) => {
       categories.push({
@@ -5174,7 +5523,7 @@ export const fetchFuelCategories = async (): Promise<any[]> => {
         ...doc.data(),
       });
     });
-    
+
     console.log(`✅ Fetched ${categories.length} categories from Firestore`);
     return categories;
   } catch (error) {
@@ -5209,17 +5558,19 @@ export const addCarStation = async (stationData: AddStationData) => {
     console.log("📍 Parsing Google Maps location...");
     const coordinates = parseGoogleMapsLink(stationData.location);
     if (!coordinates) {
-      throw new Error("Invalid Google Maps link format. Please provide a valid Google Maps URL with coordinates.");
+      throw new Error(
+        "Invalid Google Maps link format. Please provide a valid Google Maps URL with coordinates."
+      );
     }
     console.log("✅ Coordinates parsed:", coordinates);
 
     // 3. Fetch full category details for selected categories
     console.log("🔍 Fetching category details...");
     const allCategories = await fetchFuelCategories();
-    const selectedCategoryDetails = allCategories.filter(category => 
+    const selectedCategoryDetails = allCategories.filter((category) =>
       stationData.selectedCategories.includes(category.id)
     );
-    
+
     if (selectedCategoryDetails.length === 0) {
       throw new Error("No valid categories found for selected category IDs");
     }
@@ -5231,13 +5582,13 @@ export const addCarStation = async (stationData: AddStationData) => {
       lng: coordinates.lng,
       name: stationData.address,
       address: {
-        city: stationData.address.split(',')[0] || stationData.address,
+        city: stationData.address.split(",")[0] || stationData.address,
         country: "Saudi Arabia",
         road: stationData.address,
         postcode: "",
         state: "",
         stateDistrict: "",
-        countryCode: "SA"
+        countryCode: "SA",
       },
       placeId: "",
       id: stationData.email,
@@ -5250,35 +5601,35 @@ export const addCarStation = async (stationData: AddStationData) => {
       namedetails: {},
       osm_id: 0,
       osm_type: "",
-      place_rank: 30
+      place_rank: 30,
     };
 
     // 5. Build options array from categories
-    const options = selectedCategoryDetails.map(category => {
+    const options = selectedCategoryDetails.map((category) => {
       const priceData = stationData.categoryPrices[category.id] || {
         price: 0,
         companyPrice: 0,
-        desc: ""
+        desc: "",
       };
 
       return {
         categoryId: category.id,
         categoryName: {
           ar: category.name?.ar || category.label || "",
-          en: category.name?.en || category.label || ""
+          en: category.name?.en || category.label || "",
         },
         categoryParentId: category.parentId || category.id,
         companyPrice: priceData.companyPrice,
         desc: {
           ar: priceData.desc,
-          en: priceData.desc
+          en: priceData.desc,
         },
         price: priceData.price,
         refId: category.refId || "",
         title: {
           ar: category.name?.ar || category.label || "",
-          en: category.name?.en || category.label || ""
-        }
+          en: category.name?.en || category.label || "",
+        },
       };
     });
 
@@ -5299,7 +5650,7 @@ export const addCarStation = async (stationData: AddStationData) => {
       commercialRegistration: "",
       taxCertificate: "",
       location: null,
-      status: "approved"
+      status: "approved",
     };
 
     console.log("📄 Station document prepared:", stationDocument);
@@ -5307,29 +5658,34 @@ export const addCarStation = async (stationData: AddStationData) => {
     // 6. Call Cloud Function to create Firebase Auth account via HTTP
     console.log("☁️ Creating Firebase Auth account via Cloud Function...");
     const idToken = await currentUser.getIdToken();
-    
+
     const requestData = {
       email: stationData.email,
       password: stationData.secretNumber,
       display_name: stationData.stationName,
       user_type: "station",
       phone_number: stationData.phone,
-      photo_url: ""
+      photo_url: "",
     };
 
-    const response = await fetch('https://us-central1-car-station-6393f.cloudfunctions.net/createUserFunction', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${idToken}`
-      },
-      body: JSON.stringify(requestData)
-    });
+    const response = await fetch(
+      "https://us-central1-car-station-6393f.cloudfunctions.net/createUserFunction",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(requestData),
+      }
+    );
 
     const result = await response.json();
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${result.message || 'Unknown error'}`);
+      throw new Error(
+        `HTTP ${response.status}: ${result.message || "Unknown error"}`
+      );
     }
 
     const stationUid = result.data.uid;
@@ -5338,7 +5694,7 @@ export const addCarStation = async (stationData: AddStationData) => {
     // 7. Add UID to station document
     const stationDocumentWithUid = {
       ...stationDocument,
-      uId: stationUid
+      uId: stationUid,
     };
 
     console.log("📄 Station document prepared:", stationDocumentWithUid);
@@ -5352,26 +5708,30 @@ export const addCarStation = async (stationData: AddStationData) => {
     return {
       id: stationData.email,
       ...stationDocumentWithUid,
-      uId: stationUid
+      uId: stationUid,
     };
-
   } catch (error) {
     console.error("❌ Error creating station:", error);
-    
+
     // Provide user-friendly error messages
     if (error instanceof Error) {
       if (error.message.includes("email-already-in-use")) {
-        throw new Error("This email is already registered. Please use a different email address.");
+        throw new Error(
+          "This email is already registered. Please use a different email address."
+        );
       } else if (error.message.includes("weak-password")) {
-        throw new Error("Password is too weak. Please choose a stronger password.");
+        throw new Error(
+          "Password is too weak. Please choose a stronger password."
+        );
       } else if (error.message.includes("invalid-email")) {
-        throw new Error("Invalid email format. Please enter a valid email address.");
+        throw new Error(
+          "Invalid email format. Please enter a valid email address."
+        );
       } else if (error.message.includes("Google Maps")) {
         throw error; // Re-throw location parsing errors as-is
       }
-
     }
-    
+
     throw error;
   }
 };
@@ -6519,7 +6879,9 @@ export const declineStationsCompanyRequest = async (
   }
 };
 
-export const fetchFuelStationRequests = async (currentUserEmail: string): Promise<any[]> => {
+export const fetchFuelStationRequests = async (
+  currentUserEmail: string
+): Promise<any[]> => {
   try {
     console.log("⛽ Fetching fuel station requests from Firestore...");
 
@@ -6548,9 +6910,11 @@ export const fetchFuelStationRequests = async (currentUserEmail: string): Promis
     // Check if carStation.createdUserId matches current user's email
     const filteredOrders = allOrders.filter((order) => {
       const carStationCreatedUserId = order.carStation?.createdUserId;
-      
-      const match = carStationCreatedUserId && 
-        carStationCreatedUserId.toLowerCase() === currentUserEmail.toLowerCase();
+
+      const match =
+        carStationCreatedUserId &&
+        carStationCreatedUserId.toLowerCase() ===
+          currentUserEmail.toLowerCase();
 
       return match;
     });
@@ -6600,7 +6964,10 @@ export const fetchFuelStationRequests = async (currentUserEmail: string): Promis
         stationName: order.carStation?.name || "غير محدد",
         clientName: order.client?.name || "غير محدد",
         workerName: order.fuelStationsWorker?.name || "غير محدد",
-        fuelType: order.selectedOption?.title?.ar || order.selectedOption?.desc?.ar || "غير محدد",
+        fuelType:
+          order.selectedOption?.title?.ar ||
+          order.selectedOption?.desc?.ar ||
+          "غير محدد",
         totalLiters: order.totalLitre?.toString() || "0",
         creationDate: formatDate(order.orderDate),
         rawDate: order.orderDate,
@@ -6609,7 +6976,10 @@ export const fetchFuelStationRequests = async (currentUserEmail: string): Promis
       };
     });
 
-    console.log("✅ Fuel station requests transformed:", transformedOrders.length);
+    console.log(
+      "✅ Fuel station requests transformed:",
+      transformedOrders.length
+    );
 
     return transformedOrders;
   } catch (error) {
@@ -6686,8 +7056,14 @@ const waitForAuthState = (): Promise<any> => {
  * @returns Promise with statistics data
  */
 export const fetchServiceDistributerStatistics = async (): Promise<{
-  fuelCost: { total: number; breakdown: Array<{ type: string; amount: number; color: string }> };
-  totalLiters: { total: number; breakdown: Array<{ type: string; amount: number; color: string }> };
+  fuelCost: {
+    total: number;
+    breakdown: Array<{ type: string; amount: number; color: string }>;
+  };
+  totalLiters: {
+    total: number;
+    breakdown: Array<{ type: string; amount: number; color: string }>;
+  };
   uniqueClients: number;
   uniqueWorkers: number;
   totalStations: number;
@@ -6701,7 +7077,7 @@ export const fetchServiceDistributerStatistics = async (): Promise<{
     console.log("⏳ Waiting for auth state...");
     const currentUser = await waitForAuthState();
     console.log("✅ Auth state ready, current user:", currentUser.email);
-    
+
     if (!currentUser || !currentUser.email) {
       throw new Error("No authenticated user found");
     }
@@ -6757,19 +7133,17 @@ export const fetchServiceDistributerStatistics = async (): Promise<{
         fuelTypeEn.toLowerCase().includes("diesel")
       ) {
         mappedType = "ديزل";
-      } else if (
-        fuelTypeAr.includes("95") ||
-        fuelTypeEn.includes("95")
-      ) {
+      } else if (fuelTypeAr.includes("95") || fuelTypeEn.includes("95")) {
         mappedType = "بنزين 95";
-      } else if (
-        fuelTypeAr.includes("91") ||
-        fuelTypeEn.includes("91")
-      ) {
+      } else if (fuelTypeAr.includes("91") || fuelTypeEn.includes("91")) {
         mappedType = "بنزين 91";
       }
 
-      if (mappedType && (fuelCostMap.hasOwnProperty(mappedType) || totalLitersMap.hasOwnProperty(mappedType))) {
+      if (
+        mappedType &&
+        (fuelCostMap.hasOwnProperty(mappedType) ||
+          totalLitersMap.hasOwnProperty(mappedType))
+      ) {
         // Calculate cost
         const cost = parseFloat(originalOrder.totalPrice) || 0;
         fuelCostMap[mappedType] += cost;
@@ -6797,20 +7171,30 @@ export const fetchServiceDistributerStatistics = async (): Promise<{
       "بنزين 91": "text-color-mode-text-icons-t-green",
     };
 
-    const fuelCostBreakdown = Object.entries(fuelCostMap).map(([type, amount]) => ({
-      type,
-      amount: Math.round(amount * 100) / 100, // Round to 2 decimal places
-      color: colorMap[type],
-    }));
+    const fuelCostBreakdown = Object.entries(fuelCostMap).map(
+      ([type, amount]) => ({
+        type,
+        amount: Math.round(amount * 100) / 100, // Round to 2 decimal places
+        color: colorMap[type],
+      })
+    );
 
-    const totalLitersBreakdown = Object.entries(totalLitersMap).map(([type, amount]) => ({
-      type,
-      amount: Math.round(amount * 100) / 100,
-      color: colorMap[type],
-    }));
+    const totalLitersBreakdown = Object.entries(totalLitersMap).map(
+      ([type, amount]) => ({
+        type,
+        amount: Math.round(amount * 100) / 100,
+        color: colorMap[type],
+      })
+    );
 
-    const totalFuelCost = Object.values(fuelCostMap).reduce((sum, val) => sum + val, 0);
-    const totalLitersTotal = Object.values(totalLitersMap).reduce((sum, val) => sum + val, 0);
+    const totalFuelCost = Object.values(fuelCostMap).reduce(
+      (sum, val) => sum + val,
+      0
+    );
+    const totalLitersTotal = Object.values(totalLitersMap).reduce(
+      (sum, val) => sum + val,
+      0
+    );
 
     const result = {
       fuelCost: {
@@ -7044,15 +7428,19 @@ export const fetchFuelStationWorkersByStationEmail = async (stationEmail: string
  * Filters by carStation.createdUserId matching current user's email
  * @returns Promise with array of financial report data
  */
-export const fetchServiceDistributerFinancialReports = async (): Promise<any[]> => {
+export const fetchServiceDistributerFinancialReports = async (): Promise<
+  any[]
+> => {
   try {
-    console.log("📊 Fetching service distributer financial reports from stationscompany-orders...");
+    console.log(
+      "📊 Fetching service distributer financial reports from stationscompany-orders..."
+    );
 
     // Wait for auth state to be ready
     console.log("⏳ Waiting for auth state...");
     const currentUser = await waitForAuthState();
     console.log("✅ Auth state ready, current user:", currentUser.email);
-    
+
     if (!currentUser || !currentUser.email) {
       throw new Error("No authenticated user found");
     }
@@ -7081,54 +7469,74 @@ export const fetchServiceDistributerFinancialReports = async (): Promise<any[]> 
     // Check if carStation.createdUserId matches current user's email
     const filteredOrders = allOrders.filter((order) => {
       const carStationCreatedUserId = order.carStation?.createdUserId;
-      
-      const match = carStationCreatedUserId && 
-        carStationCreatedUserId.toLowerCase() === currentUserEmail.toLowerCase();
+
+      const match =
+        carStationCreatedUserId &&
+        carStationCreatedUserId.toLowerCase() ===
+          currentUserEmail.toLowerCase();
 
       return match;
     });
 
     console.log("✅ Filtered orders for current user:", filteredOrders.length);
-    console.log(`📊 Efficiency: Fetched ${allOrders.length} orders, filtered to ${filteredOrders.length} (${filteredOrders.length > 0 ? Math.round((filteredOrders.length / allOrders.length) * 100) : 0}% match rate)`);
+    console.log(
+      `📊 Efficiency: Fetched ${allOrders.length} orders, filtered to ${
+        filteredOrders.length
+      } (${
+        filteredOrders.length > 0
+          ? Math.round((filteredOrders.length / allOrders.length) * 100)
+          : 0
+      }% match rate)`
+    );
 
     // Transform orders to financial report format
     const financialReports = filteredOrders.map((order) => {
       // Extract values from selectedOption
       const selectedOption = order.selectedOption || {};
-      
+
       return {
         id: order.id || Date.now().toString(),
         // نوع المنتج (Product Type) - from selectedOption.categoryName
-        productType: selectedOption.categoryName?.ar || selectedOption.categoryName?.en || "غير محدد",
-        
+        productType:
+          selectedOption.categoryName?.ar ||
+          selectedOption.categoryName?.en ||
+          "غير محدد",
+
         // رقم المنتج (Product Number) - from selectedOption.refId
         productNumber: selectedOption.refId || "-",
-        
+
         // اسم المنتج (Product Name) - from selectedOption.title
-        productName: selectedOption.title?.ar || selectedOption.title?.en || "-",
-        
+        productName:
+          selectedOption.title?.ar || selectedOption.title?.en || "-",
+
         // الكمية (Quantity) - from totalLitre
         quantity: order.totalLitre?.toString() || "0",
-        
+
         // القيمة (ر.س) (Value) - from selectedOption.price
         value: selectedOption.price?.toString() || "0",
-        
+
         // الوحدة (Unit)
         unit: "لتر",
-        
+
         // رقم العملية (Operation Number) - from refId
         operationNumber: order.refId || order.refDocId || order.id || "-",
-        
+
         // Keep original order for reference
         originalOrder: order,
       };
     });
 
-    console.log("✅ Service distributer financial reports transformed:", financialReports.length);
+    console.log(
+      "✅ Service distributer financial reports transformed:",
+      financialReports.length
+    );
 
     return financialReports;
   } catch (error) {
-    console.error("❌ Error fetching service distributer financial reports:", error);
+    console.error(
+      "❌ Error fetching service distributer financial reports:",
+      error
+    );
     throw error;
   }
 };
@@ -7480,4 +7888,3 @@ export const fetchTopStationsByConsumption = async (): Promise<any[]> => {
     throw error;
   }
 };
-
