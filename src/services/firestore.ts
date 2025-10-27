@@ -2855,6 +2855,94 @@ export const updateOrderStatus = async (orderId: string, newStatus: string) => {
 };
 
 /**
+ * Determine user role and redirect path based on email presence in Firestore collections
+ * @param email - User's email address
+ * @returns Object with redirectPath and userType, or null if not found
+ */
+export const determineUserRoleAndRedirect = async (
+  email: string
+): Promise<{ redirectPath: string; userType: string; userData?: any } | null> => {
+  try {
+    if (!email) {
+      console.error("No email provided to determineUserRoleAndRedirect");
+      return null;
+    }
+
+    console.log(`🔍 Checking user role for email: ${email}`);
+
+    // 1. Check if email exists in companies collection
+    const companiesRef = collection(db, "companies");
+    const companiesQuery = query(companiesRef, where("email", "==", email));
+    const companiesSnapshot = await getDocs(companiesQuery);
+
+    if (!companiesSnapshot.empty) {
+      const companyData = {
+        id: companiesSnapshot.docs[0].id,
+        ...companiesSnapshot.docs[0].data(),
+      };
+      console.log("✅ User found in companies collection → /dashboard");
+      return {
+        redirectPath: "/dashboard",
+        userType: "company",
+        userData: companyData,
+      };
+    }
+
+    // 2. Check if email exists in users collection with admin privileges
+    const usersRef = collection(db, "users");
+    const usersQuery = query(usersRef, where("email", "==", email));
+    const usersSnapshot = await getDocs(usersQuery);
+
+    if (!usersSnapshot.empty) {
+      const userData = usersSnapshot.docs[0].data();
+      const isAdmin = userData.isAdmin === true || userData.isSuperAdmin === true;
+
+      if (isAdmin) {
+        console.log("✅ Admin user found in users collection → /admin-dashboard");
+        return {
+          redirectPath: "/admin-dashboard",
+          userType: "admin",
+          userData: {
+            id: usersSnapshot.docs[0].id,
+            ...userData,
+          },
+        };
+      } else {
+        console.log("⚠️ User found in users collection but not an admin");
+      }
+    }
+
+    // 3. Check if email exists in stationscompany collection
+    const stationsCompanyRef = collection(db, "stationscompany");
+    const stationsCompanyQuery = query(
+      stationsCompanyRef,
+      where("email", "==", email)
+    );
+    const stationsCompanySnapshot = await getDocs(stationsCompanyQuery);
+
+    if (!stationsCompanySnapshot.empty) {
+      const stationData = {
+        id: stationsCompanySnapshot.docs[0].id,
+        ...stationsCompanySnapshot.docs[0].data(),
+      };
+      console.log("✅ User found in stationscompany collection → /service-distributer");
+      return {
+        redirectPath: "/service-distributer",
+        userType: "service-distributer",
+        userData: stationData,
+      };
+    }
+
+    // If not found in any collection
+    console.warn(`⚠️ Email ${email} not found in any authorized collection`);
+    return null;
+  } catch (error) {
+    console.error("❌ Error determining user role:", error);
+    return null;
+  }
+};
+
+/**
  * Fetch current company data from Firestore companies collection
  * @returns Promise with the current company data
  */
