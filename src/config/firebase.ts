@@ -12,7 +12,7 @@ const firebaseConfig = {
   projectId: "car-station-6393f",
   storageBucket: "car-station-6393f.appspot.com",
   messagingSenderId: "688616261764",
-  appId: "1:688616261764:web:4d33f6b0ce57e673871ad1"
+  appId: "1:688616261764:web:4d33f6b0ce57e673871ad1",
 };
 
 // Initialize Firebase
@@ -28,4 +28,3 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 
 export default app;
-

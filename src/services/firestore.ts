@@ -2861,7 +2861,11 @@ export const updateOrderStatus = async (orderId: string, newStatus: string) => {
  */
 export const determineUserRoleAndRedirect = async (
   email: string
-): Promise<{ redirectPath: string; userType: string; userData?: any } | null> => {
+): Promise<{
+  redirectPath: string;
+  userType: string;
+  userData?: any;
+} | null> => {
   try {
     if (!email) {
       console.error("No email provided to determineUserRoleAndRedirect");
@@ -2895,10 +2899,13 @@ export const determineUserRoleAndRedirect = async (
 
     if (!usersSnapshot.empty) {
       const userData = usersSnapshot.docs[0].data();
-      const isAdmin = userData.isAdmin === true || userData.isSuperAdmin === true;
+      const isAdmin =
+        userData.isAdmin === true || userData.isSuperAdmin === true;
 
       if (isAdmin) {
-        console.log("✅ Admin user found in users collection → /admin-dashboard");
+        console.log(
+          "✅ Admin user found in users collection → /admin-dashboard"
+        );
         return {
           redirectPath: "/admin-dashboard",
           userType: "admin",
@@ -2925,7 +2932,9 @@ export const determineUserRoleAndRedirect = async (
         id: stationsCompanySnapshot.docs[0].id,
         ...stationsCompanySnapshot.docs[0].data(),
       };
-      console.log("✅ User found in stationscompany collection → /service-distributer");
+      console.log(
+        "✅ User found in stationscompany collection → /service-distributer"
+      );
       return {
         redirectPath: "/service-distributer",
         userType: "service-distributer",
@@ -5422,10 +5431,12 @@ export const fetchFuelStations = async (): Promise<FuelStation[]> => {
  * @param stationId The ID of the station document
  * @returns Promise with station data or null if not found
  */
-export const fetchFuelStationById = async (stationId: string): Promise<FuelStation | null> => {
+export const fetchFuelStationById = async (
+  stationId: string
+): Promise<FuelStation | null> => {
   try {
     console.log("📍 Fetching station by ID:", stationId);
-    
+
     if (!stationId) {
       console.error("❌ No station ID provided");
       return null;
@@ -5437,7 +5448,7 @@ export const fetchFuelStationById = async (stationId: string): Promise<FuelStati
       console.log("⚠️ No authenticated user found");
       return null;
     }
-    
+
     const userEmail = currentUser.email;
 
     // Fetch the station document
@@ -5474,7 +5485,7 @@ export const fetchFuelStationById = async (stationId: string): Promise<FuelStati
       name: stationName,
       city: cityName,
       email: data.email,
-      phoneNumber: data.phoneNumber
+      phoneNumber: data.phoneNumber,
     });
 
     return {
@@ -6152,12 +6163,17 @@ export const fetchCompanyStatistics = async (companyId: string) => {
       // Tire change statistics
       tireChange: {
         small:
-          (tireChangeStats as any)?.sizes?.find((s: any) => s.name === "صغيرة")?.count || 0,
+          (tireChangeStats as any)?.sizes?.find((s: any) => s.name === "صغيرة")
+            ?.count || 0,
         medium:
-          (tireChangeStats as any)?.sizes?.find((s: any) => s.name === "متوسطة")?.count || 0,
+          (tireChangeStats as any)?.sizes?.find((s: any) => s.name === "متوسطة")
+            ?.count || 0,
         large:
-          (tireChangeStats as any)?.sizes?.find((s: any) => s.name === "كبيرة")?.count || 0,
-        vip: (tireChangeStats as any)?.sizes?.find((s: any) => s.name === "VIP")?.count || 0,
+          (tireChangeStats as any)?.sizes?.find((s: any) => s.name === "كبيرة")
+            ?.count || 0,
+        vip:
+          (tireChangeStats as any)?.sizes?.find((s: any) => s.name === "VIP")
+            ?.count || 0,
         total: (tireChangeStats as any)?.totalOrders || 0,
       },
 
@@ -7081,7 +7097,9 @@ export const fetchFuelStationRequests = async (
  * @param orderId - The order ID
  * @returns Promise with the order data or null
  */
-export const fetchFuelStationOrderById = async (orderId: string): Promise<any | null> => {
+export const fetchFuelStationOrderById = async (
+  orderId: string
+): Promise<any | null> => {
   try {
     console.log("📥 Fetching order by ID:", orderId);
 
@@ -7309,7 +7327,10 @@ export const fetchServiceDistributerStatistics = async (): Promise<{
 
     return result;
   } catch (error) {
-    console.error("❌ Error calculating service distributer statistics:", error);
+    console.error(
+      "❌ Error calculating service distributer statistics:",
+      error
+    );
     throw error;
   }
 };
@@ -7324,10 +7345,12 @@ export const fetchServiceDistributerStatistics = async (): Promise<{
  * @param workerUid The Firebase UID (uId field) of the worker
  * @returns Promise with worker data or null if not found
  */
-export const fetchFuelStationWorkerByEmail = async (workerUid: string): Promise<any | null> => {
+export const fetchFuelStationWorkerByEmail = async (
+  workerUid: string
+): Promise<any | null> => {
   try {
     console.log("👷 Fetching single worker by UID:", workerUid);
-    
+
     if (!workerUid) {
       console.error("❌ No worker UID provided");
       return null;
@@ -7373,7 +7396,7 @@ export const fetchFuelStationsWorkers = async (): Promise<any[]> => {
     console.log("⏳ Waiting for auth state...");
     const currentUser = await waitForAuthState();
     console.log("✅ Auth state ready, current user:", currentUser.email);
-    
+
     if (!currentUser || !currentUser.email) {
       throw new Error("No authenticated user found");
     }
@@ -7401,15 +7424,28 @@ export const fetchFuelStationsWorkers = async (): Promise<any[]> => {
     // Check if carStation.createdUserId matches current user's email
     const filteredWorkers = allWorkers.filter((worker) => {
       const carStationCreatedUserId = worker.carStation?.createdUserId;
-      
-      const match = carStationCreatedUserId && 
-        carStationCreatedUserId.toLowerCase() === currentUserEmail.toLowerCase();
+
+      const match =
+        carStationCreatedUserId &&
+        carStationCreatedUserId.toLowerCase() ===
+          currentUserEmail.toLowerCase();
 
       return match;
     });
 
-    console.log("✅ Filtered workers for current user:", filteredWorkers.length);
-    console.log(`📊 Efficiency: Fetched ${allWorkers.length} workers, filtered to ${filteredWorkers.length} (${filteredWorkers.length > 0 ? Math.round((filteredWorkers.length / allWorkers.length) * 100) : 0}% match rate)`);
+    console.log(
+      "✅ Filtered workers for current user:",
+      filteredWorkers.length
+    );
+    console.log(
+      `📊 Efficiency: Fetched ${allWorkers.length} workers, filtered to ${
+        filteredWorkers.length
+      } (${
+        filteredWorkers.length > 0
+          ? Math.round((filteredWorkers.length / allWorkers.length) * 100)
+          : 0
+      }% match rate)`
+    );
 
     // Transform workers to standard format
     // IMPORTANT: Use uId (Firebase UID) as the ID for cleaner URLs
@@ -7421,16 +7457,19 @@ export const fetchFuelStationsWorkers = async (): Promise<any[]> => {
         phone: worker.phoneNumber || "-",
         emailAddress: worker.email || "-",
         station: worker.carStation?.name || worker.stationsCompany?.name || "-",
-        accountStatus: { 
+        accountStatus: {
           active: worker.isActive === true,
-          text: worker.isActive === true ? "مفعل" : "معطل"
+          text: worker.isActive === true ? "مفعل" : "معطل",
         },
         // Keep original worker data for details page
         originalWorker: worker,
       };
     });
 
-    console.log("✅ Fuel stations workers transformed:", transformedWorkers.length);
+    console.log(
+      "✅ Fuel stations workers transformed:",
+      transformedWorkers.length
+    );
 
     return transformedWorkers;
   } catch (error) {
@@ -7445,7 +7484,9 @@ export const fetchFuelStationsWorkers = async (): Promise<any[]> => {
  * @param stationEmail - The email of the station
  * @returns Promise with array of workers for that station
  */
-export const fetchFuelStationWorkersByStationEmail = async (stationEmail: string): Promise<any[]> => {
+export const fetchFuelStationWorkersByStationEmail = async (
+  stationEmail: string
+): Promise<any[]> => {
   try {
     console.log("👷 Fetching fuel stations workers for station:", stationEmail);
 
@@ -7475,15 +7516,24 @@ export const fetchFuelStationWorkersByStationEmail = async (stationEmail: string
     // Check if stationsCompany.email matches the station's email
     const filteredWorkers = allWorkers.filter((worker) => {
       const workerStationEmail = worker.stationsCompany?.email;
-      
-      const match = workerStationEmail && 
+
+      const match =
+        workerStationEmail &&
         workerStationEmail.toLowerCase() === stationEmail.toLowerCase();
 
       return match;
     });
 
     console.log("✅ Filtered workers for station:", filteredWorkers.length);
-    console.log(`📊 Efficiency: Fetched ${allWorkers.length} workers, filtered to ${filteredWorkers.length} (${filteredWorkers.length > 0 ? Math.round((filteredWorkers.length / allWorkers.length) * 100) : 0}% match rate)`);
+    console.log(
+      `📊 Efficiency: Fetched ${allWorkers.length} workers, filtered to ${
+        filteredWorkers.length
+      } (${
+        filteredWorkers.length > 0
+          ? Math.round((filteredWorkers.length / allWorkers.length) * 100)
+          : 0
+      }% match rate)`
+    );
 
     // Transform workers to standard format
     const transformedWorkers = filteredWorkers.map((worker) => {
@@ -7493,20 +7543,26 @@ export const fetchFuelStationWorkersByStationEmail = async (stationEmail: string
         workerName: worker.name || "-",
         phone: worker.phoneNumber || "-",
         email: worker.email || "-",
-        accountStatus: { 
+        accountStatus: {
           active: worker.isActive === true,
-          text: worker.isActive === true ? "مفعل" : "معطل"
+          text: worker.isActive === true ? "مفعل" : "معطل",
         },
         // Keep original worker data for details page
         originalWorker: worker,
       };
     });
 
-    console.log("✅ Fuel stations workers transformed:", transformedWorkers.length);
+    console.log(
+      "✅ Fuel stations workers transformed:",
+      transformedWorkers.length
+    );
 
     return transformedWorkers;
   } catch (error) {
-    console.error("❌ Error fetching fuel station workers by station email:", error);
+    console.error(
+      "❌ Error fetching fuel station workers by station email:",
+      error
+    );
     throw error;
   }
 };
@@ -7635,7 +7691,9 @@ export const fetchServiceDistributerFinancialReports = async (): Promise<
  * @param workerEmail - The email of the worker
  * @returns Promise with array of worker transaction data
  */
-export const fetchWorkerTransactions = async (workerEmail: string): Promise<any[]> => {
+export const fetchWorkerTransactions = async (
+  workerEmail: string
+): Promise<any[]> => {
   try {
     console.log("👷 Fetching worker transactions for email:", workerEmail);
 
@@ -7662,9 +7720,11 @@ export const fetchWorkerTransactions = async (workerEmail: string): Promise<any[
 
     // Filter orders by worker email
     const filteredOrders = allOrders.filter((order) => {
-      const workerEmailInOrder = order.fuelStationWorker?.email || order.fuelStationsWorker?.email;
-      
-      const match = workerEmailInOrder && 
+      const workerEmailInOrder =
+        order.fuelStationWorker?.email || order.fuelStationsWorker?.email;
+
+      const match =
+        workerEmailInOrder &&
         workerEmailInOrder.toLowerCase() === workerEmail.toLowerCase();
 
       return match;
@@ -7719,14 +7779,20 @@ export const fetchWorkerTransactions = async (workerEmail: string): Promise<any[
         transactionNumber: order.refId || order.refDocId || order.id,
         stationName: order.carStation?.name || "غير محدد",
         clientName: order.client?.name || "غير محدد",
-        fuelType: order.selectedOption?.title?.ar || order.selectedOption?.title?.en || "غير محدد",
+        fuelType:
+          order.selectedOption?.title?.ar ||
+          order.selectedOption?.title?.en ||
+          "غير محدد",
         totalLiters: totalLitre.toString(),
         totalPrice: totalPrice,
         creationDate: formatDate(order.orderDate),
       };
     });
 
-    console.log("✅ Worker transactions transformed:", transformedOrders.length);
+    console.log(
+      "✅ Worker transactions transformed:",
+      transformedOrders.length
+    );
 
     return transformedOrders;
   } catch (error) {
@@ -7749,7 +7815,7 @@ export const fetchTopClientsByConsumption = async (): Promise<any[]> => {
     console.log("⏳ Waiting for auth state...");
     const currentUser = await waitForAuthState();
     console.log("✅ Auth state ready, current user:", currentUser.email);
-    
+
     if (!currentUser || !currentUser.email) {
       throw new Error("No authenticated user found");
     }
@@ -7776,9 +7842,11 @@ export const fetchTopClientsByConsumption = async (): Promise<any[]> => {
     // Check if carStation.createdUserId matches current user's email
     const filteredOrders = allOrders.filter((order) => {
       const carStationCreatedUserId = order.carStation?.createdUserId;
-      
-      const match = carStationCreatedUserId && 
-        carStationCreatedUserId.toLowerCase() === currentUserEmail.toLowerCase();
+
+      const match =
+        carStationCreatedUserId &&
+        carStationCreatedUserId.toLowerCase() ===
+          currentUserEmail.toLowerCase();
 
       return match;
     });
@@ -7786,14 +7854,17 @@ export const fetchTopClientsByConsumption = async (): Promise<any[]> => {
     console.log("✅ Filtered orders for current user:", filteredOrders.length);
 
     // Group orders by client email and sum up consumption
-    const clientConsumptionMap = new Map<string, {
-      email: string;
-      name: string;
-      phone: string;
-      totalCost: number;
-      totalFuel: number;
-      orders: any[];
-    }>();
+    const clientConsumptionMap = new Map<
+      string,
+      {
+        email: string;
+        name: string;
+        phone: string;
+        totalCost: number;
+        totalFuel: number;
+        orders: any[];
+      }
+    >();
 
     filteredOrders.forEach((order) => {
       const clientEmail = order.client?.email || "";
@@ -7815,7 +7886,7 @@ export const fetchTopClientsByConsumption = async (): Promise<any[]> => {
             phone: clientPhone,
             totalCost: totalPrice,
             totalFuel: totalLitre,
-            orders: [order]
+            orders: [order],
           });
         }
       }
@@ -7831,7 +7902,7 @@ export const fetchTopClientsByConsumption = async (): Promise<any[]> => {
         cost: Math.round(client.totalCost), // Round to nearest integer
         fuel: Math.round(client.totalFuel).toString(), // Convert to string for display
         type: getMostUsedFuelType(client.orders),
-        rank: index + 1
+        rank: index + 1,
       }));
 
     console.log("✅ Top clients aggregated:", topClients.length);
@@ -7850,7 +7921,8 @@ const getMostUsedFuelType = (orders: any[]): string => {
   const fuelTypeCount = new Map<string, number>();
 
   orders.forEach((order) => {
-    const fuelType = order.selectedOption?.title?.ar || order.selectedOption?.title?.en || "";
+    const fuelType =
+      order.selectedOption?.title?.ar || order.selectedOption?.title?.en || "";
     if (fuelType) {
       fuelTypeCount.set(fuelType, (fuelTypeCount.get(fuelType) || 0) + 1);
     }
@@ -7883,7 +7955,7 @@ export const fetchTopStationsByConsumption = async (): Promise<any[]> => {
     console.log("⏳ Waiting for auth state...");
     const currentUser = await waitForAuthState();
     console.log("✅ Auth state ready, current user:", currentUser.email);
-    
+
     if (!currentUser || !currentUser.email) {
       throw new Error("No authenticated user found");
     }
@@ -7910,9 +7982,11 @@ export const fetchTopStationsByConsumption = async (): Promise<any[]> => {
     // Check if carStation.createdUserId matches current user's email
     const filteredOrders = allOrders.filter((order) => {
       const carStationCreatedUserId = order.carStation?.createdUserId;
-      
-      const match = carStationCreatedUserId && 
-        carStationCreatedUserId.toLowerCase() === currentUserEmail.toLowerCase();
+
+      const match =
+        carStationCreatedUserId &&
+        carStationCreatedUserId.toLowerCase() ===
+          currentUserEmail.toLowerCase();
 
       return match;
     });
@@ -7920,14 +7994,17 @@ export const fetchTopStationsByConsumption = async (): Promise<any[]> => {
     console.log("✅ Filtered orders for current user:", filteredOrders.length);
 
     // Group orders by station email/name and sum up consumption
-    const stationConsumptionMap = new Map<string, {
-      name: string;
-      email: string;
-      address: string;
-      totalPrice: number;
-      totalFuel: number;
-      orders: any[];
-    }>();
+    const stationConsumptionMap = new Map<
+      string,
+      {
+        name: string;
+        email: string;
+        address: string;
+        totalPrice: number;
+        totalFuel: number;
+        orders: any[];
+      }
+    >();
 
     filteredOrders.forEach((order) => {
       const stationEmail = order.carStation?.email || "";
@@ -7949,7 +8026,7 @@ export const fetchTopStationsByConsumption = async (): Promise<any[]> => {
             address: stationAddress,
             totalPrice: totalPrice,
             totalFuel: totalLitre,
-            orders: [order]
+            orders: [order],
           });
         }
       }
@@ -7965,7 +8042,7 @@ export const fetchTopStationsByConsumption = async (): Promise<any[]> => {
         price: Math.round(station.totalPrice), // Round to nearest integer
         fuel: Math.round(station.totalFuel).toString(), // Convert to string for display
         type: getMostUsedFuelType(station.orders),
-        rank: index + 1
+        rank: index + 1,
       }));
 
     console.log("✅ Top stations aggregated:", topStations.length);
