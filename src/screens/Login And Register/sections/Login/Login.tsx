@@ -4,6 +4,7 @@ import EmailInput from "../../../../components/shared/Inputs/EmailInput";
 import { signInUser, signInWithGoogle } from "../../../../services/auth";
 import { useNavigate } from "react-router-dom";
 import { useGlobalState } from "../../../../context/GlobalStateContext";
+import { determineUserRoleAndRedirect } from "../../../../services/firestore";
 
 interface LoginProps {
   onSwitch: () => void;
@@ -28,28 +29,49 @@ export default function Login({ onSwitch }: LoginProps) {
     e.preventDefault();
     setLoading(true);
     setError("");
-    
+
     try {
       const result = await signInUser(form.email, form.password);
       console.log("Login successful ✅", result.user);
-      
+
+      // Determine user role and redirect path
+      const userEmail = result.user.email;
+      if (!userEmail) {
+        setError("البريد الإلكتروني غير متوفر");
+        setLoading(false);
+        return;
+      }
+
+      const roleInfo = await determineUserRoleAndRedirect(userEmail);
+
+      if (!roleInfo) {
+        setError("لا يمكن العثور على حسابك. يرجى التواصل مع المسؤول.");
+        setLoading(false);
+        return;
+      }
+
       // Update global state
       dispatch({
-        type: 'SET_USER',
+        type: "SET_USER",
         payload: {
           id: result.user.uid,
           name: result.user.displayName || result.user.email || "مستخدم",
           email: result.user.email || "",
           avatar: result.user.photoURL || "",
-          role: "admin",
+          role: roleInfo.userType,
         },
       });
-      dispatch({ type: 'SET_AUTHENTICATED', payload: true });
-      
-      navigate("/dashboard");
+      dispatch({ type: "SET_AUTHENTICATED", payload: true });
+
+      // Redirect to appropriate dashboard
+      console.log(`🎯 Redirecting to: ${roleInfo.redirectPath}`);
+      navigate(roleInfo.redirectPath);
     } catch (error: any) {
       console.error("Login error ❌:", error.message);
-      setError(error.message || "فشل تسجيل الدخول. يرجى التحقق من البريد الإلكتروني وكلمة المرور.");
+      setError(
+        error.message ||
+          "فشل تسجيل الدخول. يرجى التحقق من البريد الإلكتروني وكلمة المرور."
+      );
     } finally {
       setLoading(false);
     }
@@ -58,25 +80,43 @@ export default function Login({ onSwitch }: LoginProps) {
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError("");
-    
+
     try {
       const result = await signInWithGoogle();
       console.log("Google Login ✅", result.user);
-      
+
+      // Determine user role and redirect path
+      const userEmail = result.user.email;
+      if (!userEmail) {
+        setError("البريد الإلكتروني غير متوفر");
+        setLoading(false);
+        return;
+      }
+
+      const roleInfo = await determineUserRoleAndRedirect(userEmail);
+
+      if (!roleInfo) {
+        setError("لا يمكن العثور على حسابك. يرجى التواصل مع المسؤول.");
+        setLoading(false);
+        return;
+      }
+
       // Update global state
       dispatch({
-        type: 'SET_USER',
+        type: "SET_USER",
         payload: {
           id: result.user.uid,
           name: result.user.displayName || result.user.email || "مستخدم",
           email: result.user.email || "",
           avatar: result.user.photoURL || "",
-          role: "admin",
+          role: roleInfo.userType,
         },
       });
-      dispatch({ type: 'SET_AUTHENTICATED', payload: true });
-      
-      navigate("/dashboard");
+      dispatch({ type: "SET_AUTHENTICATED", payload: true });
+
+      // Redirect to appropriate dashboard
+      console.log(`🎯 Redirecting to: ${roleInfo.redirectPath}`);
+      navigate(roleInfo.redirectPath);
     } catch (error: any) {
       console.error("Google login failed ❌", error.message);
       setError(error.message || "فشل تسجيل الدخول باستخدام Google.");
@@ -94,13 +134,16 @@ export default function Login({ onSwitch }: LoginProps) {
         <h1 className="font-bold text-[var(--form-header-title-color)] ">
           تسجيل الدخول
         </h1>
-        
+
         {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative text-right" role="alert">
+          <div
+            className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative text-right"
+            role="alert"
+          >
             <span className="block sm:inline">{error}</span>
           </div>
         )}
-        
+
         <EmailInput onChange={handleChange} value={form.email} />
         <PasswordInput onChange={handleChange} value={form.password} />
         <button

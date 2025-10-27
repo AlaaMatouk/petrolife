@@ -3,10 +3,23 @@ import { Pagination } from "../../../../components/shared/Pagination/Pagination"
 import { ExportButton, LoadingSpinner } from "../../../../components/shared";
 import { carData } from "../../../../constants/data";
 import { useNavigate } from "react-router-dom";
-import { Car, CirclePlus, Settings, ChevronDown, ChevronUp, MoreVertical, Edit, Trash2, Eye } from "lucide-react";
+import {
+  Car,
+  CirclePlus,
+  Settings,
+  ChevronDown,
+  ChevronUp,
+  MoreVertical,
+  Edit,
+  Trash2,
+  Eye,
+} from "lucide-react";
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { fetchCompaniesCars, normalizeCarSize } from "../../../../services/firestore";
+import {
+  fetchCompaniesCars,
+  normalizeCarSize,
+} from "../../../../services/firestore";
 import { exportDataTable } from "../../../../services/exportService";
 import { useToast } from "../../../../context/ToastContext";
 
@@ -154,7 +167,7 @@ const ActionMenu = ({ car }: { car: any }) => {
 
   const handleAction = (action: string) => {
     console.log(`${action} clicked for car:`, car.carNumber);
-    if (action === 'view') {
+    if (action === "view") {
       navigate(`/car/${car.id}`);
     }
     setIsOpen(false);
@@ -162,40 +175,40 @@ const ActionMenu = ({ car }: { car: any }) => {
 
   const updateMenuPosition = () => {
     if (!buttonRef) return;
-    
+
     const rect = buttonRef.getBoundingClientRect();
     const menuWidth = 192; // 48 * 4 (w-48 = 12rem = 192px)
     const viewportWidth = window.innerWidth;
-    
+
     // Calculate position to the right of the icon
     let left = rect.right + window.scrollX + 4;
-    
+
     // If menu would go off-screen to the right, position it to the left of the icon
     if (left + menuWidth > viewportWidth) {
       left = rect.left + window.scrollX - menuWidth - 4;
     }
-    
+
     const newPosition = {
       top: rect.top + window.scrollY,
-      left: Math.max(4, left) // Ensure it doesn't go off-screen to the left
+      left: Math.max(4, left), // Ensure it doesn't go off-screen to the left
     };
-    
+
     setMenuPosition(newPosition);
   };
 
   useEffect(() => {
     if (isOpen) {
       updateMenuPosition();
-      
+
       const handleScroll = () => updateMenuPosition();
       const handleResize = () => updateMenuPosition();
-      
-      window.addEventListener('scroll', handleScroll);
-      window.addEventListener('resize', handleResize);
-      
+
+      window.addEventListener("scroll", handleScroll);
+      window.addEventListener("resize", handleResize);
+
       return () => {
-        window.removeEventListener('scroll', handleScroll);
-        window.removeEventListener('resize', handleResize);
+        window.removeEventListener("scroll", handleScroll);
+        window.removeEventListener("resize", handleResize);
       };
     }
   }, [isOpen, buttonRef]);
@@ -218,33 +231,33 @@ const ActionMenu = ({ car }: { car: any }) => {
             className="fixed inset-0 z-40"
             onClick={() => setIsOpen(false)}
           />
-          
+
           {/* Menu - Using portal to render outside table container */}
           {createPortal(
-            <div 
+            <div
               className="fixed w-48 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden"
               style={{
                 top: `${menuPosition.top}px`,
-                left: `${menuPosition.left}px`
+                left: `${menuPosition.left}px`,
               }}
             >
               <div className="py-1">
                 <button
-                  onClick={() => handleAction('view')}
+                  onClick={() => handleAction("view")}
                   className="w-full px-4 py-2 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-2 transition-colors"
                 >
                   <span>عرض التفاصيل</span>
                   <Eye className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={() => handleAction('edit')}
+                  onClick={() => handleAction("edit")}
                   className="w-full px-4 py-2 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-2 transition-colors"
                 >
                   <span>تعديل</span>
                   <Edit className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={() => handleAction('delete')}
+                  onClick={() => handleAction("delete")}
                   className="w-full px-4 py-2 text-right text-sm text-red-600 hover:bg-red-50 flex items-center justify-end gap-2 transition-colors"
                 >
                   <span>حذف</span>
@@ -261,13 +274,21 @@ const ActionMenu = ({ car }: { car: any }) => {
 };
 
 // Mobile Card Component
-const CarCard = ({ car, onToggleDetails, isExpanded }: { car: any, onToggleDetails: () => void, isExpanded: boolean }) => {
+const CarCard = ({
+  car,
+  onToggleDetails,
+  isExpanded,
+}: {
+  car: any;
+  onToggleDetails: () => void;
+  isExpanded: boolean;
+}) => {
   const navigate = useNavigate();
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4 shadow-sm">
       {/* Main Info - Always Visible */}
       <div className="flex items-center justify-between mb-3">
-        <div 
+        <div
           className="flex items-center gap-3 cursor-pointer"
           onClick={() => navigate(`/car/${car.id}`)}
         >
@@ -275,7 +296,9 @@ const CarCard = ({ car, onToggleDetails, isExpanded }: { car: any, onToggleDetai
             <Car className="w-6 h-6 text-blue-600" />
           </div>
           <div>
-            <h3 className="font-semibold text-gray-900 text-sm">{car.carName}</h3>
+            <h3 className="font-semibold text-gray-900 text-sm">
+              {car.carName}
+            </h3>
             <p className="text-gray-500 text-xs">{car.carNumber}</p>
           </div>
         </div>
@@ -285,7 +308,11 @@ const CarCard = ({ car, onToggleDetails, isExpanded }: { car: any, onToggleDetai
             onClick={onToggleDetails}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
-            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            {isExpanded ? (
+              <ChevronUp className="w-4 h-4" />
+            ) : (
+              <ChevronDown className="w-4 h-4" />
+            )}
           </button>
         </div>
       </div>
@@ -363,8 +390,8 @@ const CarCard = ({ car, onToggleDetails, isExpanded }: { car: any, onToggleDetai
 
 // Helper function to safely get value or return "-"
 const getValueOrDash = (value: any): string => {
-  if (value === null || value === undefined || value === '') {
-    return '-';
+  if (value === null || value === undefined || value === "") {
+    return "-";
   }
   return String(value);
 };
@@ -372,15 +399,15 @@ const getValueOrDash = (value: any): string => {
 // Helper function to get car size text in Arabic (using normalized function)
 const getCarSizeText = (size: string): string => {
   const normalized = normalizeCarSize(size);
-  return normalized === '-' ? getValueOrDash(size) : normalized;
+  return normalized === "-" ? getValueOrDash(size) : normalized;
 };
 
 // Helper function to get fuel type text in Arabic
 const getFuelTypeText = (fuelType: string): string => {
   const fuelMap: { [key: string]: string } = {
-    'fuel91': 'بنزين 91',
-    'fuel95': 'بنزين 95',
-    'diesel': 'ديزل',
+    fuel91: "بنزين 91",
+    fuel95: "بنزين 95",
+    diesel: "ديزل",
   };
   return fuelMap[fuelType?.toLowerCase()] || getValueOrDash(fuelType);
 };
@@ -397,21 +424,26 @@ const convertFirestoreToCars = (firestoreData: any[]): any[] => {
     fuelType: getFuelTypeText(car.fuelType),
     category: {
       name: getCarSizeText(car.plan?.carSize || car.size),
-      icon: "/img/component-4-8.svg"
+      icon: "/img/component-4-8.svg",
     },
-    drivers: car.driverIds && car.driverIds.length > 0 
-      ? [{
-          name: `${car.driverIds.length} سائق`,
-          avatar1: "/img/ellipse-17.svg",
-          avatar2: car.driverIds.length > 1 ? "/img/ellipse-18.svg" : null,
-          avatar3: car.driverIds.length > 2 ? "/img/ellipse-17.svg" : null,
-        }]
-      : [{
-          name: "لا يوجد سائقين",
-          avatar1: "/img/ellipse-17.svg",
-          avatar2: null,
-          avatar3: null,
-        }],
+    drivers:
+      car.driverIds && car.driverIds.length > 0
+        ? [
+            {
+              name: `${car.driverIds.length} سائق`,
+              avatar1: "/img/ellipse-17.svg",
+              avatar2: car.driverIds.length > 1 ? "/img/ellipse-18.svg" : null,
+              avatar3: car.driverIds.length > 2 ? "/img/ellipse-17.svg" : null,
+            },
+          ]
+        : [
+            {
+              name: "لا يوجد سائقين",
+              avatar1: "/img/ellipse-17.svg",
+              avatar2: null,
+              avatar3: null,
+            },
+          ],
   }));
 };
 
@@ -419,7 +451,9 @@ interface CarListSectionProps {
   searchQuery?: string;
 }
 
-export const CarListSection = ({ searchQuery = "" }: CarListSectionProps): JSX.Element => {
+export const CarListSection = ({
+  searchQuery = "",
+}: CarListSectionProps): JSX.Element => {
   const navigate = useNavigate();
   const { addToast } = useToast();
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
@@ -427,7 +461,7 @@ export const CarListSection = ({ searchQuery = "" }: CarListSectionProps): JSX.E
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  
+
   const ITEMS_PER_PAGE = 10;
 
   // Fetch cars data from Firestore on component mount
@@ -435,11 +469,11 @@ export const CarListSection = ({ searchQuery = "" }: CarListSectionProps): JSX.E
     const loadCarsData = async () => {
       setIsLoading(true);
       setError(null);
-      
+
       try {
         // console.log('Loading companies-cars data from Firestore...');
         const firestoreCars = await fetchCompaniesCars();
-        
+
         if (firestoreCars && firestoreCars.length > 0) {
           // console.log('Converting Firestore data to Cars format...');
           const convertedCars = convertFirestoreToCars(firestoreCars);
@@ -450,8 +484,8 @@ export const CarListSection = ({ searchQuery = "" }: CarListSectionProps): JSX.E
           setCars([]);
         }
       } catch (err) {
-        console.error('Error loading cars from Firestore:', err);
-        setError('فشل في تحميل بيانات السيارات.');
+        console.error("Error loading cars from Firestore:", err);
+        setError("فشل في تحميل بيانات السيارات.");
         setCars([]);
       } finally {
         setIsLoading(false);
@@ -476,47 +510,47 @@ export const CarListSection = ({ searchQuery = "" }: CarListSectionProps): JSX.E
     try {
       // Define columns for export
       const exportColumns = [
-        { key: 'carNumber', label: 'رقم السيارة' },
-        { key: 'carName', label: 'اسم السيارة' },
-        { key: 'brand', label: 'الماركة' },
-        { key: 'model', label: 'الطراز' },
-        { key: 'year', label: 'سنة الاصدار' },
-        { key: 'fuelType', label: 'نوع الوقود' },
-        { key: 'category', label: 'تصنيف السيارة' },
-        { key: 'drivers', label: 'السائقون' },
+        { key: "carNumber", label: "رقم السيارة" },
+        { key: "carName", label: "اسم السيارة" },
+        { key: "brand", label: "الماركة" },
+        { key: "model", label: "الطراز" },
+        { key: "year", label: "سنة الاصدار" },
+        { key: "fuelType", label: "نوع الوقود" },
+        { key: "category", label: "تصنيف السيارة" },
+        { key: "drivers", label: "السائقون" },
       ];
 
       await exportDataTable(
         filteredCars,
         exportColumns,
-        'cars-report',
-        format as 'excel' | 'pdf',
-        'تقرير السيارات'
+        "cars-report",
+        format as "excel" | "pdf",
+        "تقرير السيارات"
       );
 
       addToast({
-        title: 'نجح التصدير',
+        title: "نجح التصدير",
         message: `تم تصدير بيانات السيارات بنجاح`,
-        type: 'success',
+        type: "success",
       });
     } catch (error) {
-      console.error('Export error:', error);
+      console.error("Export error:", error);
       addToast({
-        title: 'فشل التصدير',
-        message: 'حدث خطأ أثناء تصدير البيانات',
-        type: 'error',
+        title: "فشل التصدير",
+        message: "حدث خطأ أثناء تصدير البيانات",
+        type: "error",
       });
     }
   };
 
   // Filter cars based on search query
-  const filteredCars = cars.filter(car => {
-    if (!searchQuery || searchQuery.trim() === '') {
+  const filteredCars = cars.filter((car) => {
+    if (!searchQuery || searchQuery.trim() === "") {
       return true;
     }
-    
+
     const query = searchQuery.toLowerCase().trim();
-    
+
     // Search across multiple fields
     return (
       car.carName?.toLowerCase().includes(query) ||
@@ -539,118 +573,125 @@ export const CarListSection = ({ searchQuery = "" }: CarListSectionProps): JSX.E
     <section className="flex flex-col items-start gap-5 w-full">
       {/* Loading State - Full page spinner */}
       {isLoading ? (
-        <LoadingSpinner 
-          size="lg" 
-          message="جاري التحميل..." 
-        />
+        <LoadingSpinner size="lg" message="جاري التحميل..." />
       ) : (
         <>
           {/* Error Message */}
           {error && (
             <div className="w-full p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-red-800 text-center [direction:rtl]">{error}</p>
+              <p className="text-red-800 text-center [direction:rtl]">
+                {error}
+              </p>
             </div>
           )}
 
-          {/* No Data Message */}
-          {!isLoading && !error && filteredCars.length === 0 && (
-            <div className="flex items-center justify-center w-full py-12 bg-white rounded-lg border border-gray-200">
-              <div className="text-center">
-                <Car className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-600 text-lg [direction:rtl]">
-                  {searchQuery ? 'لا توجد نتائج للبحث' : 'لا توجد سيارات'}
-                </p>
-                <p className="text-gray-400 text-sm mt-2 [direction:rtl]">
-                  {searchQuery ? 'جرب مصطلح بحث آخر' : 'قم بإضافة سيارة جديدة للبدء'}
-                </p>
+          {/* Data Display Section - Always show header */}
+          <div className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder">
+            <header className="flex flex-col items-end gap-[var(--corner-radius-extra-large)] relative self-stretch w-full flex-[0_0_auto]">
+              <div className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
+                <div className="inline-flex items-center gap-[var(--corner-radius-medium)] relative flex-[0_0_auto]">
+                  <button
+                    onClick={() => navigate("/addcar")}
+                    className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray transition-colors"
+                  >
+                    <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
+                      <div className="inline-flex items-center justify-center gap-2.5 pt-1 pb-0 px-0 relative flex-[0_0_auto]">
+                        <span className="w-fit mt-[-1.00px] font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-sec text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] relative font-body-body-2 text-[length:var(--body-body-2-font-size)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
+                          إضافة سيارة جديدة
+                        </span>
+                      </div>
+                      <CirclePlus className="w-4 h-4 text-gray-500" />
+                    </div>
+                  </button>
+
+                  <button className="flex flex-col w-[150px] items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray transition-colors">
+                    <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
+                      <div className="inline-flex items-center justify-center gap-2.5 pt-1 pb-0 px-0 relative flex-[0_0_auto]">
+                        <span className="w-fit mt-[-1.00px] font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-sec text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] relative font-body-body-2 text-[length:var(--body-body-2-font-size)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
+                          اعدادات السيارات
+                        </span>
+                      </div>
+                      <Settings className="w-4 h-4 text-gray-500" />
+                    </div>
+                  </button>
+
+                  <ExportButton onExport={handleExport} />
+                </div>
+
+                <div className="flex w-[134px] items-center justify-end gap-1.5 relative">
+                  <h1 className="relative w-[117px] h-5 mt-[-1.00px] ml-[-7.00px] font-[number:var(--subtitle-subtitle-2-font-weight)] text-color-mode-text-icons-t-sec text-[length:var(--subtitle-subtitle-2-font-size)] tracking-[var(--subtitle-subtitle-2-letter-spacing)] leading-[var(--subtitle-subtitle-2-line-height)] [direction:rtl] font-subtitle-subtitle-2 whitespace-nowrap [font-style:var(--subtitle-subtitle-2-font-style)]">
+                    السيــــــــــــــارت ({filteredCars.length})
+                  </h1>
+                  <Car className="w-5 h-5 text-gray-500" />
+                </div>
               </div>
-            </div>
-          )}
+            </header>
 
-          {/* Data Display - Only show if we have data */}
-          {cars.length > 0 && (
-            <div className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder">
-        <header className="flex flex-col items-end gap-[var(--corner-radius-extra-large)] relative self-stretch w-full flex-[0_0_auto]">
-          <div className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
-            <div className="inline-flex items-center gap-[var(--corner-radius-medium)] relative flex-[0_0_auto]">
-              <button
-                onClick={() => navigate("/addcar")}
-                className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray transition-colors"
-              >
-                <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
-                  <div className="inline-flex items-center justify-center gap-2.5 pt-1 pb-0 px-0 relative flex-[0_0_auto]">
-                    <span className="w-fit mt-[-1.00px] font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-sec text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] relative font-body-body-2 text-[length:var(--body-body-2-font-size)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
-                      إضافة سيارة جديدة
-                    </span>
-                  </div>
-                  <CirclePlus className="w-4 h-4 text-gray-500" />
+            {/* No Data Message */}
+            {!isLoading && !error && filteredCars.length === 0 && (
+              <div className="flex items-center justify-center w-full py-12">
+                <div className="text-center">
+                  <Car className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-600 text-lg [direction:rtl]">
+                    {searchQuery ? "لا توجد نتائج للبحث" : "لا توجد سيارات"}
+                  </p>
+                  <p className="text-gray-400 text-sm mt-2 [direction:rtl]">
+                    {searchQuery
+                      ? "جرب مصطلح بحث آخر"
+                      : "قم بإضافة سيارة جديدة للبدء"}
+                  </p>
                 </div>
-              </button>
+              </div>
+            )}
 
-              <button className="flex flex-col w-[150px] items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray transition-colors">
-                <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
-                  <div className="inline-flex items-center justify-center gap-2.5 pt-1 pb-0 px-0 relative flex-[0_0_auto]">
-                    <span className="w-fit mt-[-1.00px] font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-sec text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] relative font-body-body-2 text-[length:var(--body-body-2-font-size)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
-                      اعدادات السيارات
-                    </span>
+            <main className="flex flex-col items-start gap-7 relative self-stretch w-full flex-[0_0_auto]">
+              {/* Only show table/data if we have cars */}
+              {filteredCars.length > 0 && (
+                <>
+                  <div className="flex flex-col items-end gap-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto]">
+                    {/* Desktop Table View */}
+                    <div className="hidden lg:block w-full">
+                      <Table
+                        columns={carColumns}
+                        data={Array.isArray(paginatedCars) ? paginatedCars : []}
+                        className="relative self-stretch w-full flex-[0_0_auto]"
+                      />
+                    </div>
+
+                    {/* Tablet Responsive Table View */}
+                    <div className="hidden md:block lg:hidden w-full">
+                      <Table
+                        columns={carColumns.filter(
+                          (col) =>
+                            col.priority === "high" || col.priority === "medium"
+                        )}
+                        data={Array.isArray(paginatedCars) ? paginatedCars : []}
+                        className="relative self-stretch w-full flex-[0_0_auto]"
+                      />
+                    </div>
+
+                    {/* Mobile Card View */}
+                    <div className="md:hidden space-y-4 w-full">
+                      {paginatedCars.map((car) => (
+                        <CarCard
+                          key={car.id}
+                          car={car}
+                          onToggleDetails={() => toggleCardExpansion(car.id)}
+                          isExpanded={expandedCards.has(car.id)}
+                        />
+                      ))}
+                    </div>
                   </div>
-                  <Settings className="w-4 h-4 text-gray-500" />
-                </div>
-              </button>
 
-              <ExportButton onExport={handleExport} />
-            </div>
-
-            <div className="flex w-[134px] items-center justify-end gap-1.5 relative">
-              <h1 className="relative w-[117px] h-5 mt-[-1.00px] ml-[-7.00px] font-[number:var(--subtitle-subtitle-2-font-weight)] text-color-mode-text-icons-t-sec text-[length:var(--subtitle-subtitle-2-font-size)] tracking-[var(--subtitle-subtitle-2-letter-spacing)] leading-[var(--subtitle-subtitle-2-line-height)] [direction:rtl] font-subtitle-subtitle-2 whitespace-nowrap [font-style:var(--subtitle-subtitle-2-font-style)]">
-                السيــــــــــــــارت ({filteredCars.length})
-              </h1>
-              <Car className="w-5 h-5 text-gray-500" />
-            </div>
+                  <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={setCurrentPage}
+                  />
+                </>
+              )}
+            </main>
           </div>
-        </header>
-
-        <main className="flex flex-col items-start gap-7 relative self-stretch w-full flex-[0_0_auto]">
-          <div className="flex flex-col items-end gap-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto]">
-            {/* Desktop Table View */}
-            <div className="hidden lg:block w-full">
-              <Table
-                columns={carColumns}
-                data={Array.isArray(paginatedCars) ? paginatedCars : []}
-                className="relative self-stretch w-full flex-[0_0_auto]"
-              />
-            </div>
-
-            {/* Tablet Responsive Table View */}
-            <div className="hidden md:block lg:hidden w-full">
-              <Table
-                columns={carColumns.filter(col => col.priority === 'high' || col.priority === 'medium')}
-                data={Array.isArray(paginatedCars) ? paginatedCars : []}
-                className="relative self-stretch w-full flex-[0_0_auto]"
-              />
-            </div>
-
-            {/* Mobile Card View */}
-            <div className="md:hidden space-y-4 w-full">
-              {paginatedCars.map((car) => (
-                <CarCard
-                  key={car.id}
-                  car={car}
-                  onToggleDetails={() => toggleCardExpansion(car.id)}
-                  isExpanded={expandedCards.has(car.id)}
-                />
-              ))}
-            </div>
-          </div>
-
-          <Pagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={setCurrentPage}
-          />
-        </main>
-      </div>
-          )}
         </>
       )}
     </section>

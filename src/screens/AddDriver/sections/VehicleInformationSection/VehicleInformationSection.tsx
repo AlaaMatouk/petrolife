@@ -15,6 +15,7 @@ import { useNavigate } from "react-router-dom";
 import { useToast } from "../../../../context/ToastContext";
 import { validateDriverForm } from "../../../../utils/validation";
 import { addCompanyDriver } from "../../../../services/firestore";
+import { registerUserWithPhoneNumber } from "../../../../services/auth";
 
 const initialValues = {
   phone: "",
@@ -176,6 +177,34 @@ export const VehicleInformationSection = (): JSX.Element => {
 
       console.log("Driver added to Firestore:", result);
 
+      // Register user in Firebase Auth via Cloud Function
+      console.log(
+        "Registering user in Firebase Auth with phone:",
+        form.values.phone
+      );
+      const authResult = await registerUserWithPhoneNumber(form.values.phone);
+
+      if (authResult.success) {
+        console.log(
+          "✅ Firebase Auth registration successful:",
+          authResult.message
+        );
+        if (authResult.uid) {
+          console.log("Firebase Auth UID:", authResult.uid);
+        }
+      } else {
+        console.error(
+          "⚠️ Firebase Auth registration failed:",
+          authResult.message
+        );
+        // Show warning but don't stop the process
+        addToast({
+          title: "تحذير",
+          message: `تمت إضافة السائق إلى Firestore، لكن حدث خطأ في إنشاء حساب المصادقة: ${authResult.message}`,
+          type: "warning",
+        });
+      }
+
       // Also add to local state for immediate UI update
       const newDriver = {
         id: result.id,
@@ -192,12 +221,16 @@ export const VehicleInformationSection = (): JSX.Element => {
 
       addDriver(newDriver);
 
-      // Show success message
-      addToast({
-        title: "تم إضافة السائق بنجاح",
-        message: `تم إضافة السائق ${form.values.driverName} إلى Firestore بنجاح`,
-        type: "success",
-      });
+      // Show success message only if Auth was also successful
+      if (authResult.success) {
+        addToast({
+          title: "تم إضافة السائق بنجاح",
+          message: `تم إضافة السائق ${form.values.driverName} وإنشاء حساب المصادقة بنجاح`,
+          type: "success",
+        });
+      } else {
+        // If Auth failed, we already showed a warning above
+      }
 
       // Reset form
       form.resetForm();
