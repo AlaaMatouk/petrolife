@@ -1,39 +1,68 @@
 import { ArrowLeft, Edit, Plus, Trash2 } from "lucide-react";
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { updateService } from "../../../../services/firestore";
+import { useToast } from "../../../../context/ToastContext";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { storage } from "../../../../config/firebase";
 
 interface Service {
-  id: number;
-  image: string;
-  title: string;
-  description: string;
-  unit: string;
-  status: "active" | "inactive";
-}
-
-interface ServiceOption {
-  subCategory: string;
-  mainCategory: string;
-  companyPrice: number;
-  price: number;
-  description: string;
+  id: string | number;
+  image?: string;
+  title?: string | { ar: string; en: string };
+  description?: string;
+  desc?: string | { ar: string; en: string };
+  unit?: string | { ar: string; en: string };
+  status?: "active" | "inactive";
+  serviceId?: string;
+  options?: any[];
 }
 
 interface ServiceInfoProps {
-  serviceData: Service;
+  serviceData: any;
   isAddMode?: boolean;
 }
 
-export const ServiceInfo = ({ serviceData, isAddMode = false }: ServiceInfoProps) => {
+// Helper function to extract string from multilingual object or return string
+const extractString = (value: any, fallback: string = ""): string => {
+  if (!value) return fallback;
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    if (value.ar) return value.ar;
+    if (value.en) return value.en;
+    const firstValue = Object.values(value)[0];
+    if (typeof firstValue === "string") return firstValue;
+  }
+  return fallback;
+};
+
+export const ServiceInfo = ({
+  serviceData,
+  isAddMode = false,
+}: ServiceInfoProps) => {
   const navigate = useNavigate();
-  const [editedService, setEditedService] = useState<Service>(serviceData);
-  const [serviceOption, setServiceOption] = useState<ServiceOption>({
-    subCategory: "بنزين 91",
-    mainCategory: "وقود",
-    companyPrice: 2.33,
-    price: 2.33,
-    description: "Okten95"
+
+  // Extract and format service data for editing
+  const [editedService, setEditedService] = useState<Service>({
+    id: serviceData.id || "",
+    image: typeof serviceData.image === "string" ? serviceData.image : "",
+    title: extractString(serviceData.title),
+    description: extractString(serviceData.desc || serviceData.description),
+    unit: extractString(serviceData.unit),
+    status:
+      serviceData.status === "active" || serviceData.isActive
+        ? "active"
+        : "inactive",
+    serviceId: serviceData.serviceId || serviceData.id || "",
   });
+
+  const { addToast } = useToast();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Get options from serviceData and make them editable
+  const [serviceOptions, setServiceOptions] = useState<any[]>(
+    serviceData.options || []
+  );
 
   const handleInputChange = (field: keyof Service, value: string) => {
     setEditedService((prev) => ({
@@ -42,26 +71,83 @@ export const ServiceInfo = ({ serviceData, isAddMode = false }: ServiceInfoProps
     }));
   };
 
-  const handleOptionChange = (field: keyof ServiceOption, value: string | number) => {
-    setServiceOption((prev) => ({
-      ...prev,
+  const handleOptionChange = (index: number, field: string, value: any) => {
+    const updatedOptions = [...serviceOptions];
+    updatedOptions[index] = {
+      ...updatedOptions[index],
       [field]: value,
-    }));
+    };
+    setServiceOptions(updatedOptions);
   };
 
-  const handleSubmit = () => {
-    console.log("Saving service changes:", editedService);
-    console.log("Saving service option:", serviceOption);
-    // TODO: Implement actual save logic (API call)
-    alert("تم حفظ التعديلات بنجاح!");
+  const handleSubmit = async () => {
+    setIsSubmitting(true);
+    try {
+      // Handle image upload if it's base64
+      let imageUrl = editedService.image || "";
+      if (editedService.image && editedService.image.startsWith("data:image")) {
+        try {
+          addToast({ message: "جاري رفع الصورة...", type: "info" });
+          const response = await fetch(editedService.image);
+          const blob = await response.blob();
+          const timestamp = Date.now();
+          const fileName = `services/${timestamp}_${Math.random()
+            .toString(36)
+            .substring(7)}.png`;
+          const storageRef = ref(storage, fileName);
+          await uploadBytes(storageRef, blob);
+          imageUrl = await getDownloadURL(storageRef);
+        } catch (uploadError) {
+          console.error("Error uploading image:", uploadError);
+          addToast({
+            message: "فشل في رفع الصورة. سيتم حفظ الخدمة بدون صورة",
+            type: "warning",
+          });
+        }
+      }
+
+      // Prepare service data for Firestore
+      const serviceUpdateData: any = {
+        title:
+          typeof editedService.title === "object"
+            ? editedService.title
+            : { ar: editedService.title, en: editedService.title },
+        desc:
+          typeof editedService.description === "object"
+            ? editedService.description
+            : { ar: editedService.description, en: editedService.description },
+        unit:
+          typeof editedService.unit === "object"
+            ? editedService.unit
+            : { ar: editedService.unit, en: editedService.unit },
+        image: imageUrl,
+        status: editedService.status || "active",
+        isActive: editedService.status === "active",
+        ...(serviceOptions.length > 0 && { options: serviceOptions }),
+      };
+
+      await updateService(String(editedService.id), serviceUpdateData);
+      addToast({ message: "تم حفظ التعديلات بنجاح!", type: "success" });
+      // Redirect to services table after successful save
+      setTimeout(() => {
+        navigate("/application-services");
+      }, 500);
+    } catch (error) {
+      console.error("Error updating service:", error);
+      addToast({
+        message: "فشل في حفظ التعديلات. يرجى المحاولة مرة أخرى",
+        type: "error",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleDelete = () => {
+  const handleDeleteOption = (index: number) => {
     if (window.confirm("هل أنت متأكد من حذف هذا الخيار؟")) {
-      console.log("Deleting service option:", { editedService, serviceOption });
-      // TODO: Implement actual delete logic (API call)
-      alert("تم حذف الخيار بنجاح!");
-      navigate(-1); // Navigate back after deletion
+      const updatedOptions = serviceOptions.filter((_, i) => i !== index);
+      setServiceOptions(updatedOptions);
+      addToast({ message: "تم حذف الخيار بنجاح", type: "success" });
     }
   };
 
@@ -75,7 +161,7 @@ export const ServiceInfo = ({ serviceData, isAddMode = false }: ServiceInfoProps
 
   // Extract service information
   const serviceInfo = {
-    id: getValueOrDash(editedService.id),
+    id: getValueOrDash(editedService.serviceId || editedService.id),
     title: getValueOrDash(editedService.title),
     description: getValueOrDash(editedService.description),
     unit: getValueOrDash(editedService.unit),
@@ -95,7 +181,7 @@ export const ServiceInfo = ({ serviceData, isAddMode = false }: ServiceInfoProps
     {
       label: "الرقم التعريفي",
       value: serviceInfo.id,
-      editable: true,
+      editable: false,
       field: "id" as keyof Service,
     },
     {
@@ -227,7 +313,11 @@ export const ServiceInfo = ({ serviceData, isAddMode = false }: ServiceInfoProps
               <h1 className="w-[145px] h-5 mt-[-1.00px] font-bold text-[var(--form-section-title-color)] text-[length:var(--subtitle-subtitle-2-font-size)] tracking-[var(--subtitle-subtitle-2-letter-spacing)] leading-[var(--subtitle-subtitle-2-line-height)] whitespace-nowrap relative [direction:rtl] [font-style:var(--subtitle-subtitle-2-font-style)]">
                 {isAddMode ? "إضافة خدمة جديدة" : "تعديل الخدمة"}
               </h1>
-              {isAddMode ? <Plus className="w-5 h-5 text-gray-500" /> : <Edit className="w-5 h-5 text-gray-500" />}
+              {isAddMode ? (
+                <Plus className="w-5 h-5 text-gray-500" />
+              ) : (
+                <Edit className="w-5 h-5 text-gray-500" />
+              )}
             </div>
           </nav>
         </header>
@@ -274,9 +364,10 @@ export const ServiceInfo = ({ serviceData, isAddMode = false }: ServiceInfoProps
               <div className="flex justify-end mt-6">
                 <button
                   onClick={handleSubmit}
-                  className="px-[10px] py-3 bg-[#F5F6F766] text-[#5B738B] rounded-[8px] font-medium"
+                  disabled={isSubmitting}
+                  className="px-[10px] py-3 bg-[#F5F6F766] text-[#5B738B] rounded-[8px] font-medium disabled:opacity-50"
                 >
-                  حفظ التغييرات
+                  {isSubmitting ? "جاري الحفظ..." : "حفظ التغييرات"}
                 </button>
               </div>
             </form>
@@ -284,7 +375,7 @@ export const ServiceInfo = ({ serviceData, isAddMode = false }: ServiceInfoProps
         </section>
       </main>
 
-      {/* Second Main Section */}
+      {/* Second Main Section - Options */}
       <main
         className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] relative bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder mt-6"
         data-model-id="service-additional-info"
@@ -310,449 +401,151 @@ export const ServiceInfo = ({ serviceData, isAddMode = false }: ServiceInfoProps
           </nav>
         </header>
 
-{/* First Choice */}
-        <section
-          className="flex flex-col border-[0.3px] border-[#A9B4BE] rounded-[12px] p-3 items-start gap-5 relative self-stretch w-full flex-[0_0_auto]"
-          style={{ border: "0.3px solid #A9B4BE" }}
-        >
-          <div className="flex flex-col items-end gap-2.5 relative self-stretch w-full flex-[0_0_auto]">
-            <form className="flex flex-col items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
-              {/* Top Row - Categories */}
-              <div className="flex items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
-                <div className="flex flex-col gap-2 flex-1">
-                  <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
-                    التصنيف الفرعي
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={serviceOption.subCategory}
-                      onChange={(e) => handleOptionChange("subCategory", e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent appearance-none w-full"
-                      dir="rtl"
-                    >
-                      <option value="بنزين 91">بنزين 91</option>
-                      <option value="بنزين 95">بنزين 95</option>
-                      <option value="ديزل">ديزل</option>
-                    </select>
-                    <div className="absolute left-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
-                      <svg
-                        className="w-4 h-4 text-gray-400"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 19l-7-7 7-7"
-                        />
-                      </svg>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-2 flex-1">
-                  <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
-                    التصنيف الرئيسي
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={serviceOption.mainCategory}
-                      onChange={(e) => handleOptionChange("mainCategory", e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent appearance-none w-full"
-                      dir="rtl"
-                    >
-                      <option value="وقود">وقود</option>
-                      <option value="خدمات">خدمات</option>
-                      <option value="منتجات">منتجات</option>
-                    </select>
-                    <div className="absolute left-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
-                      <svg
-                        className="w-4 h-4 text-gray-400"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 19l-7-7 7-7"
-                        />
-                      </svg>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Middle Row - Prices */}
-              <div className="flex items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
-                <div className="flex flex-col gap-2 flex-1">
-                  <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
-                    السعر للشركات
-                  </label>
-                  <div className="relative">
+        <section className="flex flex-col items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
+          {/* Options List - Editable */}
+          {serviceOptions.length > 0 ? (
+            serviceOptions.map((option: any, index: number) => (
+              <div
+                key={index}
+                className="flex flex-col border-[0.3px] border-[#A9B4BE] rounded-[12px] p-3 items-start gap-5 relative self-stretch w-full"
+                style={{ border: "0.3px solid #A9B4BE" }}
+              >
+                <form className="flex flex-col items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
+                  {/* Top Row - Title */}
+                  <div className="flex flex-col gap-2 relative self-stretch w-full flex-[0_0_auto]">
+                    <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
+                      التصنيف الفرعي
+                    </label>
                     <input
-                      type="number"
-                      value={serviceOption.companyPrice}
-                      onChange={(e) => handleOptionChange("companyPrice", parseFloat(e.target.value) || 0)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent w-full"
+                      type="text"
+                      value={
+                        typeof option.title === "object"
+                          ? option.title.ar
+                          : option.title || ""
+                      }
+                      onChange={(e) =>
+                        handleOptionChange(index, "title", {
+                          ar: e.target.value,
+                          en: e.target.value,
+                        })
+                      }
+                      className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent"
                       dir="rtl"
-                      placeholder="أدخل السعر للشركات"
+                      placeholder="أدخل التصنيف الفرعي"
                     />
                   </div>
-                </div>
 
-                <div className="flex flex-col gap-2 flex-1">
-                  <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
-                    السعر
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      value={serviceOption.price}
-                      onChange={(e) => handleOptionChange("price", parseFloat(e.target.value) || 0)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent w-full"
-                      dir="rtl"
-                      placeholder="أدخل السعر"
-                    />
-                  </div>
-                </div>
-              </div>
+                  {/* Category Display */}
+                  {option.category && (
+                    <div className="flex flex-col gap-2 relative self-stretch w-full flex-[0_0_auto]">
+                      <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
+                        الفئة الرئيسية
+                      </label>
+                      <input
+                        type="text"
+                        value={
+                          typeof option.category.name === "object"
+                            ? option.category.name.ar || option.category.name.en
+                            : option.category.name ||
+                              option.category.label ||
+                              ""
+                        }
+                        disabled
+                        className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal bg-gray-100 cursor-not-allowed"
+                        dir="rtl"
+                      />
+                    </div>
+                  )}
 
-              {/* Bottom Row - Description */}
-              <div className="flex flex-col gap-2 relative self-stretch w-full flex-[0_0_auto]">
-                <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
-                  الوصف
-                </label>
-                <input
-                  type="text"
-                  value={serviceOption.description}
-                  onChange={(e) => handleOptionChange("description", e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent"
-                  dir="rtl"
-                  placeholder="أدخل الوصف"
-                />
-              </div>
+                  {/* Middle Row - Prices */}
+                  <div className="flex items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
+                    <div className="flex flex-col gap-2 flex-1">
+                      <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
+                        السعر للشركات
+                      </label>
+                      <input
+                        type="number"
+                        value={option.companyPrice || 0}
+                        onChange={(e) =>
+                          handleOptionChange(
+                            index,
+                            "companyPrice",
+                            parseFloat(e.target.value) || 0
+                          )
+                        }
+                        className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent w-full"
+                        dir="rtl"
+                        placeholder="أدخل السعر للشركات"
+                      />
+                    </div>
 
-              {/* Submit and Delete Buttons */}
-              <div className="flex justify-end gap-3 mt-5">
-                <button
-                  onClick={handleSubmit}
-                  className="px-[10px] py-3 bg-[#F5F6F766] text-[#5B738B] rounded-[8px] font-medium"
-                >
-                  حفظ التغييرات
-                </button>
-                <button
-                  onClick={handleDelete}
-                  className="px-[10px] py-[10px] bg-white text-[#EE3939] rounded-[8px] font-medium transition-colors flex items-center gap-2"
-                  style={{ border: "0.5px solid #EE3939" }}
-                >
-                  حذف الخيار
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </form>
-          </div>
-        </section>
-
-        {/* Second Choice */}
-        <section
-          className="flex flex-col border-[0.3px] border-[#A9B4BE] rounded-[12px] p-3 items-start gap-5 relative self-stretch w-full flex-[0_0_auto]"
-          style={{ border: "0.3px solid #A9B4BE" }}
-        >
-          <div className="flex flex-col items-end gap-2.5 relative self-stretch w-full flex-[0_0_auto]">
-            <form className="flex flex-col items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
-              {/* Top Row - Categories */}
-              <div className="flex items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
-                <div className="flex flex-col gap-2 flex-1">
-                  <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
-                    التصنيف الفرعي
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={serviceOption.subCategory}
-                      onChange={(e) => handleOptionChange("subCategory", e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent appearance-none w-full"
-                      dir="rtl"
-                    >
-                      <option value="بنزين 91">بنزين 91</option>
-                      <option value="بنزين 95">بنزين 95</option>
-                      <option value="ديزل">ديزل</option>
-                    </select>
-                    <div className="absolute left-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
-                      <svg
-                        className="w-4 h-4 text-gray-400"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 19l-7-7 7-7"
-                        />
-                      </svg>
+                    <div className="flex flex-col gap-2 flex-1">
+                      <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
+                        السعر
+                      </label>
+                      <input
+                        type="number"
+                        value={option.price || 0}
+                        onChange={(e) =>
+                          handleOptionChange(
+                            index,
+                            "price",
+                            parseFloat(e.target.value) || 0
+                          )
+                        }
+                        className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent w-full"
+                        dir="rtl"
+                        placeholder="أدخل السعر"
+                      />
                     </div>
                   </div>
-                </div>
 
-                <div className="flex flex-col gap-2 flex-1">
-                  <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
-                    التصنيف الرئيسي
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={serviceOption.mainCategory}
-                      onChange={(e) => handleOptionChange("mainCategory", e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent appearance-none w-full"
+                  {/* Bottom Row - Description */}
+                  <div className="flex flex-col gap-2 relative self-stretch w-full flex-[0_0_auto]">
+                    <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
+                      الوصف
+                    </label>
+                    <input
+                      type="text"
+                      value={
+                        typeof option.desc === "object"
+                          ? option.desc.ar
+                          : option.desc || ""
+                      }
+                      onChange={(e) =>
+                        handleOptionChange(index, "desc", {
+                          ar: e.target.value,
+                          en: e.target.value,
+                        })
+                      }
+                      className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent"
                       dir="rtl"
+                      placeholder="أدخل الوصف"
+                    />
+                  </div>
+
+                  {/* Delete Button */}
+                  <div className="flex justify-end w-full mt-2">
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteOption(index)}
+                      className="px-[10px] py-[10px] bg-white text-[#EE3939] rounded-[8px] font-medium transition-colors flex items-center gap-2"
+                      style={{ border: "0.5px solid #EE3939" }}
                     >
-                      <option value="وقود">وقود</option>
-                      <option value="خدمات">خدمات</option>
-                      <option value="منتجات">منتجات</option>
-                    </select>
-                    <div className="absolute left-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
-                      <svg
-                        className="w-4 h-4 text-gray-400"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 19l-7-7 7-7"
-                        />
-                      </svg>
-                    </div>
+                      حذف الخيار
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
-                </div>
+                </form>
               </div>
-
-              {/* Middle Row - Prices */}
-              <div className="flex items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
-                <div className="flex flex-col gap-2 flex-1">
-                  <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
-                    السعر للشركات
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      value={serviceOption.companyPrice}
-                      onChange={(e) => handleOptionChange("companyPrice", parseFloat(e.target.value) || 0)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent w-full"
-                      dir="rtl"
-                      placeholder="أدخل السعر للشركات"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-2 flex-1">
-                  <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
-                    السعر
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      value={serviceOption.price}
-                      onChange={(e) => handleOptionChange("price", parseFloat(e.target.value) || 0)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent w-full"
-                      dir="rtl"
-                      placeholder="أدخل السعر"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Bottom Row - Description */}
-              <div className="flex flex-col gap-2 relative self-stretch w-full flex-[0_0_auto]">
-                <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
-                  الوصف
-                </label>
-                <input
-                  type="text"
-                  value={serviceOption.description}
-                  onChange={(e) => handleOptionChange("description", e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent"
-                  dir="rtl"
-                  placeholder="أدخل الوصف"
-                />
-              </div>
-
-              {/* Submit and Delete Buttons */}
-              <div className="flex justify-end gap-3 mt-5">
-                <button
-                  onClick={handleSubmit}
-                  className="px-[10px] py-3 bg-[#F5F6F766] text-[#5B738B] rounded-[8px] font-medium"
-                >
-                  حفظ التغييرات
-                </button>
-                <button
-                  onClick={handleDelete}
-                  className="px-[10px] py-[10px] bg-white text-[#EE3939] rounded-[8px] font-medium transition-colors flex items-center gap-2"
-                  style={{ border: "0.5px solid #EE3939" }}
-                >
-                  حذف الخيار
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </form>
-          </div>
-        </section>
-
-        {/* Third Choice */}
-        <section
-          className="flex flex-col border-[0.3px] border-[#A9B4BE] rounded-[12px] p-3 items-start gap-5 relative self-stretch w-full flex-[0_0_auto]"
-          style={{ border: "0.3px solid #A9B4BE" }}
-        >
-          <div className="flex flex-col items-end gap-2.5 relative self-stretch w-full flex-[0_0_auto]">
-            <form className="flex flex-col items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
-              {/* Top Row - Categories */}
-              <div className="flex items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
-                <div className="flex flex-col gap-2 flex-1">
-                  <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
-                    التصنيف الفرعي
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={serviceOption.subCategory}
-                      onChange={(e) => handleOptionChange("subCategory", e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent appearance-none w-full"
-                      dir="rtl"
-                    >
-                      <option value="بنزين 91">بنزين 91</option>
-                      <option value="بنزين 95">بنزين 95</option>
-                      <option value="ديزل">ديزل</option>
-                    </select>
-                    <div className="absolute left-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
-                      <svg
-                        className="w-4 h-4 text-gray-400"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 19l-7-7 7-7"
-                        />
-                      </svg>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-2 flex-1">
-                  <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
-                    التصنيف الرئيسي
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={serviceOption.mainCategory}
-                      onChange={(e) => handleOptionChange("mainCategory", e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent appearance-none w-full"
-                      dir="rtl"
-                    >
-                      <option value="وقود">وقود</option>
-                      <option value="خدمات">خدمات</option>
-                      <option value="منتجات">منتجات</option>
-                    </select>
-                    <div className="absolute left-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
-                      <svg
-                        className="w-4 h-4 text-gray-400"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 19l-7-7 7-7"
-                        />
-                      </svg>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Middle Row - Prices */}
-              <div className="flex items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
-                <div className="flex flex-col gap-2 flex-1">
-                  <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
-                    السعر للشركات
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      value={serviceOption.companyPrice}
-                      onChange={(e) => handleOptionChange("companyPrice", parseFloat(e.target.value) || 0)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent w-full"
-                      dir="rtl"
-                      placeholder="أدخل السعر للشركات"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-2 flex-1">
-                  <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
-                    السعر
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      value={serviceOption.price}
-                      onChange={(e) => handleOptionChange("price", parseFloat(e.target.value) || 0)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent w-full"
-                      dir="rtl"
-                      placeholder="أدخل السعر"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Bottom Row - Description */}
-              <div className="flex flex-col gap-2 relative self-stretch w-full flex-[0_0_auto]">
-                <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
-                  الوصف
-                </label>
-                <input
-                  type="text"
-                  value={serviceOption.description}
-                  onChange={(e) => handleOptionChange("description", e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-[var(--form-readonly-input-text-color)] [direction:rtl] text-right font-normal focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent"
-                  dir="rtl"
-                  placeholder="أدخل الوصف"
-                />
-              </div>
-
-              {/* Submit and Delete Buttons */}
-              <div className="flex justify-end gap-3 mt-5">
-                <button
-                  onClick={handleSubmit}
-                  className="px-[10px] py-3 bg-[#F5F6F766] text-[#5B738B] rounded-[8px] font-medium"
-                >
-                  حفظ التغييرات
-                </button>
-                <button
-                  onClick={handleDelete}
-                  className="px-[10px] py-[10px] bg-white text-[#EE3939] rounded-[8px] font-medium transition-colors flex items-center gap-2"
-                  style={{ border: "0.5px solid #EE3939" }}
-                >
-                  حذف الخيار
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </form>
-          </div>
+            ))
+          ) : (
+            <div className="w-full text-center py-8 text-gray-500">
+              لا توجد خيارات لهذه الخدمة
+            </div>
+          )}
         </section>
       </main>
-
-      
     </div>
   );
 };

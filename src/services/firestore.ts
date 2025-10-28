@@ -2425,6 +2425,35 @@ export const fetchAllCategories = async (): Promise<any[]> => {
 };
 
 /**
+ * Get a single service by ID from Firestore
+ * @param serviceId - Service document ID
+ * @returns Promise with the service data
+ */
+export const getServiceById = async (serviceId: string): Promise<any> => {
+  try {
+    console.log("📋 Fetching service by ID:", serviceId);
+
+    const serviceDocRef = doc(db, "services", serviceId);
+    const serviceDoc = await getDoc(serviceDocRef);
+
+    if (!serviceDoc.exists()) {
+      throw new Error("Service not found");
+    }
+
+    const serviceData = {
+      id: serviceDoc.id,
+      ...serviceDoc.data(),
+    };
+
+    console.log("✅ Service fetched:", serviceData);
+    return serviceData;
+  } catch (error) {
+    console.error("❌ Error fetching service:", error);
+    throw error;
+  }
+};
+
+/**
  * Add a new service to Firestore
  * @param serviceData - Service data to add
  * @returns Promise with the created service document
@@ -2455,6 +2484,38 @@ export const addService = async (serviceData: any): Promise<any> => {
     };
   } catch (error) {
     console.error("❌ Error adding service to Firestore:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update a service in Firestore
+ * @param serviceId - Service document ID
+ * @param serviceData - Updated service data
+ * @returns Promise with the updated service data
+ */
+export const updateService = async (
+  serviceId: string,
+  serviceData: any
+): Promise<any> => {
+  try {
+    console.log("📝 Updating service in Firestore...", serviceId, serviceData);
+
+    const serviceDocRef = doc(db, "services", serviceId);
+
+    // Prepare update data (exclude id and Firestore metadata)
+    const { id, ...updateData } = serviceData;
+
+    await updateDoc(serviceDocRef, updateData);
+
+    console.log("✅ Service updated successfully");
+
+    return {
+      id: serviceId,
+      ...updateData,
+    };
+  } catch (error) {
+    console.error("❌ Error updating service in Firestore:", error);
     throw error;
   }
 };

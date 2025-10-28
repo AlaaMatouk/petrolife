@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useOutletContext } from "react-router-dom";
 import { ServiceInfo } from "./ServiceInfo";
-import { mockServices } from "./Services";
+import { getServiceById } from "../../../../services/firestore";
 
 interface OutletContext {
   searchQuery: string;
@@ -28,24 +28,24 @@ export const ServiceDetails = (): JSX.Element => {
       try {
         setIsLoading(true);
 
-        // Simulate API delay
-        await new Promise((resolve) => setTimeout(resolve, 500));
-
-        // Find service by ID from mock data
-        const service = mockServices.find((svc) => svc.id === parseInt(id));
+        // Fetch service from Firestore
+        const service = await getServiceById(id);
 
         if (!service) {
           throw new Error("Service not found");
         }
 
-        console.log("Service data fetched (mock):", service);
+        console.log("Service data fetched from Firestore:", service);
 
         setServiceData(service);
         setError(null);
 
         // Update the header title with service name
-        const serviceName = service?.title || "الخدمة";
-        setDynamicTitle(`خدمات التطبيق / ${serviceName}`);
+        const serviceTitle =
+          typeof service.title === "object"
+            ? service.title.ar || service.title.en
+            : service.title || "الخدمة";
+        setDynamicTitle(`خدمات التطبيق / ${serviceTitle}`);
       } catch (err: any) {
         console.error("Error loading service:", err);
         setError(err.message || "Failed to load service data");
