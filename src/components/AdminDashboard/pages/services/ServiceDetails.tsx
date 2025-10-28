@@ -20,35 +20,35 @@ export const ServiceDetails = (): JSX.Element => {
   useEffect(() => {
     const loadServiceData = async () => {
       if (!id) {
-        setError('Service ID is missing');
+        setError("Service ID is missing");
         setIsLoading(false);
         return;
       }
 
       try {
         setIsLoading(true);
-        
+
         // Simulate API delay
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
         // Find service by ID from mock data
-        const service = mockServices.find(svc => svc.id === parseInt(id));
-        
+        const service = mockServices.find((svc) => svc.id === parseInt(id));
+
         if (!service) {
-          throw new Error('Service not found');
+          throw new Error("Service not found");
         }
-        
-        console.log('Service data fetched (mock):', service);
-        
+
+        console.log("Service data fetched (mock):", service);
+
         setServiceData(service);
         setError(null);
-        
+
         // Update the header title with service name
-        const serviceName = service?.title || 'الخدمة';
+        const serviceName = service?.title || "الخدمة";
         setDynamicTitle(`خدمات التطبيق / ${serviceName}`);
       } catch (err: any) {
-        console.error('Error loading service:', err);
-        setError(err.message || 'Failed to load service data');
+        console.error("Error loading service:", err);
+        setError(err.message || "Failed to load service data");
       } finally {
         setIsLoading(false);
       }
@@ -81,9 +81,7 @@ export const ServiceDetails = (): JSX.Element => {
       {/* Service Info - Only show when data is loaded */}
       {!isLoading && !error && serviceData && (
         <>
-          <ServiceInfo 
-            serviceData={serviceData}
-          />
+          <ServiceInfo serviceData={serviceData} />
         </>
       )}
     </div>

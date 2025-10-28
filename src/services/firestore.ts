@@ -2374,6 +2374,32 @@ export const fetchServices = async (): Promise<any[]> => {
 };
 
 /**
+ * Fetch all services from Firestore (simple version without ordering)
+ * @returns Promise with services data
+ */
+export const fetchAllServices = async (): Promise<any[]> => {
+  try {
+    console.log("📋 Fetching all services from Firestore (no ordering)...");
+
+    const servicesCollection = collection(db, "services");
+    const servicesSnapshot = await getDocs(servicesCollection);
+
+    const services = servicesSnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    console.log(`✅ Fetched ${services.length} services`);
+    console.log("📦 Services data:", services);
+
+    return services;
+  } catch (error) {
+    console.error("❌ Error fetching services:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetch companies-wallets-requests data from Firestore
  * Filtered by requestedUser.email matching current user's email
  * Uses requestedUser.balance as old balance
