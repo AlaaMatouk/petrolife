@@ -172,8 +172,15 @@ export const Services: React.FC = () => {
         },
       }));
 
-      console.log("Mapped services:", mappedServices);
-      return mappedServices;
+      // Sort services by serviceId in ascending order
+      const sortedServices = mappedServices.sort((a, b) => {
+        const aId = parseInt(a.serviceId || a.id || "0", 10) || 0;
+        const bId = parseInt(b.serviceId || b.id || "0", 10) || 0;
+        return aId - bId;
+      });
+
+      console.log("Mapped and sorted services:", sortedServices);
+      return sortedServices;
     } catch (error) {
       console.error("Error fetching services:", error);
       // Return empty array on error, DataTableSection will handle the error display

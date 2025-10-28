@@ -2400,6 +2400,66 @@ export const fetchAllServices = async (): Promise<any[]> => {
 };
 
 /**
+ * Fetch all categories from Firestore
+ * @returns Promise with categories data
+ */
+export const fetchAllCategories = async (): Promise<any[]> => {
+  try {
+    console.log("📋 Fetching all categories from Firestore...");
+
+    const categoriesCollection = collection(db, "categories");
+    const categoriesSnapshot = await getDocs(categoriesCollection);
+
+    const categories = categoriesSnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    console.log(`✅ Fetched ${categories.length} categories`);
+
+    return categories;
+  } catch (error) {
+    console.error("❌ Error fetching categories:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add a new service to Firestore
+ * @param serviceData - Service data to add
+ * @returns Promise with the created service document
+ */
+export const addService = async (serviceData: any): Promise<any> => {
+  try {
+    console.log("📝 Adding new service to Firestore...", serviceData);
+
+    const servicesCollection = collection(db, "services");
+
+    // Prepare document with server timestamp
+    const serviceDocument = {
+      ...serviceData,
+      createdDate: serverTimestamp(),
+      ...(auth.currentUser?.email && {
+        createdUserId: auth.currentUser.email,
+      }),
+    };
+
+    // Add to Firestore
+    const docRef = await addDoc(servicesCollection, serviceDocument);
+
+    console.log("✅ Service added successfully with ID:", docRef.id);
+
+    return {
+      id: docRef.id,
+      ...serviceDocument,
+    };
+  } catch (error) {
+    console.error("❌ Error adding service to Firestore:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetch companies-wallets-requests data from Firestore
  * Filtered by requestedUser.email matching current user's email
  * Uses requestedUser.balance as old balance
