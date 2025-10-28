@@ -6386,8 +6386,8 @@ export const addServiceProvider = async (
       uId: providerUid,
 
       // Default values
-      isActive: true,
-      status: "approved",
+      isActive: false,
+      status: "pending",
       balance: 0,
 
       // Timestamps and user info
@@ -6396,25 +6396,26 @@ export const addServiceProvider = async (
 
       // Account status for display
       accountStatus: {
-        active: true,
-        text: "مفعل",
+        active: false,
+        text: "معلق",
       },
     };
 
     console.log("📄 Service provider document prepared:", providerDocument);
 
-    // 6. Add document to Firestore stationsCompanies collection
+    // 6. Add document to Firestore stationscompany collection
     console.log(
-      "💾 Adding service provider document to stationsCompanies collection..."
+      "💾 Adding service provider document to stationscompany collection..."
     );
-    const providerDocRef = doc(db, "stationsCompanies", providerData.email);
-    await setDoc(providerDocRef, providerDocument);
+    const stationsCompanyRef = collection(db, "stationscompany");
+    const providerDocRef = await addDoc(stationsCompanyRef, providerDocument);
     console.log(
-      "✅ Service provider document added to stationsCompanies collection"
+      "✅ Service provider document added to stationscompany collection with ID:",
+      providerDocRef.id
     );
 
     return {
-      id: providerData.email,
+      id: providerDocRef.id,
       ...providerDocument,
       uId: providerUid,
     };

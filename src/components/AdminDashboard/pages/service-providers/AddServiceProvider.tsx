@@ -88,8 +88,8 @@ export const AddServiceProvider = () => {
   // Check if email already exists
   const checkEmailExists = async (email: string): Promise<boolean> => {
     try {
-      const stationsCompaniesRef = collection(db, "stationsCompanies");
-      const q = query(stationsCompaniesRef, where("email", "==", email));
+      const stationsCompanyRef = collection(db, "stationscompany");
+      const q = query(stationsCompanyRef, where("email", "==", email));
       const querySnapshot = await getDocs(q);
       return !querySnapshot.empty;
     } catch (error) {

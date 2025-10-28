@@ -50,6 +50,7 @@ import { IndividualsDetails } from "../components/AdminDashboard/pages/Individua
 import { ServiceProviders } from "../components/AdminDashboard/pages/service-providers/ServiceProviders";
 import { AddServiceProvider } from "../components/AdminDashboard/pages/service-providers/AddServiceProvider";
 import { ServiceProvidersDetails } from "../components/AdminDashboard/pages/service-providers/ServiceProvidersDetails";
+import { JoinRequests } from "../components/AdminDashboard/pages/service-providers/JoinRequests";
 import { StationsDetails } from "../screens/StationsDetails/StationsDetails";
 import { FuelStationRequestsDetails } from "../screens/FuelStationRequestsDetails";
 import { AddStations } from "../screens/AddStations";
@@ -108,6 +109,10 @@ export const AppRouter = () => {
           element={<AddServiceProvider />}
         />
         <Route
+          path={ROUTES.SERVICE_PROVIDER_JOIN_REQUESTS}
+          element={<JoinRequests />}
+        />
+        <Route
           path={ROUTES.SERVICE_PROVIDER_DETAILS}
           element={<ServiceProvidersDetails />}
         />
@@ -145,10 +150,7 @@ export const AppRouter = () => {
           path={ROUTES.ADMIN_SERVICE_PROVIDER_REPORTS}
           element={<ServiceProviderReport />}
         />
-        <Route
-          path={ROUTES.ADMIN_WALLET_REPORTS}
-          element={<WalletReport />}
-        />
+        <Route path={ROUTES.ADMIN_WALLET_REPORTS} element={<WalletReport />} />
       </Route>
 
       {/* All Protected Routes with Layout Wrapper */}
