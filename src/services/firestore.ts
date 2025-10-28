@@ -2374,6 +2374,153 @@ export const fetchServices = async (): Promise<any[]> => {
 };
 
 /**
+ * Fetch all services from Firestore (simple version without ordering)
+ * @returns Promise with services data
+ */
+export const fetchAllServices = async (): Promise<any[]> => {
+  try {
+    console.log("📋 Fetching all services from Firestore (no ordering)...");
+
+    const servicesCollection = collection(db, "services");
+    const servicesSnapshot = await getDocs(servicesCollection);
+
+    const services = servicesSnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    console.log(`✅ Fetched ${services.length} services`);
+    console.log("📦 Services data:", services);
+
+    return services;
+  } catch (error) {
+    console.error("❌ Error fetching services:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all categories from Firestore
+ * @returns Promise with categories data
+ */
+export const fetchAllCategories = async (): Promise<any[]> => {
+  try {
+    console.log("📋 Fetching all categories from Firestore...");
+
+    const categoriesCollection = collection(db, "categories");
+    const categoriesSnapshot = await getDocs(categoriesCollection);
+
+    const categories = categoriesSnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    console.log(`✅ Fetched ${categories.length} categories`);
+
+    return categories;
+  } catch (error) {
+    console.error("❌ Error fetching categories:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get a single service by ID from Firestore
+ * @param serviceId - Service document ID
+ * @returns Promise with the service data
+ */
+export const getServiceById = async (serviceId: string): Promise<any> => {
+  try {
+    console.log("📋 Fetching service by ID:", serviceId);
+
+    const serviceDocRef = doc(db, "services", serviceId);
+    const serviceDoc = await getDoc(serviceDocRef);
+
+    if (!serviceDoc.exists()) {
+      throw new Error("Service not found");
+    }
+
+    const serviceData = {
+      id: serviceDoc.id,
+      ...serviceDoc.data(),
+    };
+
+    console.log("✅ Service fetched:", serviceData);
+    return serviceData;
+  } catch (error) {
+    console.error("❌ Error fetching service:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add a new service to Firestore
+ * @param serviceData - Service data to add
+ * @returns Promise with the created service document
+ */
+export const addService = async (serviceData: any): Promise<any> => {
+  try {
+    console.log("📝 Adding new service to Firestore...", serviceData);
+
+    const servicesCollection = collection(db, "services");
+
+    // Prepare document with server timestamp
+    const serviceDocument = {
+      ...serviceData,
+      createdDate: serverTimestamp(),
+      ...(auth.currentUser?.email && {
+        createdUserId: auth.currentUser.email,
+      }),
+    };
+
+    // Add to Firestore
+    const docRef = await addDoc(servicesCollection, serviceDocument);
+
+    console.log("✅ Service added successfully with ID:", docRef.id);
+
+    return {
+      id: docRef.id,
+      ...serviceDocument,
+    };
+  } catch (error) {
+    console.error("❌ Error adding service to Firestore:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update a service in Firestore
+ * @param serviceId - Service document ID
+ * @param serviceData - Updated service data
+ * @returns Promise with the updated service data
+ */
+export const updateService = async (
+  serviceId: string,
+  serviceData: any
+): Promise<any> => {
+  try {
+    console.log("📝 Updating service in Firestore...", serviceId, serviceData);
+
+    const serviceDocRef = doc(db, "services", serviceId);
+
+    // Prepare update data (exclude id and Firestore metadata)
+    const { id, ...updateData } = serviceData;
+
+    await updateDoc(serviceDocRef, updateData);
+
+    console.log("✅ Service updated successfully");
+
+    return {
+      id: serviceId,
+      ...updateData,
+    };
+  } catch (error) {
+    console.error("❌ Error updating service in Firestore:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetch companies-wallets-requests data from Firestore
  * Filtered by requestedUser.email matching current user's email
  * Uses requestedUser.balance as old balance
