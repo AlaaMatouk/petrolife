@@ -5006,6 +5006,22 @@ export interface AddStationData {
   };
 }
 
+export interface AddCompanyData {
+  name: string;
+  email: string;
+  phoneNumber: string;
+  password: string;
+  brandName: string;
+  commercialRegistrationNumber?: string;
+  vatNumber?: string;
+  city: string;
+  address?: string;
+  logoFile?: File | null;
+  addressFile?: File | null;
+  taxCertificateFile?: File | null;
+  commercialRegistrationFile?: File | null;
+}
+
 /**
  * Add a new car to Firestore companies-cars collection
  * @param carData - Car form data
@@ -5975,6 +5991,215 @@ export const addCarStation = async (stationData: AddStationData) => {
         );
       } else if (error.message.includes("Google Maps")) {
         throw error; // Re-throw location parsing errors as-is
+      }
+    }
+
+    throw error;
+  }
+};
+
+/**
+ * Add a new company to Firestore companies collection
+ * 1. Uploads files to Firebase Storage
+ * 2. Creates Firebase Auth account for company
+ * 3. Saves complete company document with UID
+ * @param companyData - Company form data
+ * @returns Promise with the created company document
+ */
+export const addCompany = async (companyData: AddCompanyData) => {
+  try {
+    console.log("🏢 Adding new company via Cloud Function...");
+    console.log("Company data:", companyData);
+
+    // 1. Get current user (admin) - stays logged in!
+    const currentUser = auth.currentUser;
+    if (!currentUser || !currentUser.email) {
+      throw new Error("No authenticated user found");
+    }
+    const adminEmail = currentUser.email;
+    console.log("👤 Admin email:", adminEmail);
+
+    // 2. Upload all files to Firebase Storage in parallel
+    console.log("📤 Uploading files to Firebase Storage...");
+    const [logoUrl, addressFileUrl, taxCertificateUrl, commercialRegUrl] =
+      await Promise.all([
+        companyData.logoFile
+          ? (async () => {
+              const fileName = `companies/logos/${Date.now()}_${
+                companyData.logoFile!.name
+              }`;
+              const storageRef = ref(storage, fileName);
+              await uploadBytes(storageRef, companyData.logoFile!);
+              return await getDownloadURL(storageRef);
+            })()
+          : Promise.resolve(""),
+        companyData.addressFile
+          ? (async () => {
+              const fileName = `companies/address-files/${Date.now()}_${
+                companyData.addressFile!.name
+              }`;
+              const storageRef = ref(storage, fileName);
+              await uploadBytes(storageRef, companyData.addressFile!);
+              return await getDownloadURL(storageRef);
+            })()
+          : Promise.resolve(""),
+        companyData.taxCertificateFile
+          ? (async () => {
+              const fileName = `companies/tax-certificates/${Date.now()}_${
+                companyData.taxCertificateFile!.name
+              }`;
+              const storageRef = ref(storage, fileName);
+              await uploadBytes(storageRef, companyData.taxCertificateFile!);
+              return await getDownloadURL(storageRef);
+            })()
+          : Promise.resolve(""),
+        companyData.commercialRegistrationFile
+          ? (async () => {
+              const fileName = `companies/commercial-registrations/${Date.now()}_${
+                companyData.commercialRegistrationFile!.name
+              }`;
+              const storageRef = ref(storage, fileName);
+              await uploadBytes(
+                storageRef,
+                companyData.commercialRegistrationFile!
+              );
+              return await getDownloadURL(storageRef);
+            })()
+          : Promise.resolve(""),
+      ]);
+
+    console.log("✅ Files uploaded successfully");
+
+    // 3. Call Cloud Function to create Firebase Auth account via HTTP
+    console.log("☁️ Creating Firebase Auth account via Cloud Function...");
+    const idToken = await currentUser.getIdToken();
+
+    const requestData = {
+      email: companyData.email,
+      password: companyData.password,
+      display_name: companyData.name,
+      user_type: "company",
+      phone_number: companyData.phoneNumber,
+      photo_url: logoUrl || "",
+    };
+
+    const response = await fetch(
+      "https://us-central1-car-station-6393f.cloudfunctions.net/createUserFunction",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(requestData),
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        `HTTP ${response.status}: ${result.message || "Unknown error"}`
+      );
+    }
+
+    const companyUid = result.data.uid;
+    console.log("✅ Firebase Auth account created:", companyUid);
+
+    // 4. Build formattedLocation object
+    const formattedLocation = {
+      "address.city": companyData.city,
+      country: "Saudi Arabia",
+    };
+
+    // 5. Prepare company document
+    const companyDocument = {
+      // Basic info
+      name: companyData.name.trim(),
+      email: companyData.email.trim(),
+      phoneNumber: companyData.phoneNumber.trim(),
+      password: companyData.password.trim(),
+      brandName: companyData.brandName.trim(),
+      commercialRegistrationNumber:
+        companyData.commercialRegistrationNumber?.trim() || "",
+      vatNumber: companyData.vatNumber?.trim() || "",
+      city: companyData.city,
+      address: companyData.address?.trim() || "",
+
+      // File URLs
+      logo: logoUrl,
+      addressFile: addressFileUrl,
+      taxCertificate: taxCertificateUrl,
+      commercialRegistration: commercialRegUrl,
+
+      // formattedLocation map
+      formattedLocation: formattedLocation,
+
+      // Auth UID
+      uId: companyUid,
+
+      // Default values
+      isActive: true,
+      status: "approved",
+      balance: 0,
+
+      // Timestamps and user info
+      createdDate: serverTimestamp(),
+      createdUserId: adminEmail,
+
+      // Account status for display
+      accountStatus: {
+        active: true,
+        text: "مفعل",
+      },
+    };
+
+    console.log("📄 Company document prepared:", companyDocument);
+
+    // 6. Add document to Firestore companies collection
+    console.log("💾 Adding company document to companies collection...");
+    const companyDocRef = doc(db, "companies", companyData.email);
+    await setDoc(companyDocRef, companyDocument);
+    console.log("✅ Company document added to companies collection");
+
+    return {
+      id: companyData.email,
+      ...companyDocument,
+      uId: companyUid,
+    };
+  } catch (error) {
+    console.error("❌ Error creating company:", error);
+
+    // Provide user-friendly error messages
+    if (error instanceof Error) {
+      if (error.message.includes("email-already-in-use")) {
+        throw new Error(
+          "This email is already registered. Please use a different email address."
+        );
+      } else if (error.message.includes("weak-password")) {
+        throw new Error(
+          "Password is too weak. Please choose a stronger password."
+        );
+      } else if (error.message.includes("invalid-email")) {
+        throw new Error(
+          "Invalid email format. Please enter a valid email address."
+        );
+      } else if (
+        error.message.includes("HTTP 400") ||
+        error.message.includes("HTTP 500")
+      ) {
+        // Cloud Function errors
+        if (
+          error.message.includes("already exists") ||
+          error.message.includes("email")
+        ) {
+          throw new Error(
+            "This email is already registered. Please use a different email address."
+          );
+        }
+        throw new Error(
+          "Failed to create company account. Please try again or contact support."
+        );
       }
     }
 

@@ -2,16 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "../../../../context/ToastContext";
 import { ArrowLeft } from "lucide-react";
-import {
-  collection,
-  addDoc,
-  serverTimestamp,
-  query,
-  where,
-  getDocs,
-} from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { db, auth, storage } from "../../../../config/firebase";
+import { addCompany, AddCompanyData } from "../../../../services/firestore";
 
 export const AddCompany = () => {
   const navigate = useNavigate();
@@ -80,27 +71,6 @@ export const AddCompany = () => {
     return errors;
   };
 
-  // Check if email already exists
-  const checkEmailExists = async (email: string): Promise<boolean> => {
-    try {
-      const companiesRef = collection(db, "companies");
-      const q = query(companiesRef, where("email", "==", email));
-      const querySnapshot = await getDocs(q);
-      return !querySnapshot.empty;
-    } catch (error) {
-      console.error("Error checking email:", error);
-      return false;
-    }
-  };
-
-  // Upload file to Firebase Storage
-  const uploadFile = async (file: File, folder: string): Promise<string> => {
-    const fileName = `${folder}/${Date.now()}_${file.name}`;
-    const storageRef = ref(storage, fileName);
-    await uploadBytes(storageRef, file);
-    return await getDownloadURL(storageRef);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -115,89 +85,28 @@ export const AddCompany = () => {
       return;
     }
 
-    // Check if email already exists
-    const emailExists = await checkEmailExists(formData.email);
-    if (emailExists) {
-      addToast({
-        title: "خطأ في البيانات",
-        message: "البريد الإلكتروني مستخدم بالفعل",
-        type: "error",
-      });
-      return;
-    }
-
     setIsSubmitting(true);
 
     try {
-      const currentUser = auth.currentUser;
-      if (!currentUser) {
-        throw new Error("لا يوجد مستخدم مسجل الدخول حالياً");
-      }
-
-      // Upload all files to Firebase Storage
-      const [logoUrl, addressFileUrl, taxCertificateUrl, commercialRegUrl] =
-        await Promise.all([
-          logoFile
-            ? uploadFile(logoFile, "companies/logos")
-            : Promise.resolve(""),
-          addressFile
-            ? uploadFile(addressFile, "companies/address-files")
-            : Promise.resolve(""),
-          taxCertificateFile
-            ? uploadFile(taxCertificateFile, "companies/tax-certificates")
-            : Promise.resolve(""),
-          commercialRegistrationFile
-            ? uploadFile(
-                commercialRegistrationFile,
-                "companies/commercial-registrations"
-              )
-            : Promise.resolve(""),
-        ]);
-
-      // Create company document
-      const companyData = {
-        // Basic info
-        name: formData.name.trim(),
-        email: formData.email.trim(),
-        phoneNumber: formData.phoneNumber.trim(),
-        password: formData.password.trim(),
-        brandName: formData.brandName.trim(),
-        commercialRegistrationNumber:
-          formData.commercialRegistrationNumber.trim(),
-        vatNumber: formData.vatNumber.trim(),
+      // Prepare company data for the service function
+      const companyData: AddCompanyData = {
+        name: formData.name,
+        email: formData.email,
+        phoneNumber: formData.phoneNumber,
+        password: formData.password,
+        brandName: formData.brandName,
+        commercialRegistrationNumber: formData.commercialRegistrationNumber,
+        vatNumber: formData.vatNumber,
         city: formData.city,
-        address: formData.address.trim(),
-
-        // File URLs
-        logo: logoUrl,
-        addressFile: addressFileUrl,
-        taxCertificate: taxCertificateUrl,
-        commercialRegistration: commercialRegUrl,
-
-        // formattedLocation map
-        formattedLocation: {
-          "address.city": formData.city,
-          country: "Saudi Arabia",
-        },
-
-        // Default values
-        isActive: true,
-        status: "approved",
-        balance: 0,
-
-        // Timestamps and user info
-        createdDate: serverTimestamp(),
-        createdUserId: currentUser.email || currentUser.uid,
-
-        // Account status for display
-        accountStatus: {
-          active: true,
-          text: "مفعل",
-        },
+        address: formData.address,
+        logoFile: logoFile,
+        addressFile: addressFile,
+        taxCertificateFile: taxCertificateFile,
+        commercialRegistrationFile: commercialRegistrationFile,
       };
 
-      // Add document to Firestore
-      await addDoc(collection(db, "companies"), companyData);
+      // Call the addCompany service function
+      await addCompany(companyData);
 
       // Success message
       addToast({
@@ -227,9 +136,13 @@ export const AddCompany = () => {
       navigate("/companies");
     } catch (error) {
       console.error("Error adding company:", error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "فشل في إضافة الشركة. يرجى المحاولة مرة أخرى.";
       addToast({
         title: "خطأ",
-        message: "فشل في إضافة الشركة. يرجى المحاولة مرة أخرى.",
+        message: errorMessage,
         type: "error",
       });
     } finally {
