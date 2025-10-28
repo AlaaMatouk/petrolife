@@ -5022,6 +5022,37 @@ export interface AddCompanyData {
   commercialRegistrationFile?: File | null;
 }
 
+export interface AddServiceProviderData {
+  // Basic fields
+  name: string;
+  email: string;
+  phoneNumber: string;
+  password: string;
+  brandName: string;
+  commercialRegistrationNumber: string;
+  vatNumber: string;
+
+  // Location fields - simple address string
+  address: string;
+  location: string; // Google Maps link or coordinates
+
+  // FormattedLocation nested fields
+  city: string;
+  country: string;
+  countryCode: string;
+  highway: string;
+  postcode: string;
+  road: string;
+  state: string;
+  stateDistrict: string;
+
+  // File uploads
+  logoFile?: File | null;
+  addressFile?: File | null;
+  taxCertificateFile?: File | null;
+  commercialRegistrationFile?: File | null;
+}
+
 /**
  * Add a new car to Firestore companies-cars collection
  * @param carData - Car form data
@@ -6199,6 +6230,226 @@ export const addCompany = async (companyData: AddCompanyData) => {
         }
         throw new Error(
           "Failed to create company account. Please try again or contact support."
+        );
+      }
+    }
+
+    throw error;
+  }
+};
+
+/**
+ * Add a new service provider (stations company) to Firestore
+ * @param providerData - Service provider form data
+ * @returns Promise with the created service provider document
+ */
+export const addServiceProvider = async (
+  providerData: AddServiceProviderData
+) => {
+  try {
+    console.log("🏢 Adding new service provider via Cloud Function...");
+    console.log("Service provider data:", providerData);
+
+    // 1. Get current user (admin) - stays logged in!
+    const currentUser = auth.currentUser;
+    if (!currentUser || !currentUser.email) {
+      throw new Error("No authenticated user found");
+    }
+    const adminEmail = currentUser.email;
+    console.log("👤 Admin email:", adminEmail);
+
+    // 2. Upload all files to Firebase Storage in parallel
+    console.log("📤 Uploading files to Firebase Storage...");
+    const [logoUrl, addressFileUrl, taxCertificateUrl, commercialRegUrl] =
+      await Promise.all([
+        providerData.logoFile
+          ? (async () => {
+              const fileName = `stationsCompanies/logos/${Date.now()}_${
+                providerData.logoFile!.name
+              }`;
+              const storageRef = ref(storage, fileName);
+              await uploadBytes(storageRef, providerData.logoFile!);
+              return await getDownloadURL(storageRef);
+            })()
+          : Promise.resolve(""),
+        providerData.addressFile
+          ? (async () => {
+              const fileName = `stationsCompanies/address-files/${Date.now()}_${
+                providerData.addressFile!.name
+              }`;
+              const storageRef = ref(storage, fileName);
+              await uploadBytes(storageRef, providerData.addressFile!);
+              return await getDownloadURL(storageRef);
+            })()
+          : Promise.resolve(""),
+        providerData.taxCertificateFile
+          ? (async () => {
+              const fileName = `stationsCompanies/tax-certificates/${Date.now()}_${
+                providerData.taxCertificateFile!.name
+              }`;
+              const storageRef = ref(storage, fileName);
+              await uploadBytes(storageRef, providerData.taxCertificateFile!);
+              return await getDownloadURL(storageRef);
+            })()
+          : Promise.resolve(""),
+        providerData.commercialRegistrationFile
+          ? (async () => {
+              const fileName = `stationsCompanies/commercial-registrations/${Date.now()}_${
+                providerData.commercialRegistrationFile!.name
+              }`;
+              const storageRef = ref(storage, fileName);
+              await uploadBytes(
+                storageRef,
+                providerData.commercialRegistrationFile!
+              );
+              return await getDownloadURL(storageRef);
+            })()
+          : Promise.resolve(""),
+      ]);
+
+    console.log("✅ Files uploaded successfully");
+
+    // 3. Call Cloud Function to create Firebase Auth account via HTTP
+    console.log("☁️ Creating Firebase Auth account via Cloud Function...");
+    const idToken = await currentUser.getIdToken();
+
+    const requestData = {
+      email: providerData.email,
+      password: providerData.password,
+      display_name: providerData.name,
+      user_type: "service-provider",
+      phone_number: providerData.phoneNumber,
+      photo_url: logoUrl || "",
+    };
+
+    const response = await fetch(
+      "https://us-central1-car-station-6393f.cloudfunctions.net/createUserFunction",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(requestData),
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        `HTTP ${response.status}: ${result.message || "Unknown error"}`
+      );
+    }
+
+    const providerUid = result.data.uid;
+    console.log("✅ Firebase Auth account created:", providerUid);
+
+    // 4. Build formattedLocation object with nested Address structure
+    const formattedLocation = {
+      address: {
+        city: providerData.city,
+        country: providerData.country,
+        countryCode: providerData.countryCode,
+        highway: providerData.highway,
+        postcode: providerData.postcode,
+        road: providerData.road,
+        state: providerData.state,
+        stateDistrict: providerData.stateDistrict,
+      },
+    };
+
+    // 5. Prepare service provider document
+    const providerDocument = {
+      // Basic info
+      name: providerData.name.trim(),
+      email: providerData.email.trim(),
+      phoneNumber: providerData.phoneNumber.trim(),
+      password: providerData.password.trim(),
+      brandName: providerData.brandName.trim(),
+      commercialRegistrationNumber:
+        providerData.commercialRegistrationNumber.trim(),
+      vatNumber: providerData.vatNumber.trim(),
+      address: providerData.address.trim(),
+      location: providerData.location.trim(),
+
+      // File URLs
+      logo: logoUrl,
+      addressFile: addressFileUrl,
+      taxCertificate: taxCertificateUrl,
+      commercialRegistration: commercialRegUrl,
+
+      // formattedLocation with nested address
+      formattedLocation: formattedLocation,
+
+      // Auth UID
+      uId: providerUid,
+
+      // Default values
+      isActive: true,
+      status: "approved",
+      balance: 0,
+
+      // Timestamps and user info
+      createdDate: serverTimestamp(),
+      createdUserId: adminEmail,
+
+      // Account status for display
+      accountStatus: {
+        active: true,
+        text: "مفعل",
+      },
+    };
+
+    console.log("📄 Service provider document prepared:", providerDocument);
+
+    // 6. Add document to Firestore stationsCompanies collection
+    console.log(
+      "💾 Adding service provider document to stationsCompanies collection..."
+    );
+    const providerDocRef = doc(db, "stationsCompanies", providerData.email);
+    await setDoc(providerDocRef, providerDocument);
+    console.log(
+      "✅ Service provider document added to stationsCompanies collection"
+    );
+
+    return {
+      id: providerData.email,
+      ...providerDocument,
+      uId: providerUid,
+    };
+  } catch (error) {
+    console.error("❌ Error creating service provider:", error);
+
+    // Provide user-friendly error messages
+    if (error instanceof Error) {
+      if (error.message.includes("email-already-in-use")) {
+        throw new Error(
+          "This email is already registered. Please use a different email address."
+        );
+      } else if (error.message.includes("weak-password")) {
+        throw new Error(
+          "Password is too weak. Please choose a stronger password."
+        );
+      } else if (error.message.includes("invalid-email")) {
+        throw new Error(
+          "Invalid email format. Please enter a valid email address."
+        );
+      } else if (
+        error.message.includes("HTTP 400") ||
+        error.message.includes("HTTP 500")
+      ) {
+        // Cloud Function errors
+        if (
+          error.message.includes("already exists") ||
+          error.message.includes("email")
+        ) {
+          throw new Error(
+            "This email is already registered. Please use a different email address."
+          );
+        }
+        throw new Error(
+          "Failed to create service provider account. Please try again or contact support."
         );
       }
     }

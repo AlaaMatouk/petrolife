@@ -54,7 +54,9 @@ export interface DataTableSectionProps<T> {
 }
 
 // Generic Action Menu Component
-interface ActionMenuProps<T extends { id: number | string; driverCode?: string; stationCode?: string }> {
+interface ActionMenuProps<
+  T extends { id: number | string; driverCode?: string; stationCode?: string }
+> {
   item: T;
   entityName: string;
   viewDetailsRoute: (id: string | number | string) => string;
@@ -63,7 +65,11 @@ interface ActionMenuProps<T extends { id: number | string; driverCode?: string; 
 }
 
 const ActionMenu = <
-  T extends { id: string | number | string; driverCode?: string; stationCode?: string }
+  T extends {
+    id: string | number | string;
+    driverCode?: string;
+    stationCode?: string;
+  }
 >({
   item,
   entityName,
@@ -618,7 +624,6 @@ export const DataTableSection = <
               // Show buttons for other entities
               <div className="inline-flex items-center gap-[var(--corner-radius-medium)] relative flex-[0_0_auto]">
                 {showAddButton &&
-                  !customFilterButton &&
                   !showMoneyRefundButton &&
                   !showFuelDeliveryButton && (
                     <button
@@ -781,7 +786,9 @@ export const DataTableSection = <
           {/* Error Message */}
           {error && !isLoading && (
             <div className="w-full p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <p className="text-yellow-800 text-center [direction:rtl]">{error}</p>
+              <p className="text-yellow-800 text-center [direction:rtl]">
+                {error}
+              </p>
             </div>
           )}
 
@@ -813,7 +820,9 @@ export const DataTableSection = <
             <div className="md:hidden space-y-4 w-full">
               {isLoading ? (
                 <div className="flex items-center justify-center p-8">
-                  <div className="text-color-mode-text-icons-t-sec">جاري التحميل...</div>
+                  <div className="text-color-mode-text-icons-t-sec">
+                    جاري التحميل...
+                  </div>
                 </div>
               ) : (
                 <div className="text-center text-gray-500 py-8">
