@@ -53,6 +53,7 @@ export const ROUTES = {
   SERVICE_DISTRIBUTER_STATION_LOCATIONS:
     "/service-distributer-station-locations",
   SERVICE_DISTRIBUTER_INVOICES: "/service-distributer-invoices",
+  SERVICE_DISTRIBUTER_GENERAL_INFORMATION: "/service-distributer-general-information",
 
   // Admin Dashboard
   ADMIN_DASHBOARD: "/admin-dashboard",

@@ -1,5 +1,3 @@
-import { LayoutSimple } from '../../components/shared/Layout/LayoutSimple'
-import { serviceDistributerNavigationMenuData, userInfo } from '../../constants/data'
 import { Fuel } from 'lucide-react'
 import { DataTableSection } from '../../components/sections/DataTableSection'
 import { fetchFuelStationRequests } from '../../services/firestore'
@@ -94,40 +92,23 @@ function FuelStationRequests() {
   };
 
   return (
-    <LayoutSimple 
-      headerProps={{
-        title: "طلبات محطات الوقود",
-        titleIconSrc: <Fuel className="w-5 h-5 text-gray-500" />,
-        showSearch: true,
-        searchProps: {
-          onSearch: (query) => console.log("Search:", query),
-        },
-      }}
-      sidebarProps={{
-        sections: serviceDistributerNavigationMenuData.sections,
-        topItems: serviceDistributerNavigationMenuData.topItems,
-        bottomItems: serviceDistributerNavigationMenuData.bottomItems,
-        userInfo: userInfo,
-      }}
-    >
-      <div className="flex flex-col w-full items-start gap-5">
-        <DataTableSection<FuelStationRequest>
-          title="طلبات محطات الوقود"
-          entityName="طلب محطة الوقود"
-          entityNamePlural="طلبات محطات الوقود"
-          icon={Fuel}
-          columns={fuelStationRequestColumns}
-          fetchData={fetchFuelStationRequestsData}
-          onToggleStatus={handleToggleStatus}
-          addNewRoute="/add-fuel-station-request"
-          viewDetailsRoute={(id) => `/fuel-station-request/${id}`}
-          loadingMessage="جاري تحميل بيانات طلبات محطات الوقود..."
-          errorMessage="فشل في تحميل بيانات طلبات محطات الوقود. استخدام البيانات التجريبية."
-          itemsPerPage={5}
-          showTimeFilter={true}
-        />
-      </div>
-    </LayoutSimple>
+    <div className="flex flex-col w-full items-start gap-5">
+      <DataTableSection<FuelStationRequest>
+        title="طلبات محطات الوقود"
+        entityName="طلب محطة الوقود"
+        entityNamePlural="طلبات محطات الوقود"
+        icon={Fuel}
+        columns={fuelStationRequestColumns}
+        fetchData={fetchFuelStationRequestsData}
+        onToggleStatus={handleToggleStatus}
+        addNewRoute="/add-fuel-station-request"
+        viewDetailsRoute={(id) => `/fuel-station-request/${id}`}
+        loadingMessage="جاري تحميل بيانات طلبات محطات الوقود..."
+        errorMessage="فشل في تحميل بيانات طلبات محطات الوقود. استخدام البيانات التجريبية."
+        itemsPerPage={5}
+        showTimeFilter={true}
+      />
+    </div>
   )
 }
 

@@ -2,6 +2,7 @@ import { Routes, Route } from "react-router-dom";
 import { ROUTES } from "../constants/routes";
 import { LayoutWrapper } from "../components/shared/Layout";
 import { AdminLayoutWrapper } from "../components/AdminDashboard";
+import { ServiceDistributerLayoutWrapper } from "../components/ServiceDistributerDashboard";
 
 // Import all screen components
 import { Drivers } from "../screens/Drivers";
@@ -67,6 +68,7 @@ import { AddChoice } from "../components/AdminDashboard/pages/services/AddChoice
 import { FinancialReport } from "../components/AdminDashboard/pages/financial-report";
 import { ServiceProviderReport } from "../components/AdminDashboard/pages/service-provider-report";
 import { WalletReport } from "../components/AdminDashboard/pages/wallet-report";
+import { ServiceDistributerGeneralInformation } from "../screens/ServiceDistributerGeneralInformation";
 
 // 404 Component
 const NotFound = () => (
@@ -153,6 +155,46 @@ export const AppRouter = () => {
         <Route path={ROUTES.ADMIN_WALLET_REPORTS} element={<WalletReport />} />
       </Route>
 
+      {/* Service Distributer Routes with ServiceDistributerLayoutWrapper */}
+      <Route element={<ServiceDistributerLayoutWrapper />}>
+        <Route
+          path={ROUTES.SERVICE_DISTRIBUTER_DASHBOARD}
+          element={<ServiceDistributerDashboard />}
+        />
+        <Route path={ROUTES.STATION_WORKERS} element={<StationWorkers />} />
+        <Route
+          path={ROUTES.STATION_WORKER_DETAILS}
+          element={<StationWorkerDetails />}
+        />
+        <Route path={ROUTES.STATIONS} element={<Stations />} />
+        <Route path={ROUTES.ADD_STATIONS} element={<AddStations />} />
+        <Route path={ROUTES.STATIONS_DETAILS} element={<StationsDetails />} />
+        <Route
+          path={ROUTES.FUEL_STATION_REQUESTS}
+          element={<FuelStationRequests />}
+        />
+        <Route
+          path={ROUTES.FUEL_STATION_REQUESTS_DETAILS}
+          element={<FuelStationRequestsDetails />}
+        />
+        <Route
+          path={ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS}
+          element={<ServiceDistributerFinancialReports />}
+        />
+        <Route
+          path={ROUTES.SERVICE_DISTRIBUTER_STATION_LOCATIONS}
+          element={<ServiceDistributerStationLocations />}
+        />
+        <Route
+          path={ROUTES.SERVICE_DISTRIBUTER_INVOICES}
+          element={<ServiceDistributerInvoices />}
+        />
+        <Route
+          path={ROUTES.SERVICE_DISTRIBUTER_GENERAL_INFORMATION}
+          element={<ServiceDistributerGeneralInformation />}
+        />
+      </Route>
+
       {/* All Protected Routes with Layout Wrapper */}
       <Route element={<LayoutWrapper />}>
         {/* Main Dashboard */}
@@ -197,42 +239,6 @@ export const AppRouter = () => {
 
         {/* Settings */}
         <Route path={ROUTES.SETTINGS} element={<NotFound />} />
-
-        {/* Service Distributer  */}
-        {/* Service Distributer Dashboard */}
-        <Route
-          path={ROUTES.SERVICE_DISTRIBUTER_DASHBOARD}
-          element={<ServiceDistributerDashboard />}
-        />
-        {/* Service Distributer Station WOrkers */}
-        <Route path={ROUTES.STATION_WORKERS} element={<StationWorkers />} />
-        <Route
-          path={ROUTES.STATION_WORKER_DETAILS}
-          element={<StationWorkerDetails />}
-        />
-        <Route path={ROUTES.STATIONS} element={<Stations />} />
-        <Route path={ROUTES.ADD_STATIONS} element={<AddStations />} />
-        <Route path={ROUTES.STATIONS_DETAILS} element={<StationsDetails />} />
-        <Route
-          path={ROUTES.FUEL_STATION_REQUESTS}
-          element={<FuelStationRequests />}
-        />
-        <Route
-          path={ROUTES.FUEL_STATION_REQUESTS_DETAILS}
-          element={<FuelStationRequestsDetails />}
-        />
-        <Route
-          path={ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS}
-          element={<ServiceDistributerFinancialReports />}
-        />
-        <Route
-          path={ROUTES.SERVICE_DISTRIBUTER_STATION_LOCATIONS}
-          element={<ServiceDistributerStationLocations />}
-        />
-        <Route
-          path={ROUTES.SERVICE_DISTRIBUTER_INVOICES}
-          element={<ServiceDistributerInvoices />}
-        />
 
         {/* Test Routes */}
         <Route path={ROUTES.TEST} element={<Test />} />

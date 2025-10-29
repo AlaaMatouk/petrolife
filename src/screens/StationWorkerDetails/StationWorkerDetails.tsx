@@ -1,5 +1,3 @@
-import { LayoutSimple } from '../../components/shared/Layout/LayoutSimple'
-import { serviceDistributerNavigationMenuData, userInfo } from '../../constants/data'
 import { UserRound, Calendar } from 'lucide-react'
 import { InfoDisplay } from '../../components/sections/InfoDisplay'
 import { DataTableSection } from '../../components/sections/DataTableSection'
@@ -228,53 +226,35 @@ function StationWorkerDetails() {
   };
 
   return (
-    <LayoutSimple
-      headerProps={{
-        title: `عمال المحطات / ${workerData.name}`,
-        titleIconSrc:<img src="/src/assets/imgs/icons/user-group.svg" />
-        ,
-        showSearch: true,
-        searchProps: {
-          onSearch: (query) => console.log("Search:", query),
-        },
-      }}
-      sidebarProps={{
-        sections: serviceDistributerNavigationMenuData.sections,
-        topItems: serviceDistributerNavigationMenuData.topItems,
-        bottomItems: serviceDistributerNavigationMenuData.bottomItems,
-        userInfo: userInfo,
-      }}
-    >
-      <div className="flex flex-col w-full items-start gap-5">
-        <InfoDisplay
-          data={workerData}
-          title="معلومات العامل"
-          titleIcon={<UserRound className="w-5 h-5 text-gray-500" />}
-          fields={workerFields}
-          onEdit={handleEdit}
-          showEditButton={true}
-          editButtonText="تعديل البيانات"
-          showBackButton={true}
-        />
-        
-        <DataTableSection<WorkerRecord>
-          title="سجل العامل"
-          entityName="سجل العامل"
-          entityNamePlural="سجلات العامل"
-          icon={Calendar}
-          columns={workerRecordColumns}
-          fetchData={fetchWorkerRecordsData}
-          onToggleStatus={handleToggleStatus}
-          addNewRoute="/add-worker-record"
-          viewDetailsRoute={(id) => `/worker-record/${id}`}
-          loadingMessage="جاري تحميل بيانات سجل العامل..."
-          errorMessage="فشل في تحميل بيانات سجل العامل."
-          itemsPerPage={5}
-          showTimeFilter={true}
-          showAddButton={false}
-        />
-      </div>
-    </LayoutSimple>
+    <div className="flex flex-col w-full items-start gap-5">
+      <InfoDisplay
+        data={workerData}
+        title="معلومات العامل"
+        titleIcon={<UserRound className="w-5 h-5 text-gray-500" />}
+        fields={workerFields}
+        onEdit={handleEdit}
+        showEditButton={true}
+        editButtonText="تعديل البيانات"
+        showBackButton={true}
+      />
+      
+      <DataTableSection<WorkerRecord>
+        title="سجل العامل"
+        entityName="سجل العامل"
+        entityNamePlural="سجلات العامل"
+        icon={Calendar}
+        columns={workerRecordColumns}
+        fetchData={fetchWorkerRecordsData}
+        onToggleStatus={handleToggleStatus}
+        addNewRoute="/add-worker-record"
+        viewDetailsRoute={(id) => `/worker-record/${id}`}
+        loadingMessage="جاري تحميل بيانات سجل العامل..."
+        errorMessage="فشل في تحميل بيانات سجل العامل."
+        itemsPerPage={5}
+        showTimeFilter={true}
+        showAddButton={false}
+      />
+    </div>
   )
 }
 

@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { serviceDistributerNavigationMenuData, userInfo } from '../../constants/data'
-import { LayoutSimple } from '../../components/shared/Layout/LayoutSimple'
 import { Eye, Car } from 'lucide-react'
 import { InfoDisplay } from '../../components/sections/InfoDisplay'
 import { fetchFuelStationOrderById } from '../../services/firestore'
@@ -227,48 +225,29 @@ export function FuelStationRequestsDetails() {
   };
 
   return (
-    <LayoutSimple
-      headerProps={{
-        title: `طلبات محطات الوقود / معاملة ${fuelRequestData.transactionNumber}`,
-        titleIconSrc: <Eye className="w-5 h-5 text-gray-500" />,
-        showSearch: false,
-        searchProps: {
-          onSearch: (query) => console.log("Search:", query),
-        },
-      }}
-      sidebarProps={{
-        sections: serviceDistributerNavigationMenuData.sections,
-        topItems: serviceDistributerNavigationMenuData.topItems,
-        bottomItems: serviceDistributerNavigationMenuData.bottomItems,
-        userInfo: userInfo,       
-      }}
-    >
-      <div className="flex flex-col w-full items-start gap-5">
-        <InfoDisplay
-          data={fuelRequestData}
-          title="معلومات الطلب"
-          titleIcon={<Eye className="w-5 h-5 text-gray-500" />}
-          fields={fuelRequestFields}
-          onEdit={handleEdit}
-          showEditButton={true}
-          editButtonText="تعديل البيانات"
-          showBackButton={true}
-        />
+    <div className="flex flex-col w-full items-start gap-5">
+      <InfoDisplay
+        data={fuelRequestData}
+        title="معلومات الطلب"
+        titleIcon={<Eye className="w-5 h-5 text-gray-500" />}
+        fields={fuelRequestFields}
+        onEdit={handleEdit}
+        showEditButton={true}
+        editButtonText="تعديل البيانات"
+        showBackButton={true}
+      />
 
-        <InfoDisplay
-          data={vehicleData}
-          title="معلومات المركبة"
-          titleIcon={<Car className="w-5 h-5 text-gray-500" />}
-          fields={vehicleFields}
-          onEdit={handleVehicleEdit}
-          showEditButton={true}
-          editButtonText="تعديل البيانات"
-          showBackButton={false}
-        />
-      </div>
-
-
-    </LayoutSimple>
+      <InfoDisplay
+        data={vehicleData}
+        title="معلومات المركبة"
+        titleIcon={<Car className="w-5 h-5 text-gray-500" />}
+        fields={vehicleFields}
+        onEdit={handleVehicleEdit}
+        showEditButton={true}
+        editButtonText="تعديل البيانات"
+        showBackButton={false}
+      />
+    </div>
   )
 }
 
