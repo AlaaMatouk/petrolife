@@ -1,7 +1,16 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ToggleButton } from "../../components/shared/ToggleButton";
 import { StatusToggle } from "../../components/shared/StatusToggle";
-import { Lightbulb, Bell, Moon, Sun, Wifi, Table } from "lucide-react";
+import {
+  Lightbulb,
+  Bell,
+  Moon,
+  Sun,
+  Wifi,
+  Table,
+  Database,
+} from "lucide-react";
+import { fetchAllServices } from "../../services/firestore";
 
 export const Test = (): JSX.Element => {
   const [toggle1, setToggle1] = useState(false);
@@ -15,6 +24,26 @@ export const Test = (): JSX.Element => {
   const [accountStatus1, setAccountStatus1] = useState(true);
   const [accountStatus2, setAccountStatus2] = useState(false);
   const [accountStatus3, setAccountStatus3] = useState(true);
+  const [services, setServices] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch services data on component mount
+  useEffect(() => {
+    const loadServices = async () => {
+      setLoading(true);
+      try {
+        const data = await fetchAllServices();
+        setServices(data);
+        console.log("Services data in component:", data);
+      } catch (error) {
+        console.error("Error loading services:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadServices();
+  }, []);
 
   return (
     <div className="flex flex-col w-full items-start gap-8 p-6">
@@ -359,6 +388,82 @@ export const Test = (): JSX.Element => {
             />
           </div>
         </div>
+      </div>
+
+      {/* Services Data Section */}
+      <div className="w-full bg-white rounded-lg border border-gray-200 p-6">
+        <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+          <span className="bg-indigo-500 text-white px-3 py-1 rounded-lg text-lg">
+            6
+          </span>
+          بيانات الخدمات (Services Collection)
+        </h2>
+
+        {loading ? (
+          <div className="flex items-center justify-center p-8">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+              <p className="text-gray-600">جاري تحميل البيانات...</p>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div className="mb-4 p-4 bg-indigo-50 border-2 border-indigo-200 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <Database className="w-5 h-5 text-indigo-600" />
+                <p className="font-semibold text-indigo-900">
+                  عدد الخدمات: {services.length}
+                </p>
+              </div>
+              <p className="text-sm text-indigo-800">
+                تم جلب جميع البيانات من مجموعة "services" في Firestore
+              </p>
+            </div>
+
+            {services.length === 0 ? (
+              <div className="text-center p-8 bg-gray-50 rounded-lg border border-gray-200">
+                <p className="text-gray-600 mb-2">
+                  لا توجد خدمات في قاعدة البيانات
+                </p>
+                <p className="text-sm text-gray-500">
+                  تأكد من وجود بيانات في مجموعة "services" في Firestore
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {services.map((service, index) => (
+                  <div
+                    key={service.id || index}
+                    className="border border-gray-200 rounded-lg p-4 bg-gray-50 hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <h3 className="font-bold text-lg text-gray-800">
+                        خدمة #{index + 1}{" "}
+                        {service.nameAr && `- ${service.nameAr}`}
+                      </h3>
+                      <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded">
+                        ID: {service.id}
+                      </span>
+                    </div>
+                    <div className="mt-2">
+                      <pre className="bg-white p-4 rounded border border-gray-200 overflow-x-auto text-xs">
+                        {JSON.stringify(service, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Console Log Indicator */}
+            <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-sm text-yellow-800">
+                💡 <strong>ملاحظة:</strong> يمكنك فتح أدوات المطور (Console)
+                لرؤية البيانات المطبوعة
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* State Summary */}

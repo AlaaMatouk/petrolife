@@ -276,7 +276,7 @@ export const ServiceProviders = () => {
   }, []);
 
   const handleJoinRequestsClick = () => {
-    navigate("/service-providers/add");
+    navigate("/service-providers/join-requests");
   };
 
   return (

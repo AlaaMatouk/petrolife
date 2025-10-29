@@ -2374,6 +2374,153 @@ export const fetchServices = async (): Promise<any[]> => {
 };
 
 /**
+ * Fetch all services from Firestore (simple version without ordering)
+ * @returns Promise with services data
+ */
+export const fetchAllServices = async (): Promise<any[]> => {
+  try {
+    console.log("📋 Fetching all services from Firestore (no ordering)...");
+
+    const servicesCollection = collection(db, "services");
+    const servicesSnapshot = await getDocs(servicesCollection);
+
+    const services = servicesSnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    console.log(`✅ Fetched ${services.length} services`);
+    console.log("📦 Services data:", services);
+
+    return services;
+  } catch (error) {
+    console.error("❌ Error fetching services:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all categories from Firestore
+ * @returns Promise with categories data
+ */
+export const fetchAllCategories = async (): Promise<any[]> => {
+  try {
+    console.log("📋 Fetching all categories from Firestore...");
+
+    const categoriesCollection = collection(db, "categories");
+    const categoriesSnapshot = await getDocs(categoriesCollection);
+
+    const categories = categoriesSnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    console.log(`✅ Fetched ${categories.length} categories`);
+
+    return categories;
+  } catch (error) {
+    console.error("❌ Error fetching categories:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get a single service by ID from Firestore
+ * @param serviceId - Service document ID
+ * @returns Promise with the service data
+ */
+export const getServiceById = async (serviceId: string): Promise<any> => {
+  try {
+    console.log("📋 Fetching service by ID:", serviceId);
+
+    const serviceDocRef = doc(db, "services", serviceId);
+    const serviceDoc = await getDoc(serviceDocRef);
+
+    if (!serviceDoc.exists()) {
+      throw new Error("Service not found");
+    }
+
+    const serviceData = {
+      id: serviceDoc.id,
+      ...serviceDoc.data(),
+    };
+
+    console.log("✅ Service fetched:", serviceData);
+    return serviceData;
+  } catch (error) {
+    console.error("❌ Error fetching service:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add a new service to Firestore
+ * @param serviceData - Service data to add
+ * @returns Promise with the created service document
+ */
+export const addService = async (serviceData: any): Promise<any> => {
+  try {
+    console.log("📝 Adding new service to Firestore...", serviceData);
+
+    const servicesCollection = collection(db, "services");
+
+    // Prepare document with server timestamp
+    const serviceDocument = {
+      ...serviceData,
+      createdDate: serverTimestamp(),
+      ...(auth.currentUser?.email && {
+        createdUserId: auth.currentUser.email,
+      }),
+    };
+
+    // Add to Firestore
+    const docRef = await addDoc(servicesCollection, serviceDocument);
+
+    console.log("✅ Service added successfully with ID:", docRef.id);
+
+    return {
+      id: docRef.id,
+      ...serviceDocument,
+    };
+  } catch (error) {
+    console.error("❌ Error adding service to Firestore:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update a service in Firestore
+ * @param serviceId - Service document ID
+ * @param serviceData - Updated service data
+ * @returns Promise with the updated service data
+ */
+export const updateService = async (
+  serviceId: string,
+  serviceData: any
+): Promise<any> => {
+  try {
+    console.log("📝 Updating service in Firestore...", serviceId, serviceData);
+
+    const serviceDocRef = doc(db, "services", serviceId);
+
+    // Prepare update data (exclude id and Firestore metadata)
+    const { id, ...updateData } = serviceData;
+
+    await updateDoc(serviceDocRef, updateData);
+
+    console.log("✅ Service updated successfully");
+
+    return {
+      id: serviceId,
+      ...updateData,
+    };
+  } catch (error) {
+    console.error("❌ Error updating service in Firestore:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetch companies-wallets-requests data from Firestore
  * Filtered by requestedUser.email matching current user's email
  * Uses requestedUser.balance as old balance
@@ -2851,6 +2998,103 @@ export const updateOrderStatus = async (orderId: string, newStatus: string) => {
   } catch (error) {
     console.error("❌ Error updating order status:", error);
     throw error;
+  }
+};
+
+/**
+ * Determine user role and redirect path based on email presence in Firestore collections
+ * @param email - User's email address
+ * @returns Object with redirectPath and userType, or null if not found
+ */
+export const determineUserRoleAndRedirect = async (
+  email: string
+): Promise<{
+  redirectPath: string;
+  userType: string;
+  userData?: any;
+} | null> => {
+  try {
+    if (!email) {
+      console.error("No email provided to determineUserRoleAndRedirect");
+      return null;
+    }
+
+    console.log(`🔍 Checking user role for email: ${email}`);
+
+    // 1. Check if email exists in companies collection
+    const companiesRef = collection(db, "companies");
+    const companiesQuery = query(companiesRef, where("email", "==", email));
+    const companiesSnapshot = await getDocs(companiesQuery);
+
+    if (!companiesSnapshot.empty) {
+      const companyData = {
+        id: companiesSnapshot.docs[0].id,
+        ...companiesSnapshot.docs[0].data(),
+      };
+      console.log("✅ User found in companies collection → /dashboard");
+      return {
+        redirectPath: "/dashboard",
+        userType: "company",
+        userData: companyData,
+      };
+    }
+
+    // 2. Check if email exists in users collection with admin privileges
+    const usersRef = collection(db, "users");
+    const usersQuery = query(usersRef, where("email", "==", email));
+    const usersSnapshot = await getDocs(usersQuery);
+
+    if (!usersSnapshot.empty) {
+      const userData = usersSnapshot.docs[0].data();
+      const isAdmin =
+        userData.isAdmin === true || userData.isSuperAdmin === true;
+
+      if (isAdmin) {
+        console.log(
+          "✅ Admin user found in users collection → /admin-dashboard"
+        );
+        return {
+          redirectPath: "/admin-dashboard",
+          userType: "admin",
+          userData: {
+            id: usersSnapshot.docs[0].id,
+            ...userData,
+          },
+        };
+      } else {
+        console.log("⚠️ User found in users collection but not an admin");
+      }
+    }
+
+    // 3. Check if email exists in stationscompany collection
+    const stationsCompanyRef = collection(db, "stationscompany");
+    const stationsCompanyQuery = query(
+      stationsCompanyRef,
+      where("email", "==", email)
+    );
+    const stationsCompanySnapshot = await getDocs(stationsCompanyQuery);
+
+    if (!stationsCompanySnapshot.empty) {
+      const stationData = {
+        id: stationsCompanySnapshot.docs[0].id,
+        ...stationsCompanySnapshot.docs[0].data(),
+      };
+      console.log(
+        "✅ User found in stationscompany collection → /service-distributer"
+      );
+      return {
+        redirectPath: "/service-distributer",
+        userType: "service-distributer",
+        userData: stationData,
+      };
+    }
+
+    // If not found in any collection
+    console.warn(`⚠️ Email ${email} not found in any authorized collection`);
+    return null;
+  } catch (error) {
+    console.error("❌ Error determining user role:", error);
+    return null;
   }
 };
 
@@ -4762,6 +5006,53 @@ export interface AddStationData {
   };
 }
 
+export interface AddCompanyData {
+  name: string;
+  email: string;
+  phoneNumber: string;
+  password: string;
+  brandName: string;
+  commercialRegistrationNumber?: string;
+  vatNumber?: string;
+  city: string;
+  address?: string;
+  logoFile?: File | null;
+  addressFile?: File | null;
+  taxCertificateFile?: File | null;
+  commercialRegistrationFile?: File | null;
+}
+
+export interface AddServiceProviderData {
+  // Basic fields
+  name: string;
+  email: string;
+  phoneNumber: string;
+  password: string;
+  brandName: string;
+  commercialRegistrationNumber: string;
+  vatNumber: string;
+
+  // Location fields - simple address string
+  address: string;
+  location: string; // Google Maps link or coordinates
+
+  // FormattedLocation nested fields
+  city: string;
+  country: string;
+  countryCode: string;
+  highway: string;
+  postcode: string;
+  road: string;
+  state: string;
+  stateDistrict: string;
+
+  // File uploads
+  logoFile?: File | null;
+  addressFile?: File | null;
+  taxCertificateFile?: File | null;
+  commercialRegistrationFile?: File | null;
+}
+
 /**
  * Add a new car to Firestore companies-cars collection
  * @param carData - Car form data
@@ -5334,10 +5625,12 @@ export const fetchFuelStations = async (): Promise<FuelStation[]> => {
  * @param stationId The ID of the station document
  * @returns Promise with station data or null if not found
  */
-export const fetchFuelStationById = async (stationId: string): Promise<FuelStation | null> => {
+export const fetchFuelStationById = async (
+  stationId: string
+): Promise<FuelStation | null> => {
   try {
     console.log("📍 Fetching station by ID:", stationId);
-    
+
     if (!stationId) {
       console.error("❌ No station ID provided");
       return null;
@@ -5349,7 +5642,7 @@ export const fetchFuelStationById = async (stationId: string): Promise<FuelStati
       console.log("⚠️ No authenticated user found");
       return null;
     }
-    
+
     const userEmail = currentUser.email;
 
     // Fetch the station document
@@ -5386,7 +5679,7 @@ export const fetchFuelStationById = async (stationId: string): Promise<FuelStati
       name: stationName,
       city: cityName,
       email: data.email,
-      phoneNumber: data.phoneNumber
+      phoneNumber: data.phoneNumber,
     });
 
     return {
@@ -5736,6 +6029,436 @@ export const addCarStation = async (stationData: AddStationData) => {
   }
 };
 
+/**
+ * Add a new company to Firestore companies collection
+ * 1. Uploads files to Firebase Storage
+ * 2. Creates Firebase Auth account for company
+ * 3. Saves complete company document with UID
+ * @param companyData - Company form data
+ * @returns Promise with the created company document
+ */
+export const addCompany = async (companyData: AddCompanyData) => {
+  try {
+    console.log("🏢 Adding new company via Cloud Function...");
+    console.log("Company data:", companyData);
+
+    // 1. Get current user (admin) - stays logged in!
+    const currentUser = auth.currentUser;
+    if (!currentUser || !currentUser.email) {
+      throw new Error("No authenticated user found");
+    }
+    const adminEmail = currentUser.email;
+    console.log("👤 Admin email:", adminEmail);
+
+    // 2. Upload all files to Firebase Storage in parallel
+    console.log("📤 Uploading files to Firebase Storage...");
+    const [logoUrl, addressFileUrl, taxCertificateUrl, commercialRegUrl] =
+      await Promise.all([
+        companyData.logoFile
+          ? (async () => {
+              const fileName = `companies/logos/${Date.now()}_${
+                companyData.logoFile!.name
+              }`;
+              const storageRef = ref(storage, fileName);
+              await uploadBytes(storageRef, companyData.logoFile!);
+              return await getDownloadURL(storageRef);
+            })()
+          : Promise.resolve(""),
+        companyData.addressFile
+          ? (async () => {
+              const fileName = `companies/address-files/${Date.now()}_${
+                companyData.addressFile!.name
+              }`;
+              const storageRef = ref(storage, fileName);
+              await uploadBytes(storageRef, companyData.addressFile!);
+              return await getDownloadURL(storageRef);
+            })()
+          : Promise.resolve(""),
+        companyData.taxCertificateFile
+          ? (async () => {
+              const fileName = `companies/tax-certificates/${Date.now()}_${
+                companyData.taxCertificateFile!.name
+              }`;
+              const storageRef = ref(storage, fileName);
+              await uploadBytes(storageRef, companyData.taxCertificateFile!);
+              return await getDownloadURL(storageRef);
+            })()
+          : Promise.resolve(""),
+        companyData.commercialRegistrationFile
+          ? (async () => {
+              const fileName = `companies/commercial-registrations/${Date.now()}_${
+                companyData.commercialRegistrationFile!.name
+              }`;
+              const storageRef = ref(storage, fileName);
+              await uploadBytes(
+                storageRef,
+                companyData.commercialRegistrationFile!
+              );
+              return await getDownloadURL(storageRef);
+            })()
+          : Promise.resolve(""),
+      ]);
+
+    console.log("✅ Files uploaded successfully");
+
+    // 3. Call Cloud Function to create Firebase Auth account via HTTP
+    console.log("☁️ Creating Firebase Auth account via Cloud Function...");
+    const idToken = await currentUser.getIdToken();
+
+    const requestData = {
+      email: companyData.email,
+      password: companyData.password,
+      display_name: companyData.name,
+      user_type: "company",
+      phone_number: companyData.phoneNumber,
+      photo_url: logoUrl || "",
+    };
+
+    const response = await fetch(
+      "https://us-central1-car-station-6393f.cloudfunctions.net/createUserFunction",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(requestData),
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        `HTTP ${response.status}: ${result.message || "Unknown error"}`
+      );
+    }
+
+    const companyUid = result.data.uid;
+    console.log("✅ Firebase Auth account created:", companyUid);
+
+    // 4. Build formattedLocation object
+    const formattedLocation = {
+      "address.city": companyData.city,
+      country: "Saudi Arabia",
+    };
+
+    // 5. Prepare company document
+    const companyDocument = {
+      // Basic info
+      name: companyData.name.trim(),
+      email: companyData.email.trim(),
+      phoneNumber: companyData.phoneNumber.trim(),
+      password: companyData.password.trim(),
+      brandName: companyData.brandName.trim(),
+      commercialRegistrationNumber:
+        companyData.commercialRegistrationNumber?.trim() || "",
+      vatNumber: companyData.vatNumber?.trim() || "",
+      city: companyData.city,
+      address: companyData.address?.trim() || "",
+
+      // File URLs
+      logo: logoUrl,
+      addressFile: addressFileUrl,
+      taxCertificate: taxCertificateUrl,
+      commercialRegistration: commercialRegUrl,
+
+      // formattedLocation map
+      formattedLocation: formattedLocation,
+
+      // Auth UID
+      uId: companyUid,
+
+      // Default values
+      isActive: true,
+      status: "approved",
+      balance: 0,
+
+      // Timestamps and user info
+      createdDate: serverTimestamp(),
+      createdUserId: adminEmail,
+
+      // Account status for display
+      accountStatus: {
+        active: true,
+        text: "مفعل",
+      },
+    };
+
+    console.log("📄 Company document prepared:", companyDocument);
+
+    // 6. Add document to Firestore companies collection
+    console.log("💾 Adding company document to companies collection...");
+    const companyDocRef = doc(db, "companies", companyData.email);
+    await setDoc(companyDocRef, companyDocument);
+    console.log("✅ Company document added to companies collection");
+
+    return {
+      id: companyData.email,
+      ...companyDocument,
+      uId: companyUid,
+    };
+  } catch (error) {
+    console.error("❌ Error creating company:", error);
+
+    // Provide user-friendly error messages
+    if (error instanceof Error) {
+      if (error.message.includes("email-already-in-use")) {
+        throw new Error(
+          "This email is already registered. Please use a different email address."
+        );
+      } else if (error.message.includes("weak-password")) {
+        throw new Error(
+          "Password is too weak. Please choose a stronger password."
+        );
+      } else if (error.message.includes("invalid-email")) {
+        throw new Error(
+          "Invalid email format. Please enter a valid email address."
+        );
+      } else if (
+        error.message.includes("HTTP 400") ||
+        error.message.includes("HTTP 500")
+      ) {
+        // Cloud Function errors
+        if (
+          error.message.includes("already exists") ||
+          error.message.includes("email")
+        ) {
+          throw new Error(
+            "This email is already registered. Please use a different email address."
+          );
+        }
+        throw new Error(
+          "Failed to create company account. Please try again or contact support."
+        );
+      }
+    }
+
+    throw error;
+  }
+};
+
+/**
+ * Add a new service provider (stations company) to Firestore
+ * @param providerData - Service provider form data
+ * @returns Promise with the created service provider document
+ */
+export const addServiceProvider = async (
+  providerData: AddServiceProviderData
+) => {
+  try {
+    console.log("🏢 Adding new service provider via Cloud Function...");
+    console.log("Service provider data:", providerData);
+
+    // 1. Get current user (admin) - stays logged in!
+    const currentUser = auth.currentUser;
+    if (!currentUser || !currentUser.email) {
+      throw new Error("No authenticated user found");
+    }
+    const adminEmail = currentUser.email;
+    console.log("👤 Admin email:", adminEmail);
+
+    // 2. Upload all files to Firebase Storage in parallel
+    console.log("📤 Uploading files to Firebase Storage...");
+    const [logoUrl, addressFileUrl, taxCertificateUrl, commercialRegUrl] =
+      await Promise.all([
+        providerData.logoFile
+          ? (async () => {
+              const fileName = `stationsCompanies/logos/${Date.now()}_${
+                providerData.logoFile!.name
+              }`;
+              const storageRef = ref(storage, fileName);
+              await uploadBytes(storageRef, providerData.logoFile!);
+              return await getDownloadURL(storageRef);
+            })()
+          : Promise.resolve(""),
+        providerData.addressFile
+          ? (async () => {
+              const fileName = `stationsCompanies/address-files/${Date.now()}_${
+                providerData.addressFile!.name
+              }`;
+              const storageRef = ref(storage, fileName);
+              await uploadBytes(storageRef, providerData.addressFile!);
+              return await getDownloadURL(storageRef);
+            })()
+          : Promise.resolve(""),
+        providerData.taxCertificateFile
+          ? (async () => {
+              const fileName = `stationsCompanies/tax-certificates/${Date.now()}_${
+                providerData.taxCertificateFile!.name
+              }`;
+              const storageRef = ref(storage, fileName);
+              await uploadBytes(storageRef, providerData.taxCertificateFile!);
+              return await getDownloadURL(storageRef);
+            })()
+          : Promise.resolve(""),
+        providerData.commercialRegistrationFile
+          ? (async () => {
+              const fileName = `stationsCompanies/commercial-registrations/${Date.now()}_${
+                providerData.commercialRegistrationFile!.name
+              }`;
+              const storageRef = ref(storage, fileName);
+              await uploadBytes(
+                storageRef,
+                providerData.commercialRegistrationFile!
+              );
+              return await getDownloadURL(storageRef);
+            })()
+          : Promise.resolve(""),
+      ]);
+
+    console.log("✅ Files uploaded successfully");
+
+    // 3. Call Cloud Function to create Firebase Auth account via HTTP
+    console.log("☁️ Creating Firebase Auth account via Cloud Function...");
+    const idToken = await currentUser.getIdToken();
+
+    const requestData = {
+      email: providerData.email,
+      password: providerData.password,
+      display_name: providerData.name,
+      user_type: "service-provider",
+      phone_number: providerData.phoneNumber,
+      photo_url: logoUrl || "",
+    };
+
+    const response = await fetch(
+      "https://us-central1-car-station-6393f.cloudfunctions.net/createUserFunction",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(requestData),
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        `HTTP ${response.status}: ${result.message || "Unknown error"}`
+      );
+    }
+
+    const providerUid = result.data.uid;
+    console.log("✅ Firebase Auth account created:", providerUid);
+
+    // 4. Build formattedLocation object with nested Address structure
+    const formattedLocation = {
+      address: {
+        city: providerData.city,
+        country: providerData.country,
+        countryCode: providerData.countryCode,
+        highway: providerData.highway,
+        postcode: providerData.postcode,
+        road: providerData.road,
+        state: providerData.state,
+        stateDistrict: providerData.stateDistrict,
+      },
+    };
+
+    // 5. Prepare service provider document
+    const providerDocument = {
+      // Basic info
+      name: providerData.name.trim(),
+      email: providerData.email.trim(),
+      phoneNumber: providerData.phoneNumber.trim(),
+      password: providerData.password.trim(),
+      brandName: providerData.brandName.trim(),
+      commercialRegistrationNumber:
+        providerData.commercialRegistrationNumber.trim(),
+      vatNumber: providerData.vatNumber.trim(),
+      address: providerData.address.trim(),
+      location: providerData.location.trim(),
+
+      // File URLs
+      logo: logoUrl,
+      addressFile: addressFileUrl,
+      taxCertificate: taxCertificateUrl,
+      commercialRegistration: commercialRegUrl,
+
+      // formattedLocation with nested address
+      formattedLocation: formattedLocation,
+
+      // Auth UID
+      uId: providerUid,
+
+      // Default values
+      isActive: false,
+      status: "pending",
+      balance: 0,
+
+      // Timestamps and user info
+      createdDate: serverTimestamp(),
+      createdUserId: adminEmail,
+
+      // Account status for display
+      accountStatus: {
+        active: false,
+        text: "معلق",
+      },
+    };
+
+    console.log("📄 Service provider document prepared:", providerDocument);
+
+    // 6. Add document to Firestore stationscompany collection
+    console.log(
+      "💾 Adding service provider document to stationscompany collection..."
+    );
+    const stationsCompanyRef = collection(db, "stationscompany");
+    const providerDocRef = await addDoc(stationsCompanyRef, providerDocument);
+    console.log(
+      "✅ Service provider document added to stationscompany collection with ID:",
+      providerDocRef.id
+    );
+
+    return {
+      id: providerDocRef.id,
+      ...providerDocument,
+      uId: providerUid,
+    };
+  } catch (error) {
+    console.error("❌ Error creating service provider:", error);
+
+    // Provide user-friendly error messages
+    if (error instanceof Error) {
+      if (error.message.includes("email-already-in-use")) {
+        throw new Error(
+          "This email is already registered. Please use a different email address."
+        );
+      } else if (error.message.includes("weak-password")) {
+        throw new Error(
+          "Password is too weak. Please choose a stronger password."
+        );
+      } else if (error.message.includes("invalid-email")) {
+        throw new Error(
+          "Invalid email format. Please enter a valid email address."
+        );
+      } else if (
+        error.message.includes("HTTP 400") ||
+        error.message.includes("HTTP 500")
+      ) {
+        // Cloud Function errors
+        if (
+          error.message.includes("already exists") ||
+          error.message.includes("email")
+        ) {
+          throw new Error(
+            "This email is already registered. Please use a different email address."
+          );
+        }
+        throw new Error(
+          "Failed to create service provider account. Please try again or contact support."
+        );
+      }
+    }
+
+    throw error;
+  }
+};
+
 export const fetchInvoices = async (): Promise<any[]> => {
   try {
     console.log("📄 Fetching invoices from Firestore...");
@@ -6064,12 +6787,17 @@ export const fetchCompanyStatistics = async (companyId: string) => {
       // Tire change statistics
       tireChange: {
         small:
-          (tireChangeStats as any)?.sizes?.find((s: any) => s.name === "صغيرة")?.count || 0,
+          (tireChangeStats as any)?.sizes?.find((s: any) => s.name === "صغيرة")
+            ?.count || 0,
         medium:
-          (tireChangeStats as any)?.sizes?.find((s: any) => s.name === "متوسطة")?.count || 0,
+          (tireChangeStats as any)?.sizes?.find((s: any) => s.name === "متوسطة")
+            ?.count || 0,
         large:
-          (tireChangeStats as any)?.sizes?.find((s: any) => s.name === "كبيرة")?.count || 0,
-        vip: (tireChangeStats as any)?.sizes?.find((s: any) => s.name === "VIP")?.count || 0,
+          (tireChangeStats as any)?.sizes?.find((s: any) => s.name === "كبيرة")
+            ?.count || 0,
+        vip:
+          (tireChangeStats as any)?.sizes?.find((s: any) => s.name === "VIP")
+            ?.count || 0,
         total: (tireChangeStats as any)?.totalOrders || 0,
       },
 
@@ -6993,7 +7721,9 @@ export const fetchFuelStationRequests = async (
  * @param orderId - The order ID
  * @returns Promise with the order data or null
  */
-export const fetchFuelStationOrderById = async (orderId: string): Promise<any | null> => {
+export const fetchFuelStationOrderById = async (
+  orderId: string
+): Promise<any | null> => {
   try {
     console.log("📥 Fetching order by ID:", orderId);
 
@@ -7221,7 +7951,10 @@ export const fetchServiceDistributerStatistics = async (): Promise<{
 
     return result;
   } catch (error) {
-    console.error("❌ Error calculating service distributer statistics:", error);
+    console.error(
+      "❌ Error calculating service distributer statistics:",
+      error
+    );
     throw error;
   }
 };
@@ -7236,10 +7969,12 @@ export const fetchServiceDistributerStatistics = async (): Promise<{
  * @param workerUid The Firebase UID (uId field) of the worker
  * @returns Promise with worker data or null if not found
  */
-export const fetchFuelStationWorkerByEmail = async (workerUid: string): Promise<any | null> => {
+export const fetchFuelStationWorkerByEmail = async (
+  workerUid: string
+): Promise<any | null> => {
   try {
     console.log("👷 Fetching single worker by UID:", workerUid);
-    
+
     if (!workerUid) {
       console.error("❌ No worker UID provided");
       return null;
@@ -7285,7 +8020,7 @@ export const fetchFuelStationsWorkers = async (): Promise<any[]> => {
     console.log("⏳ Waiting for auth state...");
     const currentUser = await waitForAuthState();
     console.log("✅ Auth state ready, current user:", currentUser.email);
-    
+
     if (!currentUser || !currentUser.email) {
       throw new Error("No authenticated user found");
     }
@@ -7313,15 +8048,28 @@ export const fetchFuelStationsWorkers = async (): Promise<any[]> => {
     // Check if carStation.createdUserId matches current user's email
     const filteredWorkers = allWorkers.filter((worker) => {
       const carStationCreatedUserId = worker.carStation?.createdUserId;
-      
-      const match = carStationCreatedUserId && 
-        carStationCreatedUserId.toLowerCase() === currentUserEmail.toLowerCase();
+
+      const match =
+        carStationCreatedUserId &&
+        carStationCreatedUserId.toLowerCase() ===
+          currentUserEmail.toLowerCase();
 
       return match;
     });
 
-    console.log("✅ Filtered workers for current user:", filteredWorkers.length);
-    console.log(`📊 Efficiency: Fetched ${allWorkers.length} workers, filtered to ${filteredWorkers.length} (${filteredWorkers.length > 0 ? Math.round((filteredWorkers.length / allWorkers.length) * 100) : 0}% match rate)`);
+    console.log(
+      "✅ Filtered workers for current user:",
+      filteredWorkers.length
+    );
+    console.log(
+      `📊 Efficiency: Fetched ${allWorkers.length} workers, filtered to ${
+        filteredWorkers.length
+      } (${
+        filteredWorkers.length > 0
+          ? Math.round((filteredWorkers.length / allWorkers.length) * 100)
+          : 0
+      }% match rate)`
+    );
 
     // Transform workers to standard format
     // IMPORTANT: Use uId (Firebase UID) as the ID for cleaner URLs
@@ -7333,16 +8081,19 @@ export const fetchFuelStationsWorkers = async (): Promise<any[]> => {
         phone: worker.phoneNumber || "-",
         emailAddress: worker.email || "-",
         station: worker.carStation?.name || worker.stationsCompany?.name || "-",
-        accountStatus: { 
+        accountStatus: {
           active: worker.isActive === true,
-          text: worker.isActive === true ? "مفعل" : "معطل"
+          text: worker.isActive === true ? "مفعل" : "معطل",
         },
         // Keep original worker data for details page
         originalWorker: worker,
       };
     });
 
-    console.log("✅ Fuel stations workers transformed:", transformedWorkers.length);
+    console.log(
+      "✅ Fuel stations workers transformed:",
+      transformedWorkers.length
+    );
 
     return transformedWorkers;
   } catch (error) {
@@ -7357,7 +8108,9 @@ export const fetchFuelStationsWorkers = async (): Promise<any[]> => {
  * @param stationEmail - The email of the station
  * @returns Promise with array of workers for that station
  */
-export const fetchFuelStationWorkersByStationEmail = async (stationEmail: string): Promise<any[]> => {
+export const fetchFuelStationWorkersByStationEmail = async (
+  stationEmail: string
+): Promise<any[]> => {
   try {
     console.log("👷 Fetching fuel stations workers for station:", stationEmail);
 
@@ -7387,15 +8140,24 @@ export const fetchFuelStationWorkersByStationEmail = async (stationEmail: string
     // Check if stationsCompany.email matches the station's email
     const filteredWorkers = allWorkers.filter((worker) => {
       const workerStationEmail = worker.stationsCompany?.email;
-      
-      const match = workerStationEmail && 
+
+      const match =
+        workerStationEmail &&
         workerStationEmail.toLowerCase() === stationEmail.toLowerCase();
 
       return match;
     });
 
     console.log("✅ Filtered workers for station:", filteredWorkers.length);
-    console.log(`📊 Efficiency: Fetched ${allWorkers.length} workers, filtered to ${filteredWorkers.length} (${filteredWorkers.length > 0 ? Math.round((filteredWorkers.length / allWorkers.length) * 100) : 0}% match rate)`);
+    console.log(
+      `📊 Efficiency: Fetched ${allWorkers.length} workers, filtered to ${
+        filteredWorkers.length
+      } (${
+        filteredWorkers.length > 0
+          ? Math.round((filteredWorkers.length / allWorkers.length) * 100)
+          : 0
+      }% match rate)`
+    );
 
     // Transform workers to standard format
     const transformedWorkers = filteredWorkers.map((worker) => {
@@ -7405,20 +8167,26 @@ export const fetchFuelStationWorkersByStationEmail = async (stationEmail: string
         workerName: worker.name || "-",
         phone: worker.phoneNumber || "-",
         email: worker.email || "-",
-        accountStatus: { 
+        accountStatus: {
           active: worker.isActive === true,
-          text: worker.isActive === true ? "مفعل" : "معطل"
+          text: worker.isActive === true ? "مفعل" : "معطل",
         },
         // Keep original worker data for details page
         originalWorker: worker,
       };
     });
 
-    console.log("✅ Fuel stations workers transformed:", transformedWorkers.length);
+    console.log(
+      "✅ Fuel stations workers transformed:",
+      transformedWorkers.length
+    );
 
     return transformedWorkers;
   } catch (error) {
-    console.error("❌ Error fetching fuel station workers by station email:", error);
+    console.error(
+      "❌ Error fetching fuel station workers by station email:",
+      error
+    );
     throw error;
   }
 };
@@ -7547,7 +8315,9 @@ export const fetchServiceDistributerFinancialReports = async (): Promise<
  * @param workerEmail - The email of the worker
  * @returns Promise with array of worker transaction data
  */
-export const fetchWorkerTransactions = async (workerEmail: string): Promise<any[]> => {
+export const fetchWorkerTransactions = async (
+  workerEmail: string
+): Promise<any[]> => {
   try {
     console.log("👷 Fetching worker transactions for email:", workerEmail);
 
@@ -7574,9 +8344,11 @@ export const fetchWorkerTransactions = async (workerEmail: string): Promise<any[
 
     // Filter orders by worker email
     const filteredOrders = allOrders.filter((order) => {
-      const workerEmailInOrder = order.fuelStationWorker?.email || order.fuelStationsWorker?.email;
-      
-      const match = workerEmailInOrder && 
+      const workerEmailInOrder =
+        order.fuelStationWorker?.email || order.fuelStationsWorker?.email;
+
+      const match =
+        workerEmailInOrder &&
         workerEmailInOrder.toLowerCase() === workerEmail.toLowerCase();
 
       return match;
@@ -7631,14 +8403,20 @@ export const fetchWorkerTransactions = async (workerEmail: string): Promise<any[
         transactionNumber: order.refId || order.refDocId || order.id,
         stationName: order.carStation?.name || "غير محدد",
         clientName: order.client?.name || "غير محدد",
-        fuelType: order.selectedOption?.title?.ar || order.selectedOption?.title?.en || "غير محدد",
+        fuelType:
+          order.selectedOption?.title?.ar ||
+          order.selectedOption?.title?.en ||
+          "غير محدد",
         totalLiters: totalLitre.toString(),
         totalPrice: totalPrice,
         creationDate: formatDate(order.orderDate),
       };
     });
 
-    console.log("✅ Worker transactions transformed:", transformedOrders.length);
+    console.log(
+      "✅ Worker transactions transformed:",
+      transformedOrders.length
+    );
 
     return transformedOrders;
   } catch (error) {
@@ -7661,7 +8439,7 @@ export const fetchTopClientsByConsumption = async (): Promise<any[]> => {
     console.log("⏳ Waiting for auth state...");
     const currentUser = await waitForAuthState();
     console.log("✅ Auth state ready, current user:", currentUser.email);
-    
+
     if (!currentUser || !currentUser.email) {
       throw new Error("No authenticated user found");
     }
@@ -7688,9 +8466,11 @@ export const fetchTopClientsByConsumption = async (): Promise<any[]> => {
     // Check if carStation.createdUserId matches current user's email
     const filteredOrders = allOrders.filter((order) => {
       const carStationCreatedUserId = order.carStation?.createdUserId;
-      
-      const match = carStationCreatedUserId && 
-        carStationCreatedUserId.toLowerCase() === currentUserEmail.toLowerCase();
+
+      const match =
+        carStationCreatedUserId &&
+        carStationCreatedUserId.toLowerCase() ===
+          currentUserEmail.toLowerCase();
 
       return match;
     });
@@ -7698,14 +8478,17 @@ export const fetchTopClientsByConsumption = async (): Promise<any[]> => {
     console.log("✅ Filtered orders for current user:", filteredOrders.length);
 
     // Group orders by client email and sum up consumption
-    const clientConsumptionMap = new Map<string, {
-      email: string;
-      name: string;
-      phone: string;
-      totalCost: number;
-      totalFuel: number;
-      orders: any[];
-    }>();
+    const clientConsumptionMap = new Map<
+      string,
+      {
+        email: string;
+        name: string;
+        phone: string;
+        totalCost: number;
+        totalFuel: number;
+        orders: any[];
+      }
+    >();
 
     filteredOrders.forEach((order) => {
       const clientEmail = order.client?.email || "";
@@ -7727,7 +8510,7 @@ export const fetchTopClientsByConsumption = async (): Promise<any[]> => {
             phone: clientPhone,
             totalCost: totalPrice,
             totalFuel: totalLitre,
-            orders: [order]
+            orders: [order],
           });
         }
       }
@@ -7743,7 +8526,7 @@ export const fetchTopClientsByConsumption = async (): Promise<any[]> => {
         cost: Math.round(client.totalCost), // Round to nearest integer
         fuel: Math.round(client.totalFuel).toString(), // Convert to string for display
         type: getMostUsedFuelType(client.orders),
-        rank: index + 1
+        rank: index + 1,
       }));
 
     console.log("✅ Top clients aggregated:", topClients.length);
@@ -7762,7 +8545,8 @@ const getMostUsedFuelType = (orders: any[]): string => {
   const fuelTypeCount = new Map<string, number>();
 
   orders.forEach((order) => {
-    const fuelType = order.selectedOption?.title?.ar || order.selectedOption?.title?.en || "";
+    const fuelType =
+      order.selectedOption?.title?.ar || order.selectedOption?.title?.en || "";
     if (fuelType) {
       fuelTypeCount.set(fuelType, (fuelTypeCount.get(fuelType) || 0) + 1);
     }
@@ -7795,7 +8579,7 @@ export const fetchTopStationsByConsumption = async (): Promise<any[]> => {
     console.log("⏳ Waiting for auth state...");
     const currentUser = await waitForAuthState();
     console.log("✅ Auth state ready, current user:", currentUser.email);
-    
+
     if (!currentUser || !currentUser.email) {
       throw new Error("No authenticated user found");
     }
@@ -7822,9 +8606,11 @@ export const fetchTopStationsByConsumption = async (): Promise<any[]> => {
     // Check if carStation.createdUserId matches current user's email
     const filteredOrders = allOrders.filter((order) => {
       const carStationCreatedUserId = order.carStation?.createdUserId;
-      
-      const match = carStationCreatedUserId && 
-        carStationCreatedUserId.toLowerCase() === currentUserEmail.toLowerCase();
+
+      const match =
+        carStationCreatedUserId &&
+        carStationCreatedUserId.toLowerCase() ===
+          currentUserEmail.toLowerCase();
 
       return match;
     });
@@ -7832,14 +8618,17 @@ export const fetchTopStationsByConsumption = async (): Promise<any[]> => {
     console.log("✅ Filtered orders for current user:", filteredOrders.length);
 
     // Group orders by station email/name and sum up consumption
-    const stationConsumptionMap = new Map<string, {
-      name: string;
-      email: string;
-      address: string;
-      totalPrice: number;
-      totalFuel: number;
-      orders: any[];
-    }>();
+    const stationConsumptionMap = new Map<
+      string,
+      {
+        name: string;
+        email: string;
+        address: string;
+        totalPrice: number;
+        totalFuel: number;
+        orders: any[];
+      }
+    >();
 
     filteredOrders.forEach((order) => {
       const stationEmail = order.carStation?.email || "";
@@ -7861,7 +8650,7 @@ export const fetchTopStationsByConsumption = async (): Promise<any[]> => {
             address: stationAddress,
             totalPrice: totalPrice,
             totalFuel: totalLitre,
-            orders: [order]
+            orders: [order],
           });
         }
       }
@@ -7877,7 +8666,7 @@ export const fetchTopStationsByConsumption = async (): Promise<any[]> => {
         price: Math.round(station.totalPrice), // Round to nearest integer
         fuel: Math.round(station.totalFuel).toString(), // Convert to string for display
         type: getMostUsedFuelType(station.orders),
-        rank: index + 1
+        rank: index + 1,
       }));
 
     console.log("✅ Top stations aggregated:", topStations.length);
