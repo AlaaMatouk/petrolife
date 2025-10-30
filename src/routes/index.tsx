@@ -67,6 +67,9 @@ import { AddChoice } from "../components/AdminDashboard/pages/services/AddChoice
 import { FinancialReport } from "../components/AdminDashboard/pages/financial-report";
 import { ServiceProviderReport } from "../components/AdminDashboard/pages/service-provider-report";
 import { WalletReport } from "../components/AdminDashboard/pages/wallet-report";
+import PetrolifeDrivers from "../components/AdminDashboard/pages/petrolife-drivers/PetrolifeDrivers";
+import AddPeroDriver from "../components/AdminDashboard/pages/petrolife-drivers/AddPeroDriver";
+import PetrolifeDriverDetails from "../components/AdminDashboard/pages/petrolife-drivers/PetrolifeDriverDetails";
 
 // 404 Component
 const NotFound = () => (
@@ -151,6 +154,9 @@ export const AppRouter = () => {
           element={<ServiceProviderReport />}
         />
         <Route path={ROUTES.ADMIN_WALLET_REPORTS} element={<WalletReport />} />
+        <Route path={ROUTES.PETROLIFE_DRIVERS} element={<PetrolifeDrivers />} />
+        <Route path="/petrolife-drivers/add" element={<AddPeroDriver />} />
+        <Route path="/petrolife-drivers/:id" element={<PetrolifeDriverDetails />} />
       </Route>
 
       {/* All Protected Routes with Layout Wrapper */}
