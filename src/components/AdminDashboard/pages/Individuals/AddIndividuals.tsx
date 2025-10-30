@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, auth, storage } from "../../../../config/firebase";
+import { registerUserWithPhoneNumber } from "../../../../services/auth";
 
 export const AddIndividuals = () => {
   const navigate = useNavigate();
@@ -151,16 +152,44 @@ export const AddIndividuals = () => {
       // Add document to Firestore
       const docRef = await addDoc(collection(db, "clients"), clientData);
 
-      // Update the document with its own ID as uid
-      // Note: We're not using updateDoc here to match the existing pattern
-      // The uid field can be set to the document ID if needed
+      console.log("Client added to Firestore:", docRef.id);
 
-      // Success message
-      addToast({
-        title: "تم بنجاح",
-        message: "تم إضافة العميل بنجاح",
-        type: "success",
-      });
+      // Register user in Firebase Auth via Cloud Function
+      console.log(
+        "Registering user in Firebase Auth with phone:",
+        formData.phoneNumber
+      );
+      const authResult = await registerUserWithPhoneNumber(formData.phoneNumber);
+
+      if (authResult.success) {
+        console.log(
+          "✅ Firebase Auth registration successful:",
+          authResult.message
+        );
+        if (authResult.uid) {
+          console.log("Firebase Auth UID:", authResult.uid);
+        }
+      } else {
+        console.error(
+          "⚠️ Firebase Auth registration failed:",
+          authResult.message
+        );
+        // Show warning but don't stop the process
+        addToast({
+          title: "تحذير",
+          message: `تمت إضافة العميل إلى Firestore، لكن حدث خطأ في إنشاء حساب المصادقة: ${authResult.message}`,
+          type: "warning",
+        });
+      }
+
+      // Show success message only if Auth was also successful
+      if (authResult.success) {
+        addToast({
+          title: "تم بنجاح",
+          message: "تم إضافة العميل وإنشاء حساب المصادقة بنجاح",
+          type: "success",
+        });
+      }
 
       // Clear form
       setFormData({

@@ -13,108 +13,119 @@ interface PageConfig {
 
 // Define page configurations for each admin route
 const ADMIN_PAGE_CONFIGS: Record<string, PageConfig> = {
-  '/admin-dashboard': {
-    title: 'لوحة التحكم',
+  "/admin-dashboard": {
+    title: "لوحة التحكم",
     titleIcon: <img src={sideIcons1} alt="logo" className="w-5 h-5" />,
     showSearch: true,
-    searchPlaceholder: 'بحث برقم العميل / العملية / السجل التجاري / رقم الهاتف',
+    searchPlaceholder: "بحث برقم العميل / العملية / السجل التجاري / رقم الهاتف",
   },
-  '/supervisors': {
-    title: 'المشرفين',
+  "/supervisors": {
+    title: "المشرفين",
     titleIcon: <img src="/img/side-icons-3.svg" alt="" className="w-5 h-5" />,
     showSearch: true,
-    searchPlaceholder: 'بحث عن مشرف...',
+    searchPlaceholder: "بحث عن مشرف...",
   },
-  '/supervisors/add': {
-    title: 'المشرفين / اضافة مشرف جديد',
+  "/supervisors/add": {
+    title: "المشرفين / اضافة مشرف جديد",
     titleIcon: <img src="/img/side-icons-3.svg" alt="" className="w-5 h-5" />,
     showSearch: false,
   },
-  '/companies': {
-    title: 'الشركات',
+  "/companies": {
+    title: "الشركات",
     titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
     showSearch: true,
-    searchPlaceholder: 'بحث عن شركة...',
+    searchPlaceholder: "بحث عن شركة...",
   },
-  '/companies/add': {
-    title: 'الشركات / اضافة شركة جديدة',
+  "/companies/add": {
+    title: "الشركات / اضافة شركة جديدة",
     titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
     showSearch: false,
   },
-  '/individuals': {
-    title: 'الأفراد',
+  "/individuals": {
+    title: "الأفراد",
     titleIcon: <img src="/img/side-icons-8.svg" alt="" className="w-5 h-5" />,
     showSearch: true,
-    searchPlaceholder: 'بحث عن فرد...',
+    searchPlaceholder: "بحث عن فرد...",
   },
-  '/individuals/add': {
-    title: 'الأفراد / اضافة فرد جديد',
+  "/individuals/add": {
+    title: "الأفراد / اضافة فرد جديد",
     titleIcon: <img src="/img/side-icons-8.svg" alt="" className="w-5 h-5" />,
     showSearch: false,
   },
-  '/service-providers': {
-    title: 'مزودي الخدمة',
+  "/service-providers": {
+    title: "مزودي الخدمة",
     titleIcon: <img src="/img/side-icons-9.svg" alt="" className="w-5 h-5" />,
     showSearch: true,
-    searchPlaceholder: 'بحث عن مزود خدمة...',
+    searchPlaceholder: "بحث عن مزود خدمة...",
   },
-  '/service-providers/add': {
-    title: 'مزودي الخدمة / اضافة مزود خدمة جديد',
-    titleIcon: <img src="/img/side-icons-9.svg" alt="" className="w-5 h-5" />,
-    showSearch: false,
-  },
-  '/wallet-requests': {
-    title: 'طلبات المحافظ',
-    titleIcon: <img src="/img/side-icons-3.svg" alt="" className="w-5 h-5" />,
-    showSearch: true,
-    searchPlaceholder: 'بحث عن طلب...',
-  },
-  '/wallet-requests/moneyrefundrequests': {
-    title: 'طلبات استرداد الاموال',
-    titleIcon: <img src="/img/side-icons-3.svg" alt="" className="w-5 h-5" />,
-    showSearch: true,
-    searchPlaceholder: 'بحث عن طلب استرداد...',
-  },
-  '/fuel-delivery-requests': {
-    title: 'طلبات توصيل الوقود',
-    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
-    showSearch: true,
-    searchPlaceholder: 'بحث عن طلب توصيل...',
-  },
-  '/fuel-delivery-requests/received-delivery-requests': {
-    title: 'طلبات التوصيل المستلمة',
-    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
-    showSearch: true,
-    searchPlaceholder: 'بحث عن طلب توصيل مستلم...',
-  },
-  '/application-services': {
-    title: 'خدمات التطبيق',
-    titleIcon: <img src="/img/side-icons-9.svg" alt="" className="w-5 h-5" />,
-    showSearch: true,
-    searchPlaceholder: 'بحث في الخدمات...',
-  },
-  '/application-services/add-choice': {
-    title: 'خدمات التطبيق / إضافة خيار جديد',
+  "/service-providers/add": {
+    title: "مزودي الخدمة / اضافة مزود خدمة جديد",
     titleIcon: <img src="/img/side-icons-9.svg" alt="" className="w-5 h-5" />,
     showSearch: false,
   },
-  '/admin-financial-reports': {
-    title: 'تقارير المبيعات',
+  "/wallet-requests": {
+    title: "طلبات المحافظ",
+    titleIcon: <img src="/img/side-icons-3.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث عن طلب...",
+  },
+  "/wallet-requests/moneyrefundrequests": {
+    title: "طلبات استرداد الاموال",
+    titleIcon: <img src="/img/side-icons-3.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث عن طلب استرداد...",
+  },
+  "/fuel-delivery-requests": {
+    title: "طلبات توصيل الوقود",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث عن طلب توصيل...",
+  },
+  "/fuel-delivery-requests/received-delivery-requests": {
+    title: "طلبات التوصيل المستلمة",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث عن طلب توصيل مستلم...",
+  },
+  "/application-services": {
+    title: "خدمات التطبيق",
+    titleIcon: <img src="/img/side-icons-9.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث في الخدمات...",
+  },
+  "/application-services/add-choice": {
+    title: "خدمات التطبيق / إضافة خيار جديد",
+    titleIcon: <img src="/img/side-icons-9.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
+  "/admin-financial-reports": {
+    title: "تقارير المبيعات",
     titleIcon: <img src="/img/side-icons-20.svg" alt="" className="w-5 h-5" />,
     showSearch: true,
-    searchPlaceholder: 'بحث في تقارير المبيعات...',
+    searchPlaceholder: "بحث في تقارير المبيعات...",
   },
-  '/admin-service-provider-reports': {
-    title: 'تقارير مزودي الخدمة',
+  "/admin-service-provider-reports": {
+    title: "تقارير مزودي الخدمة",
     titleIcon: <img src="/img/side-icons-9.svg" alt="" className="w-5 h-5" />,
     showSearch: true,
-    searchPlaceholder: 'بحث في تقارير مزودي الخدمة...',
+    searchPlaceholder: "بحث في تقارير مزودي الخدمة...",
   },
-  '/admin-wallet-reports': {
-    title: 'تقارير المحافظ',
+  "/admin-wallet-reports": {
+    title: "تقارير المحافظ",
     titleIcon: <img src="/img/side-icons-6.svg" alt="" className="w-5 h-5" />,
     showSearch: true,
-    searchPlaceholder: 'بحث في تقارير المحافظ...',
+    searchPlaceholder: "بحث في تقارير المحافظ...",
+  },
+  "/petrolife-drivers": {
+    title: "سائقي بترولايف",
+    titleIcon: <img src="/img/side-icons-3.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث عن سائق...",
+  },
+  "/petrolife-drivers/add": {
+    title: "سائقي بترولايف / اضافة سائق جديد",
+    titleIcon: <img src="/img/side-icons-3.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
   },
 };
 
@@ -126,129 +137,165 @@ const getPageConfig = (pathname: string): PageConfig | null => {
   }
 
   // Match dynamic routes (e.g., /supervisors/:id)
-  if (pathname.startsWith('/supervisors/') && pathname !== '/supervisors/add') {
+  if (pathname.startsWith("/supervisors/") && pathname !== "/supervisors/add") {
     return {
-      title: 'المشرفين / تفاصيل المشرف',
+      title: "المشرفين / تفاصيل المشرف",
       titleIcon: <img src="/img/side-icons-3.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };
   }
 
   // Match dynamic routes (e.g., /companies/:id)
-  if (pathname.startsWith('/companies/') && pathname !== '/companies/add') {
+  if (pathname.startsWith("/companies/") && pathname !== "/companies/add") {
     return {
-      title: 'الشركات / تفاصيل الشركة',
+      title: "الشركات / تفاصيل الشركة",
       titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };
   }
 
   // Match dynamic routes (e.g., /individuals/:id)
-  if (pathname.startsWith('/individuals/') && pathname !== '/individuals/add') {
+  if (pathname.startsWith("/individuals/") && pathname !== "/individuals/add") {
     return {
-      title: 'الأفراد / تفاصيل الفرد',
+      title: "الأفراد / تفاصيل الفرد",
       titleIcon: <img src="/img/side-icons-8.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };
   }
 
   // Match dynamic routes (e.g., /service-providers/:id)
-  if (pathname.startsWith('/service-providers/') && pathname !== '/service-providers/add') {
+  if (
+    pathname.startsWith("/service-providers/") &&
+    pathname !== "/service-providers/add"
+  ) {
     return {
-      title: 'مزودي الخدمة / تفاصيل مزود الخدمة',
+      title: "مزودي الخدمة / تفاصيل مزود الخدمة",
       titleIcon: <img src="/img/side-icons-9.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };
   }
 
   // Match dynamic routes (e.g., /wallet-requests/:id)
-  if (pathname.startsWith('/wallet-requests/') && pathname !== '/wallet-requests/moneyrefundrequests') {
+  if (
+    pathname.startsWith("/wallet-requests/") &&
+    pathname !== "/wallet-requests/moneyrefundrequests"
+  ) {
     return {
-      title: 'طلبات المحافظ / مراجعة الطلب',
+      title: "طلبات المحافظ / مراجعة الطلب",
       titleIcon: <img src="/img/side-icons-3.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };
   }
 
   // Match dynamic routes (e.g., /wallet-requests/moneyrefundrequests)
-  if (pathname === '/wallet-requests/moneyrefundrequests') {
+  if (pathname === "/wallet-requests/moneyrefundrequests") {
     return {
-      title: 'طلبات المحافظ/طلبات استرداد الاموال',
+      title: "طلبات المحافظ/طلبات استرداد الاموال",
       titleIcon: <img src="/img/side-icons-6.svg" alt="" className="w-5 h-5" />,
       showSearch: true,
-      searchPlaceholder: 'بحث عن طلب استرداد...',
+      searchPlaceholder: "بحث عن طلب استرداد...",
     };
   }
 
   // Match dynamic routes (e.g., /wallet-requests/moneyrefundrequests/:id)
-  if (pathname.startsWith('/wallet-requests/moneyrefundrequests/') && pathname !== '/wallet-requests/moneyrefundrequests') {
+  if (
+    pathname.startsWith("/wallet-requests/moneyrefundrequests/") &&
+    pathname !== "/wallet-requests/moneyrefundrequests"
+  ) {
     return {
-      title: 'طلبات المحافظ/طلبات استرداد الاموال / مراجعة طلب الاسترداد',
+      title: "طلبات المحافظ/طلبات استرداد الاموال / مراجعة طلب الاسترداد",
       titleIcon: <img src="/img/side-icons-6.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };
   }
 
   // Match dynamic routes (e.g., /fuel-delivery-requests/:id)
-  if (pathname.startsWith('/fuel-delivery-requests/') && 
-      pathname !== '/fuel-delivery-requests' && 
-      pathname !== '/fuel-delivery-requests/received-delivery-requests') {
+  if (
+    pathname.startsWith("/fuel-delivery-requests/") &&
+    pathname !== "/fuel-delivery-requests" &&
+    pathname !== "/fuel-delivery-requests/received-delivery-requests"
+  ) {
     return {
-      title: 'طلبات توصيل الوقود / معاينة طلب التوصيل',
+      title: "طلبات توصيل الوقود / معاينة طلب التوصيل",
       titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };
   }
 
   // Match dynamic routes (e.g., /fuel-delivery-requests/received-delivery-requests/:id)
-  if (pathname.startsWith('/fuel-delivery-requests/received-delivery-requests/') && 
-      pathname !== '/fuel-delivery-requests/received-delivery-requests') {
+  if (
+    pathname.startsWith(
+      "/fuel-delivery-requests/received-delivery-requests/"
+    ) &&
+    pathname !== "/fuel-delivery-requests/received-delivery-requests"
+  ) {
     return {
-      title: 'طلبات التوصيل المستلمة / تفاصيل الطلب',
+      title: "طلبات التوصيل المستلمة / تفاصيل الطلب",
       titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };
   }
 
   // Match dynamic routes (e.g., /application-services/:id)
-  if (pathname.startsWith('/application-services/') && 
-      pathname !== '/application-services') {
+  if (
+    pathname.startsWith("/application-services/") &&
+    pathname !== "/application-services"
+  ) {
     return {
-      title: 'خدمات التطبيق / تفاصيل الخدمة',
+      title: "خدمات التطبيق / تفاصيل الخدمة",
       titleIcon: <img src="/img/side-icons-9.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };
   }
 
   // Match dynamic routes (e.g., /admin-financial-reports/:id)
-  if (pathname.startsWith('/admin-financial-reports/') && 
-      pathname !== '/admin-financial-reports' && 
-      pathname !== '/admin-financial-reports/add') {
+  if (
+    pathname.startsWith("/admin-financial-reports/") &&
+    pathname !== "/admin-financial-reports" &&
+    pathname !== "/admin-financial-reports/add"
+  ) {
     return {
-      title: 'تقارير المبيعات / تفاصيل التقرير',
-      titleIcon: <img src="/img/side-icons-20.svg" alt="" className="w-5 h-5" />,
+      title: "تقارير المبيعات / تفاصيل التقرير",
+      titleIcon: (
+        <img src="/img/side-icons-20.svg" alt="" className="w-5 h-5" />
+      ),
       showSearch: false,
     };
   }
 
   // Match dynamic routes (e.g., /admin-service-provider-reports/:id)
-  if (pathname.startsWith('/admin-service-provider-reports/') && 
-      pathname !== '/admin-service-provider-reports' && 
-      pathname !== '/admin-service-provider-reports/add') {
+  if (
+    pathname.startsWith("/admin-service-provider-reports/") &&
+    pathname !== "/admin-service-provider-reports" &&
+    pathname !== "/admin-service-provider-reports/add"
+  ) {
     return {
-      title: 'تقارير مزودي الخدمة / تفاصيل التقرير',
+      title: "تقارير مزودي الخدمة / تفاصيل التقرير",
       titleIcon: <img src="/img/side-icons-9.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };
   }
 
   // Match dynamic routes (e.g., /admin-wallet-reports/:id)
-  if (pathname.startsWith('/admin-wallet-reports/') && 
-      pathname !== '/admin-wallet-reports' && 
-      pathname !== '/admin-wallet-reports/add') {
+  if (
+    pathname.startsWith("/admin-wallet-reports/") &&
+    pathname !== "/admin-wallet-reports" &&
+    pathname !== "/admin-wallet-reports/add"
+  ) {
     return {
-      title: 'تقارير المحافظ / تفاصيل التقرير',
+      title: "تقارير المحافظ / تفاصيل التقرير",
       titleIcon: <img src="/img/side-icons-6.svg" alt="" className="w-5 h-5" />,
+      showSearch: false,
+    };
+  }
+
+  if (
+    pathname.startsWith("/petrolife-drivers/") &&
+    pathname !== "/petrolife-drivers/add"
+  ) {
+    return {
+      title: "سائقي بترولايف / تفاصيل السائق",
+      titleIcon: <img src="/img/side-icons-3.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };
   }
@@ -270,7 +317,9 @@ export const AdminLayoutWrapper: React.FC = () => {
 
   // If no config found, render without layout
   if (!pageConfig) {
-    return <Outlet context={{ searchQuery, setSearchQuery, setDynamicTitle }} />;
+    return (
+      <Outlet context={{ searchQuery, setSearchQuery, setDynamicTitle }} />
+    );
   }
 
   const handleSearch = (query: string) => {
@@ -306,4 +355,3 @@ export const AdminLayoutWrapper: React.FC = () => {
     </LayoutSimple>
   );
 };
-
