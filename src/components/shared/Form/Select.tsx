@@ -40,14 +40,15 @@ export const Select: React.FC<SelectProps> = ({
             ? 'border-red-500 bg-red-50' 
             : 'border-color-mode-text-icons-t-placeholder hover:border-color-mode-text-icons-t-sec focus-within:border-color-mode-text-icons-t-blue'
         }`}>
-          <ChevronLeft className="w-4 h-4 text-gray-500" />
+          {/* Left-positioned chevron icon */}
+          <ChevronLeft className="w-4 h-4 text-gray-500 absolute left-2 top-1/2 -translate-y-1/2" />
 
           <div className="flex items-center justify-end pt-[3px] pb-0 px-0 relative flex-1 grow">
             <select
               value={value}
               onChange={(e) => onChange(e.target.value)}
               onBlur={onBlur}
-              className={`text-right relative pr-2 w-full mt-[-1.00px] font-body-body-2 font-[number:var(--body-body-2-font-weight)] text-[length:var(--body-body-2-font-size)] text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] [font-style:var(--body-body-2-font-style)] bg-transparent border-none outline-none ${
+              className={`text-right relative pr-2 pl-7 w-full mt-[-1.00px] font-body-body-2 font-[number:var(--body-body-2-font-weight)] text-[length:var(--body-body-2-font-size)] text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] [font-style:var(--body-body-2-font-style)] bg-transparent border-none outline-none ${
                 error 
                   ? 'text-red-500' 
                   : 'text-[var(--form-active-input-text-color)]'
