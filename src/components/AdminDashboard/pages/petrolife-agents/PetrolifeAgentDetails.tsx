@@ -8,57 +8,36 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  Building2,
+  MessageSquare,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 
-// Dummy driver info matching screenshot style
-const driverInfo = {
-  name: "محمد طارق محمد",
+// Dummy agent info matching screenshot style
+const agentInfo = {
+  name: "محمد احمد علي",
   email: "hesham@gmail.com",
   phone: "رقم الهاتف هنا",
   city: "الرياض",
-  address: ", Riyadh 13245, Saudi Arabia ,شرطة ,7453 ص",
-  carNumber: "2145364",
-  lastUsed: "ص 10:15 ، 2025 فبراير 12",
-  avatar: "/img/image-2.png",
+  address: "الصائن، 7453، حي قرطبة، Riyadh 13245, Saudi Arabia",
+  joinDate: "12 فبراير 2025 10:15 ص",
+  agentCode: "21452368452",
+  commissionValue: "10",
+  numberOfCompanies: "48",
 };
 
-// Dummy deliveries data
-const deliveries = Array.from({ length: 24 }).map((_, i) => ({
+// Dummy companies data
+const companies = Array.from({ length: 48 }).map((_, i) => ({
   id: i + 1,
-  tripNumber: "12563",
-  fuelType: "بنزين 91",
-  quantity: "200",
-  address: "12 ش المنيل ، محافظة القاهرة",
-  orderDate: "ص 5:05 - 2025 فبراير 21",
-  status:
-    i % 7 === 0
-      ? { color: "text-red-600", bg: "bg-red-50", text: "ملغي" }
-      : i % 3 === 0
-      ? { color: "text-yellow-600", bg: "bg-yellow-50", text: "جاري التوصيل" }
-      : i % 5 === 0
-      ? { color: "text-blue-600", bg: "bg-blue-50", text: "طلب تغيير سائق" }
-      : { color: "text-gray-600", bg: "bg-gray-50", text: "مكتمل" },
+  companyCode: "21A254",
+  companyName: { name: "شركة النصر الدولية", logo: "/img/company-logo.png" },
+  phone: "00965284358",
+  email: "ahmedmohamed@gmail.com",
+  city: "الرياض",
+  cars: i % 3 === 0 ? "14" : i % 3 === 1 ? "50" : i % 2 === 0 ? "24" : "26",
+  drivers: "14",
+  subscription: i % 10 === 0 ? "بريميوم" : "كلاسيك",
 }));
-
-const StatusBadge = ({
-  text,
-  color,
-  bg,
-}: {
-  text: string;
-  color: string;
-  bg: string;
-}) => (
-  <span
-    className={`inline-flex items-center gap-2 ${bg} ${color} rounded-full px-2 py-0.5 text-xs`}
-  >
-    <span
-      className={`w-1.5 h-1.5 rounded-full ${color.replace("text-", "bg-")}`}
-    />
-    {text}
-  </span>
-);
 
 const ExportMenu = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -76,7 +55,7 @@ const ExportMenu = () => {
   };
 
   const handleExport = (format: "excel" | "pdf") => {
-    console.log("Export driver trips as", format);
+    console.log("Export companies as", format);
     setIsOpen(false);
   };
 
@@ -137,7 +116,7 @@ const ExportMenu = () => {
   );
 };
 
-const PetrolifeDriverDetails = (): JSX.Element => {
+const PetrolifeAgentDetails = (): JSX.Element => {
   const navigate = useNavigate();
   const [currentPage, setCurrentPage] = useState(3);
   const itemsPerPage = 10;
@@ -145,42 +124,72 @@ const PetrolifeDriverDetails = (): JSX.Element => {
   const columns = useMemo(
     () => [
       {
-        key: "tripNumber",
-        label: "رقم الرحلة",
-        width: "min-w-[90px]",
+        key: "companyCode",
+        label: "كود الشركة",
+        width: "min-w-[120px]",
         priority: "high",
       },
       {
-        key: "fuelType",
-        label: "نوع الوقود",
-        width: "min-w-[90px]",
+        key: "companyName",
+        label: "اسم الشركة",
+        width: "min-w-[180px]",
+        priority: "high",
+        render: (value: { name: string; logo?: string }) => (
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded bg-gray-200 flex items-center justify-center">
+              {value.logo ? (
+                <img
+                  src={value.logo}
+                  alt={value.name}
+                  className="w-full h-full rounded object-cover"
+                />
+              ) : (
+                <Building2 className="w-4 h-4 text-gray-600" />
+              )}
+            </div>
+            <span className="font-medium text-gray-900">{value.name}</span>
+          </div>
+        ),
+      },
+      {
+        key: "phone",
+        label: "رقم الهاتف",
+        width: "min-w-[130px]",
         priority: "high",
       },
       {
-        key: "quantity",
-        label: "الكمية (لتر)",
-        width: "min-w-[90px]",
-        priority: "high",
-      },
-      {
-        key: "address",
-        label: "عنوان التوصيل",
-        width: "min-w-[220px]",
+        key: "email",
+        label: "البريد الألكتروني",
+        width: "min-w-[150px]",
         priority: "medium",
       },
       {
-        key: "orderDate",
-        label: "تاريخ الطلب",
-        width: "min-w-[160px]",
+        key: "city",
+        label: "المدينة",
+        width: "min-w-[100px]",
         priority: "medium",
       },
       {
-        key: "status",
-        label: "حالة الطلب",
-        width: "min-w-[140px]",
+        key: "cars",
+        label: "السيارات",
+        width: "min-w-[90px]",
         priority: "high",
-        render: (value: any) => (
-          <StatusBadge text={value.text} color={value.color} bg={value.bg} />
+      },
+      {
+        key: "drivers",
+        label: "السائقين",
+        width: "min-w-[90px]",
+        priority: "high",
+      },
+      {
+        key: "subscription",
+        label: "الاشتراكات",
+        width: "min-w-[120px]",
+        priority: "high",
+        render: (value: string) => (
+          <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">
+            {value}
+          </span>
         ),
       },
       {
@@ -205,7 +214,7 @@ const PetrolifeDriverDetails = (): JSX.Element => {
 
   const paginated = useMemo(
     () =>
-      deliveries.slice(
+      companies.slice(
         (currentPage - 1) * itemsPerPage,
         currentPage * itemsPerPage
       ),
@@ -223,7 +232,7 @@ const PetrolifeDriverDetails = (): JSX.Element => {
           {/* Title on right */}
           <div className="flex items-center justify-end gap-1.5">
             <h1 className="font-subtitle-subtitle-2 text-[length:var(--subtitle-subtitle-2-font-size)] text-color-mode-text-icons-t-sec">
-              معلومات السائق
+              معلومات المندوب
             </h1>
             <UserRound className="w-5 h-5 text-gray-500" />
           </div>
@@ -239,16 +248,24 @@ const PetrolifeDriverDetails = (): JSX.Element => {
           </button>
         </div>
 
-        {/* Driver info - read-only inputs style (3 columns) */}
+        {/* Agent info - read-only inputs style (3 columns) */}
         <section className="flex flex-col items-start gap-5 relative self-stretch w-full">
           <div className="flex items-start gap-5 w-full">
             {/* Avatar */}
             <div className="flex flex-col items-center justify-center gap-2">
-              <img
-                src={driverInfo.avatar}
-                alt="avatar"
-                className="w-16 h-16 rounded-lg object-cover"
-              />
+              <div className="w-16 h-16 rounded-lg bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center text-white text-2xl font-bold">
+                {agentInfo.name.charAt(0)}
+              </div>
+            </div>
+          </div>
+
+          {/* Agent Name */}
+          <div className="w-full">
+            <label className="text-sm font-medium text-gray-700 mb-2 block">
+              اسم المندوب
+            </label>
+            <div className="text-lg font-semibold text-gray-900">
+              {agentInfo.name}
             </div>
           </div>
 
@@ -256,20 +273,21 @@ const PetrolifeDriverDetails = (): JSX.Element => {
           <div className="w-full rounded-[var(--corner-radius-large)] border border-color-mode-text-icons-t-placeholder bg-white p-4 shadow-sm">
             {(() => {
               const fields = [
-                { label: "اسم السائق", value: driverInfo.name },
-                { label: "البريد الإلكتروني", value: driverInfo.email },
-                { label: "رقم الهاتف", value: driverInfo.phone },
-                { label: "المدينة", value: driverInfo.city },
-                { label: "العنوان", value: driverInfo.address },
-                { label: "رقم السيارة", value: driverInfo.carNumber },
-                { label: "تاريخ الاستخدام", value: driverInfo.lastUsed },
+                { label: "البريد الإلكتروني", value: agentInfo.email },
+                { label: "رقم الهاتف", value: agentInfo.phone },
+                { label: "المدينة", value: agentInfo.city },
+                { label: "العنوان", value: agentInfo.address },
+                { label: "تاريخ الانضمام", value: agentInfo.joinDate },
+                { label: "كود المندوب", value: agentInfo.agentCode },
+                { label: "قيمة العمولة (%)", value: agentInfo.commissionValue },
+                { label: "عدد الشركات المضافة", value: agentInfo.numberOfCompanies },
               ];
 
               const rows = [] as JSX.Element[];
               for (let i = 0; i < fields.length; i += 3) {
                 const row = fields.slice(i, i + 3);
                 rows.push(
-                  <div key={i} className="flex items-start gap-5 w-full">
+                  <div key={i} className="flex items-start gap-5 w-full mb-4">
                     {row.map((f, idx) => (
                       <div key={idx} className="flex flex-col gap-2 flex-1">
                         <label className="text-sm font-normal text-[var(--form-readonly-label-color)] text-right [direction:rtl]">
@@ -295,23 +313,25 @@ const PetrolifeDriverDetails = (): JSX.Element => {
           <div className="w-full flex items-center gap-3">
             <button
               type="button"
-              className="px-4 h-10 rounded-[10px] border border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray"
+              className="px-4 h-10 rounded-[10px] border border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray flex items-center gap-2"
             >
-              تواصل مع السائق
+              <MessageSquare className="w-4 h-4" />
+              تواصل مع المندوب
             </button>
           </div>
         </section>
       </div>
 
-      {/* Deliveries table section */}
+      {/* Companies table section */}
       <div
         className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder w-full"
         dir="rtl"
       >
         <header className="flex items-center justify-between w-full">
           <div className="flex items-center justify-end gap-1.5">
+            <Building2 className="w-5 h-5 text-gray-500" />
             <h2 className="font-subtitle-subtitle-2 text-[length:var(--subtitle-subtitle-2-font-size)] text-color-mode-text-icons-t-sec">
-              رحلات توصيل الوقود
+              الشركات المضافة (48)
             </h2>
           </div>
           <div className="inline-flex items-center gap-[var(--corner-radius-medium)]">
@@ -335,7 +355,7 @@ const PetrolifeDriverDetails = (): JSX.Element => {
 
           <Pagination
             currentPage={currentPage}
-            totalPages={Math.ceil(deliveries.length / itemsPerPage)}
+            totalPages={Math.ceil(companies.length / itemsPerPage)}
             onPageChange={setCurrentPage}
           />
         </div>
@@ -344,4 +364,5 @@ const PetrolifeDriverDetails = (): JSX.Element => {
   );
 };
 
-export default PetrolifeDriverDetails;
+export default PetrolifeAgentDetails;
+

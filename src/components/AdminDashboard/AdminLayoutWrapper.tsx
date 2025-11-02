@@ -127,6 +127,17 @@ const ADMIN_PAGE_CONFIGS: Record<string, PageConfig> = {
     titleIcon: <img src="/img/side-icons-3.svg" alt="" className="w-5 h-5" />,
     showSearch: false,
   },
+  "/petrolife-agents": {
+    title: "مندوبو بترولايف",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث عن مندوب...",
+  },
+  "/petrolife-agents/add": {
+    title: "مندوبو بترولايف / اضافة مندوب جديد",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
 };
 
 // Helper to get config for dynamic routes
@@ -296,6 +307,17 @@ const getPageConfig = (pathname: string): PageConfig | null => {
     return {
       title: "سائقي بترولايف / تفاصيل السائق",
       titleIcon: <img src="/img/side-icons-3.svg" alt="" className="w-5 h-5" />,
+      showSearch: false,
+    };
+  }
+
+  if (
+    pathname.startsWith("/petrolife-agents/") &&
+    pathname !== "/petrolife-agents/add"
+  ) {
+    return {
+      title: "مندوبو بترولايف / تفاصيل المندوب",
+      titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };
   }

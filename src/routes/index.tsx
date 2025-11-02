@@ -70,6 +70,9 @@ import { WalletReport } from "../components/AdminDashboard/pages/wallet-report";
 import PetrolifeDrivers from "../components/AdminDashboard/pages/petrolife-drivers/PetrolifeDrivers";
 import AddPeroDriver from "../components/AdminDashboard/pages/petrolife-drivers/AddPeroDriver";
 import PetrolifeDriverDetails from "../components/AdminDashboard/pages/petrolife-drivers/PetrolifeDriverDetails";
+import PetrolifeAgents from "../components/AdminDashboard/pages/petrolife-agents/PetrolifeAgents";
+import AddPetrolifeAgent from "../components/AdminDashboard/pages/petrolife-agents/AddPetrolifeAgent";
+import PetrolifeAgentDetails from "../components/AdminDashboard/pages/petrolife-agents/PetrolifeAgentDetails";
 
 // 404 Component
 const NotFound = () => (
@@ -157,6 +160,9 @@ export const AppRouter = () => {
         <Route path={ROUTES.PETROLIFE_DRIVERS} element={<PetrolifeDrivers />} />
         <Route path="/petrolife-drivers/add" element={<AddPeroDriver />} />
         <Route path="/petrolife-drivers/:id" element={<PetrolifeDriverDetails />} />
+        <Route path={ROUTES.PETROLIFE_AGENTS} element={<PetrolifeAgents />} />
+        <Route path={ROUTES.ADD_PETROLIFE_AGENT} element={<AddPetrolifeAgent />} />
+        <Route path={ROUTES.PETROLIFE_AGENT_DETAILS} element={<PetrolifeAgentDetails />} />
       </Route>
 
       {/* All Protected Routes with Layout Wrapper */}
