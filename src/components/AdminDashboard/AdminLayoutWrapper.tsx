@@ -127,6 +127,39 @@ const ADMIN_PAGE_CONFIGS: Record<string, PageConfig> = {
     titleIcon: <img src="/img/side-icons-3.svg" alt="" className="w-5 h-5" />,
     showSearch: false,
   },
+  "/petrolife-agents": {
+    title: "مندوبو بترولايف",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث عن مندوب...",
+  },
+  "/petrolife-agents/add": {
+    title: "مندوبو بترولايف / اضافة مندوب جديد",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
+  "/petrolife-cars": {
+    title: "مركبات بترولايف",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث عن مركبة...",
+  },
+  "/petrolife-cars/add": {
+    title: "مركبات بترولايف / إضافة مركبة جديدة",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
+  "/petrolife-products": {
+    title: "منتجات بترولايف",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث عن منتج...",
+  },
+  "/petrolife-products/add": {
+    title: "منتجات بترولايف / إضافة منتج جديد",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
 };
 
 // Helper to get config for dynamic routes
@@ -296,6 +329,39 @@ const getPageConfig = (pathname: string): PageConfig | null => {
     return {
       title: "سائقي بترولايف / تفاصيل السائق",
       titleIcon: <img src="/img/side-icons-3.svg" alt="" className="w-5 h-5" />,
+      showSearch: false,
+    };
+  }
+
+  if (
+    pathname.startsWith("/petrolife-agents/") &&
+    pathname !== "/petrolife-agents/add"
+  ) {
+    return {
+      title: "مندوبو بترولايف / تفاصيل المندوب",
+      titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+      showSearch: false,
+    };
+  }
+
+  if (
+    pathname.startsWith("/petrolife-cars/") &&
+    pathname !== "/petrolife-cars/add"
+  ) {
+    return {
+      title: "مركبات بترولايف / تفاصيل المركبة",
+      titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+      showSearch: false,
+    };
+  }
+
+  if (
+    pathname.startsWith("/petrolife-products/") &&
+    pathname !== "/petrolife-products/add"
+  ) {
+    return {
+      title: "منتجات بترولايف / تفاصيل المنتج",
+      titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };
   }

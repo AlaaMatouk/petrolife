@@ -3,62 +3,38 @@ import { useNavigate } from "react-router-dom";
 import { Table, Pagination } from "../../../shared";
 import {
   ArrowLeft,
-  UserRound,
+  Eye,
   MoreVertical,
   Download,
   FileSpreadsheet,
   FileText,
+  UserRound,
+  Plus,
+  Building2,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 
-// Dummy driver info matching screenshot style
-const driverInfo = {
-  name: "محمد طارق محمد",
-  email: "hesham@gmail.com",
-  phone: "رقم الهاتف هنا",
-  city: "الرياض",
-  address: ", Riyadh 13245, Saudi Arabia ,شرطة ,7453 ص",
-  carNumber: "2145364",
-  lastUsed: "ص 10:15 ، 2025 فبراير 12",
-  avatar: "/img/image-2.png",
+// Dummy car info matching screenshot style
+const carInfo = {
+  plateNumber: "215436654",
+  creator: "احمد محمد على",
+  carName: "",
+  creationDate: "12 فبراير 2025 10:15 ص",
+  chassisNumber: "21452635",
+  numberOfDrivers: "2",
+  carImage: "/img/car-image.png",
 };
 
-// Dummy deliveries data
-const deliveries = Array.from({ length: 24 }).map((_, i) => ({
+// Dummy drivers data
+const drivers = Array.from({ length: 48 }).map((_, i) => ({
   id: i + 1,
-  tripNumber: "12563",
-  fuelType: "بنزين 91",
-  quantity: "200",
-  address: "12 ش المنيل ، محافظة القاهرة",
-  orderDate: "ص 5:05 - 2025 فبراير 21",
-  status:
-    i % 7 === 0
-      ? { color: "text-red-600", bg: "bg-red-50", text: "ملغي" }
-      : i % 3 === 0
-      ? { color: "text-yellow-600", bg: "bg-yellow-50", text: "جاري التوصيل" }
-      : i % 5 === 0
-      ? { color: "text-blue-600", bg: "bg-blue-50", text: "طلب تغيير سائق" }
-      : { color: "text-gray-600", bg: "bg-gray-50", text: "مكتمل" },
+  driverCode: "21A254",
+  driverName: { name: "احمد محمد", avatar: undefined },
+  phone: "00965284358",
+  email: "ahmedmohamed@gmail.com",
+  city: "الرياض",
+  accountStatus: { active: true, text: "مفعل" },
 }));
-
-const StatusBadge = ({
-  text,
-  color,
-  bg,
-}: {
-  text: string;
-  color: string;
-  bg: string;
-}) => (
-  <span
-    className={`inline-flex items-center gap-2 ${bg} ${color} rounded-full px-2 py-0.5 text-xs`}
-  >
-    <span
-      className={`w-1.5 h-1.5 rounded-full ${color.replace("text-", "bg-")}`}
-    />
-    {text}
-  </span>
-);
 
 const ExportMenu = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -76,7 +52,7 @@ const ExportMenu = () => {
   };
 
   const handleExport = (format: "excel" | "pdf") => {
-    console.log("Export driver trips as", format);
+    console.log("Export drivers as", format);
     setIsOpen(false);
   };
 
@@ -137,7 +113,7 @@ const ExportMenu = () => {
   );
 };
 
-const PetrolifeDriverDetails = (): JSX.Element => {
+const PetrolifeCarDetails = (): JSX.Element => {
   const navigate = useNavigate();
   const [currentPage, setCurrentPage] = useState(3);
   const itemsPerPage = 10;
@@ -145,43 +121,66 @@ const PetrolifeDriverDetails = (): JSX.Element => {
   const columns = useMemo(
     () => [
       {
-        key: "tripNumber",
-        label: "رقم الرحلة",
-        width: "min-w-[90px]",
+        key: "accountStatus",
+        label: "حالة الحساب",
+        width: "min-w-[120px]",
         priority: "high",
-      },
-      {
-        key: "fuelType",
-        label: "نوع الوقود",
-        width: "min-w-[90px]",
-        priority: "high",
-      },
-      {
-        key: "quantity",
-        label: "الكمية (لتر)",
-        width: "min-w-[90px]",
-        priority: "high",
-      },
-      {
-        key: "address",
-        label: "عنوان التوصيل",
-        width: "min-w-[220px]",
-        priority: "medium",
-      },
-      {
-        key: "orderDate",
-        label: "تاريخ الطلب",
-        width: "min-w-[160px]",
-        priority: "medium",
-      },
-      {
-        key: "status",
-        label: "حالة الطلب",
-        width: "min-w-[140px]",
-        priority: "high",
-        render: (value: any) => (
-          <StatusBadge text={value.text} color={value.color} bg={value.bg} />
+        render: (value: { active: boolean; text: string }) => (
+          <div className="flex items-center gap-2">
+            <div
+              className={`w-2 h-2 rounded-full ${
+                value.active ? "bg-green-500" : "bg-gray-400"
+              }`}
+            />
+            <span className="text-sm text-gray-700">{value.text}</span>
+          </div>
         ),
+      },
+      {
+        key: "city",
+        label: "المدينة",
+        width: "min-w-[100px]",
+        priority: "high",
+      },
+      {
+        key: "email",
+        label: "البريد الألكتروني",
+        width: "min-w-[150px]",
+        priority: "medium",
+      },
+      {
+        key: "phone",
+        label: "رقم الهاتف",
+        width: "min-w-[130px]",
+        priority: "high",
+      },
+      {
+        key: "driverName",
+        label: "اسم السائق",
+        width: "min-w-[180px]",
+        priority: "high",
+        render: (value: { name: string; avatar?: string }) => (
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white font-semibold text-sm">
+              {value.avatar ? (
+                <img
+                  src={value.avatar}
+                  alt={value.name}
+                  className="w-full h-full rounded-full object-cover"
+                />
+              ) : (
+                value.name.charAt(0)
+              )}
+            </div>
+            <span className="font-medium text-gray-900">{value.name}</span>
+          </div>
+        ),
+      },
+      {
+        key: "driverCode",
+        label: "كود السائق",
+        width: "min-w-[120px]",
+        priority: "high",
       },
       {
         key: "actions",
@@ -205,7 +204,7 @@ const PetrolifeDriverDetails = (): JSX.Element => {
 
   const paginated = useMemo(
     () =>
-      deliveries.slice(
+      drivers.slice(
         (currentPage - 1) * itemsPerPage,
         currentPage * itemsPerPage
       ),
@@ -214,7 +213,7 @@ const PetrolifeDriverDetails = (): JSX.Element => {
 
   return (
     <div className="flex flex-col w-full items-start gap-5">
-      {/* Header */}
+      {/* Car Info Card */}
       <div
         className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder w-full"
         dir="rtl"
@@ -223,9 +222,9 @@ const PetrolifeDriverDetails = (): JSX.Element => {
           {/* Title on right */}
           <div className="flex items-center justify-end gap-1.5">
             <h1 className="font-subtitle-subtitle-2 text-[length:var(--subtitle-subtitle-2-font-size)] text-color-mode-text-icons-t-sec">
-              معلومات السائق
+              معلومات المركبة
             </h1>
-            <UserRound className="w-5 h-5 text-gray-500" />
+            <Eye className="w-5 h-5 text-gray-500" />
           </div>
           {/* Back button on left */}
           <button
@@ -239,16 +238,22 @@ const PetrolifeDriverDetails = (): JSX.Element => {
           </button>
         </div>
 
-        {/* Driver info - read-only inputs style (3 columns) */}
+        {/* Car info - read-only inputs style */}
         <section className="flex flex-col items-start gap-5 relative self-stretch w-full">
+          {/* Car Image */}
           <div className="flex items-start gap-5 w-full">
-            {/* Avatar */}
             <div className="flex flex-col items-center justify-center gap-2">
-              <img
-                src={driverInfo.avatar}
-                alt="avatar"
-                className="w-16 h-16 rounded-lg object-cover"
-              />
+              <div className="w-24 h-24 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden">
+                {carInfo.carImage ? (
+                  <img
+                    src={carInfo.carImage}
+                    alt="Car"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <Building2 className="w-12 h-12 text-gray-400" />
+                )}
+              </div>
             </div>
           </div>
 
@@ -256,20 +261,19 @@ const PetrolifeDriverDetails = (): JSX.Element => {
           <div className="w-full rounded-[var(--corner-radius-large)] border border-color-mode-text-icons-t-placeholder bg-white p-4 shadow-sm">
             {(() => {
               const fields = [
-                { label: "اسم السائق", value: driverInfo.name },
-                { label: "البريد الإلكتروني", value: driverInfo.email },
-                { label: "رقم الهاتف", value: driverInfo.phone },
-                { label: "المدينة", value: driverInfo.city },
-                { label: "العنوان", value: driverInfo.address },
-                { label: "رقم السيارة", value: driverInfo.carNumber },
-                { label: "تاريخ الاستخدام", value: driverInfo.lastUsed },
+                { label: "رقم اللوحة", value: carInfo.plateNumber },
+                { label: "المنشيء", value: carInfo.creator },
+                { label: "اسم المركبة", value: carInfo.carName || "الاسم" },
+                { label: "تاريخ الانشاء", value: carInfo.creationDate },
+                { label: "رقم الهيكل", value: carInfo.chassisNumber },
+                { label: "عدد السائقين", value: carInfo.numberOfDrivers },
               ];
 
               const rows = [] as JSX.Element[];
               for (let i = 0; i < fields.length; i += 3) {
                 const row = fields.slice(i, i + 3);
                 rows.push(
-                  <div key={i} className="flex items-start gap-5 w-full">
+                  <div key={i} className="flex items-start gap-5 w-full mb-4">
                     {row.map((f, idx) => (
                       <div key={idx} className="flex flex-col gap-2 flex-1">
                         <label className="text-sm font-normal text-[var(--form-readonly-label-color)] text-right [direction:rtl]">
@@ -290,31 +294,30 @@ const PetrolifeDriverDetails = (): JSX.Element => {
               return rows;
             })()}
           </div>
-
-          {/* Actions: Contact and Edit */}
-          <div className="w-full flex items-center gap-3">
-            <button
-              type="button"
-              className="px-4 h-10 rounded-[10px] border border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray"
-            >
-              تواصل مع السائق
-            </button>
-          </div>
         </section>
       </div>
 
-      {/* Deliveries table section */}
+      {/* Drivers table section */}
       <div
         className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder w-full"
         dir="rtl"
       >
         <header className="flex items-center justify-between w-full">
           <div className="flex items-center justify-end gap-1.5">
+            <UserRound className="w-5 h-5 text-gray-500" />
             <h2 className="font-subtitle-subtitle-2 text-[length:var(--subtitle-subtitle-2-font-size)] text-color-mode-text-icons-t-sec">
-              رحلات توصيل الوقود
+              السائقين المضافين للمركبة
             </h2>
           </div>
           <div className="inline-flex items-center gap-[var(--corner-radius-medium)]">
+            <button className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray">
+              <div className="flex items-center gap-[var(--corner-radius-small)]">
+                <span className="font-body-body-2 text-[length:var(--body-body-2-font-size)] text-color-mode-text-icons-t-sec [direction:rtl]">
+                  إضافة سائق جديد للمركبة
+                </span>
+                <Plus className="w-4 h-4 text-gray-500" />
+              </div>
+            </button>
             <ExportMenu />
           </div>
         </header>
@@ -335,7 +338,7 @@ const PetrolifeDriverDetails = (): JSX.Element => {
 
           <Pagination
             currentPage={currentPage}
-            totalPages={Math.ceil(deliveries.length / itemsPerPage)}
+            totalPages={Math.ceil(drivers.length / itemsPerPage)}
             onPageChange={setCurrentPage}
           />
         </div>
@@ -344,4 +347,5 @@ const PetrolifeDriverDetails = (): JSX.Element => {
   );
 };
 
-export default PetrolifeDriverDetails;
+export default PetrolifeCarDetails;
+

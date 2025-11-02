@@ -70,6 +70,15 @@ import { WalletReport } from "../components/AdminDashboard/pages/wallet-report";
 import PetrolifeDrivers from "../components/AdminDashboard/pages/petrolife-drivers/PetrolifeDrivers";
 import AddPeroDriver from "../components/AdminDashboard/pages/petrolife-drivers/AddPeroDriver";
 import PetrolifeDriverDetails from "../components/AdminDashboard/pages/petrolife-drivers/PetrolifeDriverDetails";
+import PetrolifeAgents from "../components/AdminDashboard/pages/petrolife-agents/PetrolifeAgents";
+import AddPetrolifeAgent from "../components/AdminDashboard/pages/petrolife-agents/AddPetrolifeAgent";
+import PetrolifeAgentDetails from "../components/AdminDashboard/pages/petrolife-agents/PetrolifeAgentDetails";
+import PetrolifeCars from "../components/AdminDashboard/pages/petrolife-cars/PetrolifeCars";
+import AddPetrolifeCar from "../components/AdminDashboard/pages/petrolife-cars/AddPetrolifeCar";
+import PetrolifeCarDetails from "../components/AdminDashboard/pages/petrolife-cars/PetrolifeCarDetails";
+import PetrolifeProducts from "../components/AdminDashboard/pages/petrolife-products/PetrolifeProducts";
+import AddPetrolifeProduct from "../components/AdminDashboard/pages/petrolife-products/AddPetrolifeProduct";
+import PetrolifeProductDetails from "../components/AdminDashboard/pages/petrolife-products/PetrolifeProductDetails";
 
 // 404 Component
 const NotFound = () => (
@@ -157,6 +166,15 @@ export const AppRouter = () => {
         <Route path={ROUTES.PETROLIFE_DRIVERS} element={<PetrolifeDrivers />} />
         <Route path="/petrolife-drivers/add" element={<AddPeroDriver />} />
         <Route path="/petrolife-drivers/:id" element={<PetrolifeDriverDetails />} />
+        <Route path={ROUTES.PETROLIFE_AGENTS} element={<PetrolifeAgents />} />
+        <Route path={ROUTES.ADD_PETROLIFE_AGENT} element={<AddPetrolifeAgent />} />
+        <Route path={ROUTES.PETROLIFE_AGENT_DETAILS} element={<PetrolifeAgentDetails />} />
+        <Route path={ROUTES.PETROLIFE_CARS} element={<PetrolifeCars />} />
+        <Route path={ROUTES.ADD_PETROLIFE_CAR} element={<AddPetrolifeCar />} />
+        <Route path={ROUTES.PETROLIFE_CAR_DETAILS} element={<PetrolifeCarDetails />} />
+        <Route path={ROUTES.PETROLIFE_PRODUCTS} element={<PetrolifeProducts />} />
+        <Route path={ROUTES.ADD_PETROLIFE_PRODUCT} element={<AddPetrolifeProduct />} />
+        <Route path={ROUTES.PETROLIFE_PRODUCT_DETAILS} element={<PetrolifeProductDetails />} />
       </Route>
 
       {/* All Protected Routes with Layout Wrapper */}

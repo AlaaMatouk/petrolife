@@ -230,7 +230,7 @@ export const adminNavigationMenuData = {
           id: "petrolife-representatives",
           label: "مندوبو بترولايف",
           icon: "/img/side-icons-7.svg",
-          href: ROUTES.PETROLIFE_REPRESENTATIVES,
+          href: ROUTES.PETROLIFE_AGENTS,
         },
         {
           id: "petrolife-cars",
