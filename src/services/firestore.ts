@@ -13,6 +13,7 @@ import {
   where,
   orderBy,
   setDoc,
+  deleteDoc,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getFunctions, httpsCallable } from "firebase/functions";
@@ -5853,6 +5854,54 @@ export const fetchFuelCategories = async (): Promise<any[]> => {
     return categories;
   } catch (error) {
     console.error("❌ Error fetching fuel categories:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a fuel station from Firestore carstations collection
+ * @param stationId - The ID of the station document to delete
+ * @returns Promise<boolean> - Returns true if deletion was successful, false otherwise
+ */
+export const deleteStation = async (stationId: string): Promise<boolean> => {
+  try {
+    console.log("🗑️ Deleting station from Firestore...", stationId);
+
+    // Get current user to verify ownership
+    const currentUser = auth.currentUser;
+    if (!currentUser || !currentUser.email) {
+      console.error("⚠️ No authenticated user found");
+      throw new Error("يجب تسجيل الدخول لحذف المحطة");
+    }
+
+    const userEmail = currentUser.email;
+    console.log("👤 Current user email:", userEmail);
+
+    // Get the station document first to verify ownership
+    const stationRef = doc(db, "carstations", stationId);
+    const stationDoc = await getDoc(stationRef);
+
+    if (!stationDoc.exists()) {
+      console.error("❌ Station document not found:", stationId);
+      throw new Error("المحطة غير موجودة");
+    }
+
+    const stationData = stationDoc.data();
+    const createdUserId = stationData.createdUserId;
+
+    // Verify that the current user owns this station
+    if (createdUserId !== userEmail) {
+      console.error("⚠️ User does not have permission to delete this station");
+      throw new Error("ليس لديك صلاحية لحذف هذه المحطة");
+    }
+
+    // Delete the station document
+    await deleteDoc(stationRef);
+
+    console.log("✅ Station deleted successfully:", stationId);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting station:", error);
     throw error;
   }
 };
