@@ -138,6 +138,17 @@ const ADMIN_PAGE_CONFIGS: Record<string, PageConfig> = {
     titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
     showSearch: false,
   },
+  "/petrolife-cars": {
+    title: "مركبات بترولايف",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث عن مركبة...",
+  },
+  "/petrolife-cars/add": {
+    title: "مركبات بترولايف / إضافة مركبة جديدة",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
 };
 
 // Helper to get config for dynamic routes
@@ -317,6 +328,17 @@ const getPageConfig = (pathname: string): PageConfig | null => {
   ) {
     return {
       title: "مندوبو بترولايف / تفاصيل المندوب",
+      titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+      showSearch: false,
+    };
+  }
+
+  if (
+    pathname.startsWith("/petrolife-cars/") &&
+    pathname !== "/petrolife-cars/add"
+  ) {
+    return {
+      title: "مركبات بترولايف / تفاصيل المركبة",
       titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };

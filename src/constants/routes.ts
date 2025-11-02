@@ -76,6 +76,8 @@ export const ROUTES = {
   PETROLIFE_AGENT_DETAILS: "/petrolife-agents/:id",
   PETROLIFE_REPRESENTATIVES: "/petrolife-representatives",
   PETROLIFE_CARS: "/petrolife-cars",
+  ADD_PETROLIFE_CAR: "/petrolife-cars/add",
+  PETROLIFE_CAR_DETAILS: "/petrolife-cars/:id",
   PETROLIFE_PRODUCTS: "/petrolife-products",
   PETROLIFE_COUPONS: "/petrolife-coupons",
   WALLET_REQUESTS: "/wallet-requests",

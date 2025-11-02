@@ -73,6 +73,9 @@ import PetrolifeDriverDetails from "../components/AdminDashboard/pages/petrolife
 import PetrolifeAgents from "../components/AdminDashboard/pages/petrolife-agents/PetrolifeAgents";
 import AddPetrolifeAgent from "../components/AdminDashboard/pages/petrolife-agents/AddPetrolifeAgent";
 import PetrolifeAgentDetails from "../components/AdminDashboard/pages/petrolife-agents/PetrolifeAgentDetails";
+import PetrolifeCars from "../components/AdminDashboard/pages/petrolife-cars/PetrolifeCars";
+import AddPetrolifeCar from "../components/AdminDashboard/pages/petrolife-cars/AddPetrolifeCar";
+import PetrolifeCarDetails from "../components/AdminDashboard/pages/petrolife-cars/PetrolifeCarDetails";
 
 // 404 Component
 const NotFound = () => (
@@ -163,6 +166,9 @@ export const AppRouter = () => {
         <Route path={ROUTES.PETROLIFE_AGENTS} element={<PetrolifeAgents />} />
         <Route path={ROUTES.ADD_PETROLIFE_AGENT} element={<AddPetrolifeAgent />} />
         <Route path={ROUTES.PETROLIFE_AGENT_DETAILS} element={<PetrolifeAgentDetails />} />
+        <Route path={ROUTES.PETROLIFE_CARS} element={<PetrolifeCars />} />
+        <Route path={ROUTES.ADD_PETROLIFE_CAR} element={<AddPetrolifeCar />} />
+        <Route path={ROUTES.PETROLIFE_CAR_DETAILS} element={<PetrolifeCarDetails />} />
       </Route>
 
       {/* All Protected Routes with Layout Wrapper */}
