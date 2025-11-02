@@ -28,12 +28,12 @@ const SERVICE_DISTRIBUTER_PAGE_CONFIGS: Record<string, PageConfig> = {
     titleIcon: <DashboardIcon className="w-5 h-5" />,
     showSearch: false,
   },
-  '/service-distributer-station-workers': {
-    title: 'عمال المحطات',
-    titleIcon: <UserRound className="w-5 h-5 text-gray-500" />,
-    showSearch: true,
-    searchPlaceholder: 'بحث عن عامل...',
-  },
+  // '/service-distributer-station-workers': {
+  //   title: 'عمال المحطات',
+  //   titleIcon: <UserRound className="w-5 h-5 text-gray-500" />,
+  //   showSearch: true,
+  //   searchPlaceholder: 'بحث عن عامل...',
+  // },
   '/service-distributer-stations': {
     title: 'المحطات',
     titleIcon: <Fuel className="w-5 h-5 text-gray-500" />,
@@ -83,14 +83,14 @@ const getPageConfig = (pathname: string): PageConfig | null => {
   }
 
   // Match dynamic routes (e.g., /service-distributer-station-worker/:id)
-  if (pathname.startsWith('/service-distributer-station-worker/') && 
-      pathname !== '/service-distributer-station-workers') {
-    return {
-      title: 'عمال المحطات / تفاصيل العامل',
-      titleIcon: <UserRound className="w-5 h-5 text-gray-500" />,
-      showSearch: false,
-    };
-  }
+  // if (pathname.startsWith('/service-distributer-station-worker/') && 
+  //     pathname !== '/service-distributer-station-workers') {
+  //   return {
+  //     title: 'عمال المحطات / تفاصيل العامل',
+  //     titleIcon: <UserRound className="w-5 h-5 text-gray-500" />,
+  //     showSearch: false,
+  //   };
+  // }
 
   // Match dynamic routes (e.g., /service-distributer-station/:id)
   if (pathname.startsWith('/service-distributer-station/') && 
@@ -146,6 +146,7 @@ export const ServiceDistributerLayoutWrapper: React.FC = () => {
         title: displayTitle,
         titleIconSrc: pageConfig.titleIcon,
         showSearch: pageConfig.showSearch,
+        serviceDistributer: true,
         searchProps: pageConfig.showSearch
           ? {
               onSearch: handleSearch,

@@ -32,6 +32,7 @@ export interface HeaderProps {
   extraContent?: ReactNode;
   className?: string;
   admin?: boolean;
+  serviceDistributer?: boolean;
 }
 
 const SearchBar: React.FC<SearchBarProps> = ({
@@ -218,6 +219,8 @@ export const Header: React.FC<HeaderProps> = ({
   extraContent,
   className = "",
   admin = false,
+  serviceDistributer = false,
+  
 }) => {
   return (
     <header
@@ -231,14 +234,14 @@ export const Header: React.FC<HeaderProps> = ({
           role="navigation"
           aria-label="Main navigation"
         >
-          {/* Profile Dropdown - First on the left */}
-          <ProfileDropdown />
+          {/* Profile Dropdown - First on the left (hidden for service distributer) */}
+          {!serviceDistributer && <ProfileDropdown />}
 
           {/* Notification Dropdown - Hide for admin */}
           {!admin && <NotificationDropdown />}
 
-          {/* Cart Dropdown - Hide for admin */}
-          {!admin && <CartDropdown />}
+          {/* Cart Dropdown - Hide for admin or service distributer */}
+          {!admin && !serviceDistributer && <CartDropdown />}
 
           <button className="flex items-center justify-center w-10 h-10 bg-gray-100 rounded-md border border-gray-300 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200">
             <Sun className="w-4 h-4 text-gray-600" />

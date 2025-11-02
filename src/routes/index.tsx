@@ -161,11 +161,11 @@ export const AppRouter = () => {
           path={ROUTES.SERVICE_DISTRIBUTER_DASHBOARD}
           element={<ServiceDistributerDashboard />}
         />
-        <Route path={ROUTES.STATION_WORKERS} element={<StationWorkers />} />
+        {/* <Route path={ROUTES.STATION_WORKERS} element={<StationWorkers />} />
         <Route
           path={ROUTES.STATION_WORKER_DETAILS}
           element={<StationWorkerDetails />}
-        />
+        /> */}
         <Route path={ROUTES.STATIONS} element={<Stations />} />
         <Route path={ROUTES.ADD_STATIONS} element={<AddStations />} />
         <Route path={ROUTES.STATIONS_DETAILS} element={<StationsDetails />} />

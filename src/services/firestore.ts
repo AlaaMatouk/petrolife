@@ -887,6 +887,38 @@ export const calculateFuelStatistics = (
 };
 
 /**
+ * Fetch the currently authenticated service distributer (stationscompany) raw document
+ * Matches by auth uid or email. Returns full document data as stored in Firestore.
+ */
+export const fetchCurrentStationsCompany = async (): Promise<any | null> => {
+  try {
+    const currentUser = await waitForAuthState();
+    if (!currentUser) return null;
+
+    const userUid = currentUser.uid;
+    const userEmail = currentUser.email?.toLowerCase() || "";
+
+    // Try match by uId first
+    let qRef = query(collection(db, "stationscompany"), where("uId", "==", userUid));
+    let snapshot = await getDocs(qRef);
+
+    // Fallback: match by email
+    if (snapshot.empty && userEmail) {
+      qRef = query(collection(db, "stationscompany"), where("email", "==", userEmail));
+      snapshot = await getDocs(qRef);
+    }
+
+    if (snapshot.empty) return null;
+
+    const docSnap = snapshot.docs[0];
+    return { id: docSnap.id, ...docSnap.data() };
+  } catch (error) {
+    console.error("❌ Error fetching current stations company:", error);
+    throw error;
+  }
+};
+
+/**
  * Calculate car wash statistics grouped by car size
  * @param orders - Array of orders
  * @returns Object with car wash totals by size

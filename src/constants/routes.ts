@@ -41,8 +41,8 @@ export const ROUTES = {
 
   // Service Distributer Dashboard
   SERVICE_DISTRIBUTER_DASHBOARD: "/service-distributer",
-  STATION_WORKERS: "/service-distributer-station-workers",
-  STATION_WORKER_DETAILS: "/service-distributer-station-worker/:id",
+  // STATION_WORKERS: "/service-distributer-station-workers",
+  // STATION_WORKER_DETAILS: "/service-distributer-station-worker/:id",
   STATIONS: "/service-distributer-stations",
   ADD_STATIONS: "/service-distributer-stations/add",
   STATIONS_DETAILS: "/service-distributer-station/:id",
