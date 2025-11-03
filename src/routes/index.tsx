@@ -84,6 +84,11 @@ import AddPetrolifeCoupon from "../components/AdminDashboard/pages/petrolife-cou
 import PetrolifeCouponDetails from "../components/AdminDashboard/pages/petrolife-coupons/PetrolifeCouponDetails";
 import InvoiceReports from "../components/AdminDashboard/pages/invoice-reports/InvoiceReports";
 import AgentReports from "../components/AdminDashboard/pages/agent-reports/AgentReports";
+import Countries from "../components/AdminDashboard/pages/countries/Countries";
+import AddCountry from "../components/AdminDashboard/pages/countries/AddCountry";
+import CountryDetails from "../components/AdminDashboard/pages/countries/CountryDetails";
+import AddCity from "../components/AdminDashboard/pages/countries/AddCity";
+import AddRegion from "../components/AdminDashboard/pages/countries/AddRegion";
 
 // 404 Component
 const NotFound = () => (
@@ -185,6 +190,11 @@ export const AppRouter = () => {
         <Route path={ROUTES.PETROLIFE_COUPON_DETAILS} element={<PetrolifeCouponDetails />} />
         <Route path={ROUTES.ADMIN_INVOICE_REPORTS} element={<InvoiceReports />} />
         <Route path={ROUTES.ADMIN_REPRESENTATIVE_REPORTS} element={<AgentReports />} />
+        <Route path={ROUTES.ADMIN_COUNTRIES} element={<Countries />} />
+        <Route path={ROUTES.ADD_COUNTRY} element={<AddCountry />} />
+        <Route path={ROUTES.COUNTRY_DETAILS} element={<CountryDetails />} />
+        <Route path={ROUTES.ADD_CITY} element={<AddCity />} />
+        <Route path={ROUTES.ADD_REGION} element={<AddRegion />} />
       </Route>
 
       {/* All Protected Routes with Layout Wrapper */}

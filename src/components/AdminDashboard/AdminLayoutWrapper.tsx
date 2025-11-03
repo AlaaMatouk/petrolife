@@ -181,6 +181,16 @@ const ADMIN_PAGE_CONFIGS: Record<string, PageConfig> = {
     titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
     showSearch: false,
   },
+  "/admin-countries": {
+    title: "البلدان",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
+  "/admin-countries/add": {
+    title: "البلدان / إضافة بلد جديدة",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
 };
 
 // Helper to get config for dynamic routes
@@ -393,6 +403,38 @@ const getPageConfig = (pathname: string): PageConfig | null => {
   ) {
     return {
       title: "كوبونات بترولايف / تفاصيل الكوبون",
+      titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+      showSearch: false,
+    };
+  }
+
+  // Match dynamic routes for countries (e.g., /admin-countries/:id)
+  if (
+    pathname.startsWith("/admin-countries/") &&
+    pathname !== "/admin-countries" &&
+    pathname !== "/admin-countries/add" &&
+    !pathname.includes("/add-city") &&
+    !pathname.includes("/add-region")
+  ) {
+    return {
+      title: "البلدان / مصر",
+      titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+      showSearch: false,
+    };
+  }
+
+  // Match routes for adding cities and regions
+  if (pathname.includes("/add-city")) {
+    return {
+      title: "البلدان / إضافة مدينة جديدة",
+      titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+      showSearch: false,
+    };
+  }
+
+  if (pathname.includes("/add-region")) {
+    return {
+      title: "البلدان / إضافة منطقة جديدة",
       titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };
