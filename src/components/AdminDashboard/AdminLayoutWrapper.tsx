@@ -160,6 +160,17 @@ const ADMIN_PAGE_CONFIGS: Record<string, PageConfig> = {
     titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
     showSearch: false,
   },
+  "/petrolife-coupons": {
+    title: "كوبونات بترولايف",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث في الكوبونات...",
+  },
+  "/petrolife-coupons/add": {
+    title: "كوبونات بترولايف / إضافة كوبون جديد",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
 };
 
 // Helper to get config for dynamic routes
@@ -361,6 +372,17 @@ const getPageConfig = (pathname: string): PageConfig | null => {
   ) {
     return {
       title: "منتجات بترولايف / تفاصيل المنتج",
+      titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+      showSearch: false,
+    };
+  }
+
+  if (
+    pathname.startsWith("/petrolife-coupons/") &&
+    pathname !== "/petrolife-coupons/add"
+  ) {
+    return {
+      title: "كوبونات بترولايف / تفاصيل الكوبون",
       titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };

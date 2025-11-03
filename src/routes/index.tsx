@@ -79,6 +79,9 @@ import PetrolifeCarDetails from "../components/AdminDashboard/pages/petrolife-ca
 import PetrolifeProducts from "../components/AdminDashboard/pages/petrolife-products/PetrolifeProducts";
 import AddPetrolifeProduct from "../components/AdminDashboard/pages/petrolife-products/AddPetrolifeProduct";
 import PetrolifeProductDetails from "../components/AdminDashboard/pages/petrolife-products/PetrolifeProductDetails";
+import PetrolifeCoupons from "../components/AdminDashboard/pages/petrolife-coupons/PetrolifeCoupons";
+import AddPetrolifeCoupon from "../components/AdminDashboard/pages/petrolife-coupons/AddPetrolifeCoupon";
+import PetrolifeCouponDetails from "../components/AdminDashboard/pages/petrolife-coupons/PetrolifeCouponDetails";
 
 // 404 Component
 const NotFound = () => (
@@ -175,6 +178,9 @@ export const AppRouter = () => {
         <Route path={ROUTES.PETROLIFE_PRODUCTS} element={<PetrolifeProducts />} />
         <Route path={ROUTES.ADD_PETROLIFE_PRODUCT} element={<AddPetrolifeProduct />} />
         <Route path={ROUTES.PETROLIFE_PRODUCT_DETAILS} element={<PetrolifeProductDetails />} />
+        <Route path={ROUTES.PETROLIFE_COUPONS} element={<PetrolifeCoupons />} />
+        <Route path={ROUTES.ADD_PETROLIFE_COUPON} element={<AddPetrolifeCoupon />} />
+        <Route path={ROUTES.PETROLIFE_COUPON_DETAILS} element={<PetrolifeCouponDetails />} />
       </Route>
 
       {/* All Protected Routes with Layout Wrapper */}
