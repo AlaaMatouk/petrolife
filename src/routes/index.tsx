@@ -82,6 +82,7 @@ import PetrolifeProductDetails from "../components/AdminDashboard/pages/petrolif
 import PetrolifeCoupons from "../components/AdminDashboard/pages/petrolife-coupons/PetrolifeCoupons";
 import AddPetrolifeCoupon from "../components/AdminDashboard/pages/petrolife-coupons/AddPetrolifeCoupon";
 import PetrolifeCouponDetails from "../components/AdminDashboard/pages/petrolife-coupons/PetrolifeCouponDetails";
+import InvoiceReports from "../components/AdminDashboard/pages/invoice-reports/InvoiceReports";
 
 // 404 Component
 const NotFound = () => (
@@ -181,6 +182,7 @@ export const AppRouter = () => {
         <Route path={ROUTES.PETROLIFE_COUPONS} element={<PetrolifeCoupons />} />
         <Route path={ROUTES.ADD_PETROLIFE_COUPON} element={<AddPetrolifeCoupon />} />
         <Route path={ROUTES.PETROLIFE_COUPON_DETAILS} element={<PetrolifeCouponDetails />} />
+        <Route path={ROUTES.ADMIN_INVOICE_REPORTS} element={<InvoiceReports />} />
       </Route>
 
       {/* All Protected Routes with Layout Wrapper */}
