@@ -92,6 +92,9 @@ import AddRegion from "../components/AdminDashboard/pages/countries/AddRegion";
 import Vehicles from "../components/AdminDashboard/pages/vehicles/Vehicles";
 import AddVehicle from "../components/AdminDashboard/pages/vehicles/AddVehicle";
 import VehicleDetails from "../components/AdminDashboard/pages/vehicles/VehicleDetails";
+import Classifications from "../components/AdminDashboard/pages/classifications/Classifications";
+import AddClassification from "../components/AdminDashboard/pages/classifications/AddClassification";
+import ClassificationDetails from "../components/AdminDashboard/pages/classifications/ClassificationDetails";
 
 // 404 Component
 const NotFound = () => (
@@ -201,6 +204,9 @@ export const AppRouter = () => {
         <Route path={ROUTES.ADMIN_CARS} element={<Vehicles />} />
         <Route path="/admin-cars/add" element={<AddVehicle />} />
         <Route path="/admin-cars/:id" element={<VehicleDetails />} />
+        <Route path={ROUTES.ADMIN_CATEGORIES} element={<Classifications />} />
+        <Route path={ROUTES.ADD_CLASSIFICATION} element={<AddClassification />} />
+        <Route path={ROUTES.CLASSIFICATION_DETAILS} element={<ClassificationDetails />} />
       </Route>
 
       {/* All Protected Routes with Layout Wrapper */}

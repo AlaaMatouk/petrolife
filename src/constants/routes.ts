@@ -105,6 +105,8 @@ export const ROUTES = {
   ADD_REGION: "/admin-countries/:countryId/add-region",
   ADMIN_CARS: "/admin-cars",
   ADMIN_CATEGORIES: "/admin-categories",
+  ADD_CLASSIFICATION: "/admin-categories/add",
+  CLASSIFICATION_DETAILS: "/admin-categories/:id",
   APPLICATION_SERVICES: "/application-services",
   APPLICATION_SERVICE_DETAILS: "/application-services/:id",
   ADD_SERVICE: "/application-services/add",
