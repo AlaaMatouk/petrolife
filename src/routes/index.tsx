@@ -89,6 +89,9 @@ import AddCountry from "../components/AdminDashboard/pages/countries/AddCountry"
 import CountryDetails from "../components/AdminDashboard/pages/countries/CountryDetails";
 import AddCity from "../components/AdminDashboard/pages/countries/AddCity";
 import AddRegion from "../components/AdminDashboard/pages/countries/AddRegion";
+import Vehicles from "../components/AdminDashboard/pages/vehicles/Vehicles";
+import AddVehicle from "../components/AdminDashboard/pages/vehicles/AddVehicle";
+import VehicleDetails from "../components/AdminDashboard/pages/vehicles/VehicleDetails";
 
 // 404 Component
 const NotFound = () => (
@@ -195,6 +198,9 @@ export const AppRouter = () => {
         <Route path={ROUTES.COUNTRY_DETAILS} element={<CountryDetails />} />
         <Route path={ROUTES.ADD_CITY} element={<AddCity />} />
         <Route path={ROUTES.ADD_REGION} element={<AddRegion />} />
+        <Route path={ROUTES.ADMIN_CARS} element={<Vehicles />} />
+        <Route path="/admin-cars/add" element={<AddVehicle />} />
+        <Route path="/admin-cars/:id" element={<VehicleDetails />} />
       </Route>
 
       {/* All Protected Routes with Layout Wrapper */}
