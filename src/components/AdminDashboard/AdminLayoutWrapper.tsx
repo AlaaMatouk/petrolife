@@ -191,6 +191,28 @@ const ADMIN_PAGE_CONFIGS: Record<string, PageConfig> = {
     titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
     showSearch: false,
   },
+  "/admin-cars": {
+    title: "المركبات",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث برقم العميل / العملية السجل التجاري / رقم الهاتف",
+  },
+  "/admin-cars/add": {
+    title: "المركبات / إضافة مركبة جديدة",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
+  "/admin-categories": {
+    title: "التصنيفات",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث في التصنيفات...",
+  },
+  "/admin-categories/add": {
+    title: "التصنيفات / إضافة تصنيف جديد",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
 };
 
 // Helper to get config for dynamic routes
@@ -435,6 +457,32 @@ const getPageConfig = (pathname: string): PageConfig | null => {
   if (pathname.includes("/add-region")) {
     return {
       title: "البلدان / إضافة منطقة جديدة",
+      titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+      showSearch: false,
+    };
+  }
+
+  // Match dynamic routes for admin-cars (e.g., /admin-cars/:id)
+  if (
+    pathname.startsWith("/admin-cars/") &&
+    pathname !== "/admin-cars" &&
+    pathname !== "/admin-cars/add"
+  ) {
+    return {
+      title: "المركبات / تيوتا كرولا 2020",
+      titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+      showSearch: false,
+    };
+  }
+
+  // Match dynamic routes for admin-categories (e.g., /admin-categories/:id)
+  if (
+    pathname.startsWith("/admin-categories/") &&
+    pathname !== "/admin-categories" &&
+    pathname !== "/admin-categories/add"
+  ) {
+    return {
+      title: "التصنيفات / تفاصيل التصنيف",
       titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };

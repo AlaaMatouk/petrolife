@@ -1,16 +1,17 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Table, Pagination, ExportButton } from "../../../shared";
-import { Globe, CirclePlus, MoreVertical, Eye, Trash2, MapPin, Building2 } from "lucide-react";
+import { Car, CirclePlus, MoreVertical, Eye, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 
-// Mock data for 48 countries
-const mockCountries = Array.from({ length: 48 }).map((_, i) => ({
+// Mock data for 200 vehicles
+const mockVehicles = Array.from({ length: 200 }).map((_, i) => ({
   id: i + 1,
-  countryNameAr: "السعودية",
-  countryNameEn: "Saudi Arabia",
-  numberOfCities: 12,
-  numberOfRegions: 17,
+  number: i + 1,
+  logo: undefined,
+  brand: "تيوتا",
+  model: "كرولا",
+  year: "2020",
   creator: {
     name: "أحمد محمد",
     avatar: undefined,
@@ -45,16 +46,26 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
 
   const handleAction = (action: string) => {
     if (action === "view") {
-      navigate(`/admin-countries/${item.id}`);
-    } else if (action === "add-city") {
-      navigate(`/admin-countries/${item.id}/add-city`);
-    } else if (action === "add-region") {
-      navigate(`/admin-countries/${item.id}/add-region`);
+      navigate(`/admin-cars/${item.id}`);
     } else if (action === "delete") {
-      console.log("Delete country:", item.id);
+      console.log("Delete vehicle:", item.id);
     }
     setIsOpen(false);
   };
+
+  useEffect(() => {
+    if (isOpen) {
+      updateMenuPosition();
+      const handleScroll = () => updateMenuPosition();
+      const handleResize = () => updateMenuPosition();
+      window.addEventListener("scroll", handleScroll);
+      window.addEventListener("resize", handleResize);
+      return () => {
+        window.removeEventListener("scroll", handleScroll);
+        window.removeEventListener("resize", handleResize);
+      };
+    }
+  }, [isOpen, buttonRef]);
 
   return (
     <div className="relative">
@@ -83,28 +94,14 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
                   onClick={() => handleAction("view")}
                   className="w-full px-4 py-2 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-2 transition-colors"
                 >
-                  <span>مشاهدة بيانات الدولة</span>
+                  <span>مشاهدة بيانات المركبة</span>
                   <Eye className="w-4 h-4 text-gray-500" />
-                </button>
-                <button
-                  onClick={() => handleAction("add-city")}
-                  className="w-full px-4 py-2 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-2 transition-colors"
-                >
-                  <span>إضافة مدينة جديدة للدولة</span>
-                  <MapPin className="w-4 h-4 text-gray-500" />
-                </button>
-                <button
-                  onClick={() => handleAction("add-region")}
-                  className="w-full px-4 py-2 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-2 transition-colors"
-                >
-                  <span>إضافة منطقة جديدة للدولة</span>
-                  <Building2 className="w-4 h-4 text-gray-500" />
                 </button>
                 <button
                   onClick={() => handleAction("delete")}
                   className="w-full px-4 py-2 text-right text-sm text-red-600 hover:bg-red-50 flex items-center justify-end gap-2 transition-colors"
                 >
-                  <span>حذف الدولة</span>
+                  <span>حذف المركبة</span>
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
@@ -117,16 +114,16 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
   );
 };
 
-const Countries = () => {
+const Vehicles = () => {
   const navigate = useNavigate();
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(3);
   const itemsPerPage = 10;
 
   const columns = useMemo(
     () => [
       {
         key: "actions",
-        label: "الإجراءات",
+        label: "",
         width: "w-16",
         priority: "high",
         render: (_: any, row: any) => (
@@ -145,7 +142,7 @@ const Countries = () => {
         key: "creator",
         label: "المنشئ",
         width: "min-w-[150px]",
-        priority: "medium",
+        priority: "high",
         render: (value: { name: string; avatar?: string }) => (
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center text-white font-semibold text-sm">
@@ -164,31 +161,38 @@ const Countries = () => {
         ),
       },
       {
-        key: "numberOfRegions",
-        label: "عدد المناطق",
+        key: "year",
+        label: "سنة الاصدار",
         width: "min-w-[120px]",
         priority: "high",
       },
       {
-        key: "numberOfCities",
-        label: "عدد المدن",
-        width: "min-w-[120px]",
-        priority: "high",
-      },
-      {
-        key: "countryNameEn",
-        label: "اسم الدولة بالانجليزي",
-        width: "min-w-[180px]",
-        priority: "high",
-      },
-      {
-        key: "countryNameAr",
-        label: "اسم الدولة",
+        key: "model",
+        label: "الطراز",
         width: "min-w-[150px]",
         priority: "high",
       },
       {
-        key: "id",
+        key: "brand",
+        label: "الماركة",
+        width: "min-w-[150px]",
+        priority: "high",
+      },
+      {
+        key: "logo",
+        label: "لوجو السيارة",
+        width: "min-w-[100px]",
+        priority: "high",
+        render: (value: any) => (
+          <div className="flex items-center justify-center">
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center">
+              <Car className="w-6 h-6 text-white" />
+            </div>
+          </div>
+        ),
+      },
+      {
+        key: "number",
         label: "الرقم",
         width: "min-w-[80px]",
         priority: "high",
@@ -199,7 +203,7 @@ const Countries = () => {
 
   const paginatedData = useMemo(
     () =>
-      mockCountries.slice(
+      mockVehicles.slice(
         (currentPage - 1) * itemsPerPage,
         currentPage * itemsPerPage
       ),
@@ -207,7 +211,7 @@ const Countries = () => {
   );
 
   const handleExport = (format: string) => {
-    console.log(`Exporting countries as ${format}`);
+    console.log(`Exporting vehicles as ${format}`);
   };
 
   return (
@@ -220,20 +224,20 @@ const Countries = () => {
         {/* Title on right */}
         <div className="flex items-center justify-end gap-1.5">
           <h1 className="font-subtitle-subtitle-2 text-[length:var(--subtitle-subtitle-2-font-size)] text-color-mode-text-icons-t-sec">
-            البلدان ({mockCountries.length})
+            المركبات ({mockVehicles.length})
           </h1>
-          <Globe className="w-5 h-5 text-gray-500" />
+          <Car className="w-5 h-5 text-gray-500" />
         </div>
         {/* Buttons on left */}
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate("/admin-countries/add")}
+            onClick={() => navigate("/admin-cars/add")}
             className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray transition-colors"
           >
             <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
               <div className="inline-flex items-center justify-center gap-2.5 pt-1 pb-0 px-0 relative flex-[0_0_auto]">
                 <span className="w-fit mt-[-1.00px] font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-sec text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] relative font-body-body-2 text-[length:var(--body-body-2-font-size)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
-                  إضافة بلد جديد
+                  إضافة مركبة جديدة
                 </span>
               </div>
               <CirclePlus className="w-4 h-4 text-gray-500" />
@@ -251,12 +255,11 @@ const Countries = () => {
       {/* Pagination */}
       <Pagination
         currentPage={currentPage}
-        totalPages={Math.ceil(mockCountries.length / itemsPerPage) || 1}
+        totalPages={Math.ceil(mockVehicles.length / itemsPerPage) || 1}
         onPageChange={setCurrentPage}
       />
     </div>
   );
 };
 
-export default Countries;
-
+export default Vehicles;
