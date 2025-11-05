@@ -19,6 +19,12 @@ const ClassificationHeaderSection = () => {
   return (
     <section className="flex flex-col items-end gap-[var(--corner-radius-extra-large)] relative self-stretch w-full flex-[0_0_auto]">
       <header className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
+        <div className="flex items-center justify-end gap-1.5 relative" dir="rtl">
+          <div className="relative font-subtitle-subtitle-2 font-[number:var(--subtitle-subtitle-2-font-weight)] text-[var(--form-section-title-color)] text-[length:var(--subtitle-subtitle-2-font-size)] tracking-[var(--subtitle-subtitle-2-letter-spacing)] leading-[var(--subtitle-subtitle-2-line-height)] whitespace-nowrap [direction:rtl] [font-style:var(--subtitle-subtitle-2-font-style)]">
+            إضافة تصنيف جديد
+          </div>
+        </div>
+
         <div className="inline-flex items-center gap-2.5 relative flex-[0_0_auto]">
           <button
             onClick={() => navigate("/admin-categories")}
@@ -31,12 +37,6 @@ const ClassificationHeaderSection = () => {
             </div>
           </button>
         </div>
-
-        <button className="flex items-center justify-end gap-1.5 relative hover:opacity-80 transition-opacity">
-          <div className="relative font-subtitle-subtitle-2 font-[number:var(--subtitle-subtitle-2-font-weight)] text-[var(--form-section-title-color)] text-[length:var(--subtitle-subtitle-2-font-size)] tracking-[var(--subtitle-subtitle-2-letter-spacing)] leading-[var(--subtitle-subtitle-2-line-height)] whitespace-nowrap [direction:rtl] [font-style:var(--subtitle-subtitle-2-font-style)]">
-            إضافة تصنيف جديد
-          </div>
-        </button>
       </header>
     </section>
   );

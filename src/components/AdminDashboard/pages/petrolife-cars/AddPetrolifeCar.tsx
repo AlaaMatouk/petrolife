@@ -146,7 +146,7 @@ const AddPetrolifeCar = () => {
         <div className="w-full flex justify-end">
           <button
             type="submit"
-            className="px-5 h-10 rounded-[10px] bg-[#4c5bd4] text-white hover:opacity-95"
+            className="px-5 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors"
           >
             إضافة المركبة
           </button>
@@ -233,7 +233,7 @@ const AddPetrolifeCar = () => {
                 onClick={() => {
                   setShowDriverModal(false);
                 }}
-                className="px-4 py-2 rounded-lg bg-[#4c5bd4] text-white hover:opacity-95"
+                className="px-4 py-2 rounded-lg bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors"
               >
                 إضافة للمركبة
               </button>
