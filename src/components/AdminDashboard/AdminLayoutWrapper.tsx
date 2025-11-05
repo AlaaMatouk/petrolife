@@ -219,6 +219,17 @@ const ADMIN_PAGE_CONFIGS: Record<string, PageConfig> = {
     showSearch: true,
     searchPlaceholder: "بحث برقم العميل / العملية السجل التجاري / رقم الهاتف",
   },
+  "/advertisements": {
+    title: "الإعلانات",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث برقم العميل / العملية السجل التجاري / رقم الهاتف",
+  },
+  "/advertisements/add": {
+    title: "الإعلانات / إضافة إعلان جديد",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
 };
 
 // Helper to get config for dynamic routes
@@ -489,6 +500,19 @@ const getPageConfig = (pathname: string): PageConfig | null => {
   ) {
     return {
       title: "التصنيفات / تفاصيل التصنيف",
+      titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+      showSearch: false,
+    };
+  }
+
+  // Match dynamic routes for advertisements (e.g., /advertisements/:id)
+  if (
+    pathname.startsWith("/advertisements/") &&
+    pathname !== "/advertisements" &&
+    pathname !== "/advertisements/add"
+  ) {
+    return {
+      title: "الإعلانات / مشاهدة الاعلان",
       titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };

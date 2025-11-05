@@ -113,6 +113,8 @@ export const ROUTES = {
   ADD_CHOICE: "/application-services/add-choice",
   DEFAULT_ACCOUNTS: "/default-accounts",
   ADVERTISEMENTS: "/advertisements",
+  ADD_ADVERTISEMENT: "/advertisements/add",
+  ADVERTISEMENT_DETAILS: "/advertisements/:id",
   SPECIAL_NOTIFICATIONS: "/special-notifications",
   ADMIN_SUBSCRIPTIONS: "/admin-subscriptions",
   ADMIN_COMMUNICATION_POLICIES: "/admin-communication-policies",
