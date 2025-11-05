@@ -102,6 +102,9 @@ import AdvertisementDetails from "../components/AdminDashboard/pages/advertiseme
 import SpecialNotifications from "../components/AdminDashboard/pages/special-notifications/SpecialNotifications";
 import AddSpecialNotification from "../components/AdminDashboard/pages/special-notifications/AddSpecialNotification";
 import SpecialNotificationDetails from "../components/AdminDashboard/pages/special-notifications/SpecialNotificationDetails";
+import Subscriptions from "../components/AdminDashboard/pages/subscriptions/Subscriptions";
+import AddSubscription from "../components/AdminDashboard/pages/subscriptions/AddSubscription";
+import SubscriptionDetails from "../components/AdminDashboard/pages/subscriptions/SubscriptionDetails";
 
 // 404 Component
 const NotFound = () => (
@@ -221,6 +224,9 @@ export const AppRouter = () => {
         <Route path={ROUTES.SPECIAL_NOTIFICATIONS} element={<SpecialNotifications />} />
         <Route path={ROUTES.ADD_SPECIAL_NOTIFICATION} element={<AddSpecialNotification />} />
         <Route path={ROUTES.SPECIAL_NOTIFICATION_DETAILS} element={<SpecialNotificationDetails />} />
+        <Route path={ROUTES.ADMIN_SUBSCRIPTIONS} element={<Subscriptions />} />
+        <Route path={ROUTES.ADD_SUBSCRIPTION} element={<AddSubscription />} />
+        <Route path={ROUTES.SUBSCRIPTION_DETAILS} element={<SubscriptionDetails />} />
       </Route>
 
       {/* All Protected Routes with Layout Wrapper */}

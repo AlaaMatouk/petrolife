@@ -241,6 +241,16 @@ const ADMIN_PAGE_CONFIGS: Record<string, PageConfig> = {
     titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
     showSearch: false,
   },
+  "/admin-subscriptions": {
+    title: "الاشتراكات",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
+  "/admin-subscriptions/add": {
+    title: "الاشتراكات / إضافة باقة جديدة",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
 };
 
 // Helper to get config for dynamic routes
@@ -537,6 +547,19 @@ const getPageConfig = (pathname: string): PageConfig | null => {
   ) {
     return {
       title: "الاشعارات المخصصة / مشاهدة الاشعار المخصص",
+      titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+      showSearch: false,
+    };
+  }
+
+  // Match dynamic routes for admin-subscriptions (e.g., /admin-subscriptions/:id)
+  if (
+    pathname.startsWith("/admin-subscriptions/") &&
+    pathname !== "/admin-subscriptions" &&
+    pathname !== "/admin-subscriptions/add"
+  ) {
+    return {
+      title: "الاشتراكات / تعديل الباقة",
       titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };
