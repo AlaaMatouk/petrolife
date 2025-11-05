@@ -95,6 +95,16 @@ import VehicleDetails from "../components/AdminDashboard/pages/vehicles/VehicleD
 import Classifications from "../components/AdminDashboard/pages/classifications/Classifications";
 import AddClassification from "../components/AdminDashboard/pages/classifications/AddClassification";
 import ClassificationDetails from "../components/AdminDashboard/pages/classifications/ClassificationDetails";
+import DefaultAccounts from "../components/AdminDashboard/pages/default-accounts/DefaultAccounts";
+import Advertisements from "../components/AdminDashboard/pages/advertisements/Advertisements";
+import AddAdvertisement from "../components/AdminDashboard/pages/advertisements/AddAdvertisement";
+import AdvertisementDetails from "../components/AdminDashboard/pages/advertisements/AdvertisementDetails";
+import SpecialNotifications from "../components/AdminDashboard/pages/special-notifications/SpecialNotifications";
+import AddSpecialNotification from "../components/AdminDashboard/pages/special-notifications/AddSpecialNotification";
+import SpecialNotificationDetails from "../components/AdminDashboard/pages/special-notifications/SpecialNotificationDetails";
+import Subscriptions from "../components/AdminDashboard/pages/subscriptions/Subscriptions";
+import AddSubscription from "../components/AdminDashboard/pages/subscriptions/AddSubscription";
+import SubscriptionDetails from "../components/AdminDashboard/pages/subscriptions/SubscriptionDetails";
 
 // 404 Component
 const NotFound = () => (
@@ -207,6 +217,16 @@ export const AppRouter = () => {
         <Route path={ROUTES.ADMIN_CATEGORIES} element={<Classifications />} />
         <Route path={ROUTES.ADD_CLASSIFICATION} element={<AddClassification />} />
         <Route path={ROUTES.CLASSIFICATION_DETAILS} element={<ClassificationDetails />} />
+        <Route path={ROUTES.DEFAULT_ACCOUNTS} element={<DefaultAccounts />} />
+        <Route path={ROUTES.ADVERTISEMENTS} element={<Advertisements />} />
+        <Route path={ROUTES.ADD_ADVERTISEMENT} element={<AddAdvertisement />} />
+        <Route path={ROUTES.ADVERTISEMENT_DETAILS} element={<AdvertisementDetails />} />
+        <Route path={ROUTES.SPECIAL_NOTIFICATIONS} element={<SpecialNotifications />} />
+        <Route path={ROUTES.ADD_SPECIAL_NOTIFICATION} element={<AddSpecialNotification />} />
+        <Route path={ROUTES.SPECIAL_NOTIFICATION_DETAILS} element={<SpecialNotificationDetails />} />
+        <Route path={ROUTES.ADMIN_SUBSCRIPTIONS} element={<Subscriptions />} />
+        <Route path={ROUTES.ADD_SUBSCRIPTION} element={<AddSubscription />} />
+        <Route path={ROUTES.SUBSCRIPTION_DETAILS} element={<SubscriptionDetails />} />
       </Route>
 
       {/* All Protected Routes with Layout Wrapper */}

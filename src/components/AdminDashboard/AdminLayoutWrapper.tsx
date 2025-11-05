@@ -213,6 +213,44 @@ const ADMIN_PAGE_CONFIGS: Record<string, PageConfig> = {
     titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
     showSearch: false,
   },
+  "/default-accounts": {
+    title: "الحسابات الافتراضية",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث برقم العميل / العملية السجل التجاري / رقم الهاتف",
+  },
+  "/advertisements": {
+    title: "الإعلانات",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث برقم العميل / العملية السجل التجاري / رقم الهاتف",
+  },
+  "/advertisements/add": {
+    title: "الإعلانات / إضافة إعلان جديد",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
+  "/special-notifications": {
+    title: "الاشعارات المخصصة",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث برقم العميل / العملية السجل التجاري / رقم الهاتف",
+  },
+  "/special-notifications/add": {
+    title: "الاشعارات المخصصة / إضافة اشعار مخصص جديد",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
+  "/admin-subscriptions": {
+    title: "الاشتراكات",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
+  "/admin-subscriptions/add": {
+    title: "الاشتراكات / إضافة باقة جديدة",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
 };
 
 // Helper to get config for dynamic routes
@@ -483,6 +521,45 @@ const getPageConfig = (pathname: string): PageConfig | null => {
   ) {
     return {
       title: "التصنيفات / تفاصيل التصنيف",
+      titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+      showSearch: false,
+    };
+  }
+
+  // Match dynamic routes for advertisements (e.g., /advertisements/:id)
+  if (
+    pathname.startsWith("/advertisements/") &&
+    pathname !== "/advertisements" &&
+    pathname !== "/advertisements/add"
+  ) {
+    return {
+      title: "الإعلانات / مشاهدة الاعلان",
+      titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+      showSearch: false,
+    };
+  }
+
+  // Match dynamic routes for special-notifications (e.g., /special-notifications/:id)
+  if (
+    pathname.startsWith("/special-notifications/") &&
+    pathname !== "/special-notifications" &&
+    pathname !== "/special-notifications/add"
+  ) {
+    return {
+      title: "الاشعارات المخصصة / مشاهدة الاشعار المخصص",
+      titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+      showSearch: false,
+    };
+  }
+
+  // Match dynamic routes for admin-subscriptions (e.g., /admin-subscriptions/:id)
+  if (
+    pathname.startsWith("/admin-subscriptions/") &&
+    pathname !== "/admin-subscriptions" &&
+    pathname !== "/admin-subscriptions/add"
+  ) {
+    return {
+      title: "الاشتراكات / تعديل الباقة",
       titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };

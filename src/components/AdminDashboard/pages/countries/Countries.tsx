@@ -218,11 +218,11 @@ const Countries = () => {
       {/* Header */}
       <div className="flex items-center justify-between w-full">
         {/* Title on right */}
-        <div className="flex items-center justify-end gap-1.5">
+        <div className="flex items-center justify-end gap-1.5" dir="rtl">
+          <Globe className="w-5 h-5 text-gray-500" />
           <h1 className="font-subtitle-subtitle-2 text-[length:var(--subtitle-subtitle-2-font-size)] text-color-mode-text-icons-t-sec">
             البلدان ({mockCountries.length})
           </h1>
-          <Globe className="w-5 h-5 text-gray-500" />
         </div>
         {/* Buttons on left */}
         <div className="flex items-center gap-3">

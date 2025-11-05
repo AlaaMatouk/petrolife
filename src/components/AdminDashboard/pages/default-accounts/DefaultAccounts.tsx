@@ -1,23 +1,80 @@
 import { useState, useMemo, useEffect } from "react";
 import { Table, Pagination, ExportButton } from "../../../shared";
-import { Car, CirclePlus, MoreVertical, Eye, Trash2 } from "lucide-react";
+import { MoreVertical, Eye, Copy, FileText, CreditCard } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 
-// Mock data for 200 vehicles
-const mockVehicles = Array.from({ length: 200 }).map((_, i) => ({
-  id: i + 1,
-  number: i + 1,
-  logo: undefined,
-  brand: "تيوتا",
-  model: "كرولا",
-  year: "2020",
-  creator: {
-    name: "أحمد محمد",
-    avatar: undefined,
-  },
-  creationDate: "21 فبراير 2025 - 5:05 ص",
-}));
+// Mock data for default accounts
+const generateMockAccounts = () => {
+  const accountTypes = ["أفراد", "شركات", "مزودو الخدمة", "تطبيق السائق"];
+  const customerNames = [
+    "هشام موسى",
+    "شركة النصر",
+    "شركة البترول العربية",
+    "أحمد علي",
+    "محمد حسن",
+    "شركة الصحراء",
+    "فاطمة الزهراء",
+    "شركة الشرق الأوسط",
+    "خالد عبدالله",
+    "شركة النفط والغاز",
+    "سارة أحمد",
+    "شركة الطاقة",
+    "يوسف محمد",
+    "شركة التوزيع",
+    "نور الدين",
+    "شركة الخدمات",
+    "علي محمود",
+    "شركة النقل",
+    "مريم سعيد",
+    "شركة التجارة",
+  ];
+  const phoneNumbers = [
+    "00965284358",
+    "00965284359",
+    "00965284360",
+    "00965284361",
+    "00965284362",
+    "00965284363",
+    "00965284364",
+    "00965284365",
+    "00965284366",
+    "00965284367",
+  ];
+  const customerCodes = [
+    "21A254",
+    "21A255",
+    "21A256",
+    "21A257",
+    "21A258",
+    "21A259",
+    "21A260",
+  ];
+
+  const accounts = [];
+  for (let i = 1; i <= 100; i++) {
+    const randomName =
+      customerNames[Math.floor(Math.random() * customerNames.length)];
+    const randomType =
+      accountTypes[Math.floor(Math.random() * accountTypes.length)];
+    const randomPhone =
+      phoneNumbers[Math.floor(Math.random() * phoneNumbers.length)];
+    const randomCode =
+      customerCodes[Math.floor(Math.random() * customerCodes.length)];
+
+    accounts.push({
+      id: i,
+      customerCode: randomCode,
+      customerName: randomName,
+      accountType: randomType,
+      phoneNumber: randomPhone,
+      virtualAccount: `${randomPhone}${String(i).padStart(10, "0")}`,
+    });
+  }
+  return accounts;
+};
+
+const mockDefaultAccounts = generateMockAccounts();
 
 // Action Menu Component for each row
 interface ActionMenuProps {
@@ -33,7 +90,7 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
   const updateMenuPosition = () => {
     if (!buttonRef) return;
     const rect = buttonRef.getBoundingClientRect();
-    const menuWidth = 192;
+    const menuWidth = 200;
     let left = rect.right + 4;
     if (left + menuWidth > window.innerWidth) {
       left = rect.left - menuWidth - 4;
@@ -46,9 +103,10 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
 
   const handleAction = (action: string) => {
     if (action === "view") {
-      navigate(`/admin-cars/${item.id}`);
-    } else if (action === "delete") {
-      console.log("Delete vehicle:", item.id);
+      console.log("View account:", item.id);
+    } else if (action === "copy") {
+      navigator.clipboard.writeText(item.virtualAccount);
+      console.log("Copied virtual account:", item.virtualAccount);
     }
     setIsOpen(false);
   };
@@ -83,7 +141,10 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
 
       {isOpen && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setIsOpen(false)}
+          />
           {createPortal(
             <div
               className="fixed w-48 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden"
@@ -94,15 +155,15 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
                   onClick={() => handleAction("view")}
                   className="w-full px-4 py-2 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-2 transition-colors"
                 >
-                  <span>مشاهدة بيانات المركبة</span>
+                  <span>عرض التفاصيل</span>
                   <Eye className="w-4 h-4 text-gray-500" />
                 </button>
                 <button
-                  onClick={() => handleAction("delete")}
-                  className="w-full px-4 py-2 text-right text-sm text-red-600 hover:bg-red-50 flex items-center justify-end gap-2 transition-colors"
+                  onClick={() => handleAction("copy")}
+                  className="w-full px-4 py-2 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-2 transition-colors"
                 >
-                  <span>حذف المركبة</span>
-                  <Trash2 className="w-4 h-4" />
+                  <span>نسخ رقم الحساب</span>
+                  <Copy className="w-4 h-4 text-gray-500" />
                 </button>
               </div>
             </div>,
@@ -114,10 +175,16 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
   );
 };
 
-const Vehicles = () => {
+const DefaultAccounts = () => {
   const navigate = useNavigate();
   const [currentPage, setCurrentPage] = useState(3);
   const itemsPerPage = 10;
+
+  const handleCopyVirtualAccount = (accountNumber: string) => {
+    navigator.clipboard.writeText(accountNumber);
+    // TODO: Show toast notification
+    console.log("Copied:", accountNumber);
+  };
 
   const columns = useMemo(
     () => [
@@ -133,68 +200,43 @@ const Vehicles = () => {
         ),
       },
       {
-        key: "creationDate",
-        label: "تاريخ الانشاء",
-        width: "min-w-[180px]",
+        key: "virtualAccount",
+        label: "الحساب الافتراضية",
+        width: "min-w-[200px]",
         priority: "high",
-      },
-      {
-        key: "creator",
-        label: "المنشئ",
-        width: "min-w-[150px]",
-        priority: "high",
-        render: (value: { name: string; avatar?: string }) => (
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center text-white font-semibold text-sm">
-              {value.avatar ? (
-                <img
-                  src={value.avatar}
-                  alt={value.name}
-                  className="w-full h-full rounded-full object-cover"
-                />
-              ) : (
-                value.name.charAt(0)
-              )}
-            </div>
-            <span className="font-medium text-gray-900">{value.name}</span>
+        render: (value: string) => (
+          <div
+            className="px-3 py-2 bg-yellow-100 hover:bg-yellow-200 rounded-md cursor-pointer transition-colors text-center font-mono text-sm font-medium"
+            onClick={() => handleCopyVirtualAccount(value)}
+            title="انقر للنسخ"
+            dir="ltr"
+          >
+            {value}
           </div>
         ),
       },
       {
-        key: "year",
-        label: "سنة الاصدار",
+        key: "phoneNumber",
+        label: "رقم الهاتف",
+        width: "min-w-[150px]",
+        priority: "high",
+      },
+      {
+        key: "accountType",
+        label: "نوع الحساب",
+        width: "min-w-[150px]",
+        priority: "high",
+      },
+      {
+        key: "customerName",
+        label: "اسم العميل",
+        width: "min-w-[150px]",
+        priority: "high",
+      },
+      {
+        key: "customerCode",
+        label: "كود العميل",
         width: "min-w-[120px]",
-        priority: "high",
-      },
-      {
-        key: "model",
-        label: "الطراز",
-        width: "min-w-[150px]",
-        priority: "high",
-      },
-      {
-        key: "brand",
-        label: "الماركة",
-        width: "min-w-[150px]",
-        priority: "high",
-      },
-      {
-        key: "logo",
-        label: "لوجو السيارة",
-        width: "min-w-[100px]",
-        priority: "high",
-        render: (value: any) => (
-          <div className="flex items-center justify-center">
-            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center">
-              <Car className="w-6 h-6 text-white" />
-            </div>
-          </div>
-        ),
-      },
-      {
-        key: "number",
-        label: "الرقم",
-        width: "min-w-[80px]",
         priority: "high",
       },
     ],
@@ -203,7 +245,7 @@ const Vehicles = () => {
 
   const paginatedData = useMemo(
     () =>
-      mockVehicles.slice(
+      mockDefaultAccounts.slice(
         (currentPage - 1) * itemsPerPage,
         currentPage * itemsPerPage
       ),
@@ -211,7 +253,7 @@ const Vehicles = () => {
   );
 
   const handleExport = (format: string) => {
-    console.log(`Exporting vehicles as ${format}`);
+    console.log(`Exporting default accounts as ${format}`);
   };
 
   return (
@@ -221,28 +263,15 @@ const Vehicles = () => {
     >
       {/* Header */}
       <div className="flex items-center justify-between w-full">
-        {/* Title on right */}
+        {/* Title on right with icon */}
         <div className="flex items-center justify-end gap-1.5" dir="rtl">
-          <Car className="w-5 h-5 text-gray-500" />
+          <CreditCard className="w-5 h-5 text-gray-500" />
           <h1 className="font-subtitle-subtitle-2 text-[length:var(--subtitle-subtitle-2-font-size)] text-color-mode-text-icons-t-sec">
-            المركبات ({mockVehicles.length})
+            الحسابات الافتراضية ({mockDefaultAccounts.length})
           </h1>
         </div>
-        {/* Buttons on left */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate("/admin-cars/add")}
-            className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray transition-colors"
-          >
-            <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
-              <div className="inline-flex items-center justify-center gap-2.5 pt-1 pb-0 px-0 relative flex-[0_0_auto]">
-                <span className="w-fit mt-[-1.00px] font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-sec text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] relative font-body-body-2 text-[length:var(--body-body-2-font-size)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
-                  إضافة مركبة جديدة
-                </span>
-              </div>
-              <CirclePlus className="w-4 h-4 text-gray-500" />
-            </div>
-          </button>
+        {/* Export Button on left */}
+        <div className="flex items-center justify-start">
           <ExportButton onExport={handleExport} buttonText="تصدير" />
         </div>
       </div>
@@ -255,11 +284,11 @@ const Vehicles = () => {
       {/* Pagination */}
       <Pagination
         currentPage={currentPage}
-        totalPages={Math.ceil(mockVehicles.length / itemsPerPage) || 1}
+        totalPages={Math.ceil(mockDefaultAccounts.length / itemsPerPage) || 1}
         onPageChange={setCurrentPage}
       />
     </div>
   );
 };
 
-export default Vehicles;
+export default DefaultAccounts;

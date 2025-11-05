@@ -1,52 +1,25 @@
 import { useState, useMemo, useEffect } from "react";
 import { Table, Pagination, ExportButton } from "../../../shared";
-import { CirclePlus, MoreVertical, Eye, Trash2, X, FileText, Upload, Download } from "lucide-react";
+import { Megaphone, MoreVertical, Eye, Trash2, CirclePlus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { StatusToggle } from "../../../shared";
 
-// Mock data for classifications
-const mockClassifications = [
-  {
-    id: 1,
-    number: 1,
-    arabicName: "زيوت",
-    englishName: "Oils",
-    subClassificationsCount: 4,
-    creator: {
-      name: "أحمد محمد",
-      avatar: undefined,
-    },
-    creationDate: "21 فبراير 2025 - 5:05 ص",
-    status: true,
+// Mock data for advertisements
+const mockAdvertisements = Array.from({ length: 10 }).map((_, i) => ({
+  id: i + 1,
+  number: i + 1,
+  design: `/img/design-${i + 1}.jpg`, // Placeholder for design image
+  title: i === 1 ? "تغيير البطارية" : "وقود بالقرب منك",
+  description: "نصلك في أسرع وقت لتزويدك ب...",
+  creator: {
+    name: "أحمد محمد",
+    avatar: undefined,
   },
-  {
-    id: 2,
-    number: 2,
-    arabicName: "وقود",
-    englishName: "Fuel",
-    subClassificationsCount: 6,
-    creator: {
-      name: "أحمد محمد",
-      avatar: undefined,
-    },
-    creationDate: "21 فبراير 2025 - 5:05 ص",
-    status: true,
-  },
-  {
-    id: 3,
-    number: 3,
-    arabicName: "غسيل",
-    englishName: "washing",
-    subClassificationsCount: 5,
-    creator: {
-      name: "أحمد محمد",
-      avatar: undefined,
-    },
-    creationDate: "21 فبراير 2025 - 5:05 ص",
-    status: true,
-  },
-];
+  display: i % 4 === 0 ? "شركات" : i % 4 === 1 ? "أفراد" : i % 4 === 2 ? "مزودو الخدمة" : "تطبيق السائق",
+  status: i < 7, // First 7 are active, rest are inactive
+  creationDate: "21 فبراير 2025 - 5:05 ص",
+}));
 
 // Action Menu Component for each row
 interface ActionMenuProps {
@@ -62,7 +35,7 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
   const updateMenuPosition = () => {
     if (!buttonRef) return;
     const rect = buttonRef.getBoundingClientRect();
-    const menuWidth = 240;
+    const menuWidth = 192;
     let left = rect.right + 4;
     if (left + menuWidth > window.innerWidth) {
       left = rect.left - menuWidth - 4;
@@ -75,17 +48,10 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
 
   const handleAction = (action: string) => {
     if (action === "view") {
-      navigate(`/admin-categories/${item.id}`);
+      navigate(`/advertisements/${item.id}`);
     } else if (action === "delete") {
-      console.log("Delete classification:", item.id);
-    } else if (action === "add-sub") {
-      console.log("Add sub-classification:", item.id);
-    } else if (action === "add-single") {
-      navigate("/admin-categories/add");
-    } else if (action === "upload-excel") {
-      console.log("Upload Excel:", item.id);
-    } else if (action === "download-template") {
-      console.log("Download template");
+      console.log("Delete advertisement:", item.id);
+      // TODO: Show confirmation dialog and handle delete
     }
     setIsOpen(false);
   };
@@ -123,7 +89,7 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
           <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
           {createPortal(
             <div
-              className="fixed w-60 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden"
+              className="fixed w-48 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden"
               style={{ top: menuPosition.top, left: menuPosition.left }}
             >
               <div className="py-1">
@@ -131,44 +97,15 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
                   onClick={() => handleAction("view")}
                   className="w-full px-4 py-2 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-2 transition-colors"
                 >
-                  <span>مشاهدة التصنيف</span>
+                  <span>مشاهدة الاعلان</span>
                   <Eye className="w-4 h-4 text-gray-500" />
-                </button>
-                <button
-                  onClick={() => handleAction("add-sub")}
-                  className="w-full px-4 py-2 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-2 transition-colors"
-                >
-                  <span>إضافة تصنيف فرعي</span>
-                  <CirclePlus className="w-4 h-4 text-gray-500" />
                 </button>
                 <button
                   onClick={() => handleAction("delete")}
                   className="w-full px-4 py-2 text-right text-sm text-red-600 hover:bg-red-50 flex items-center justify-end gap-2 transition-colors"
                 >
-                  <span>حذف التصنيف</span>
+                  <span>حذف الاعلان</span>
                   <Trash2 className="w-4 h-4" />
-                </button>
-                <div className="border-t border-gray-200 my-1"></div>
-                <button
-                  onClick={() => handleAction("add-single")}
-                  className="w-full px-4 py-2 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-2 transition-colors"
-                >
-                  <span>إضافة تصنيف واحد</span>
-                  <CirclePlus className="w-4 h-4 text-gray-500" />
-                </button>
-                <button
-                  onClick={() => handleAction("upload-excel")}
-                  className="w-full px-4 py-2 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-2 transition-colors"
-                >
-                  <span>رفع ملف Excel لمجموعة تصنيفات</span>
-                  <Upload className="w-4 h-4 text-gray-500" />
-                </button>
-                <button
-                  onClick={() => handleAction("download-template")}
-                  className="w-full px-4 py-2 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-2 transition-colors"
-                >
-                  <span>تنزيل نموذج للتعبئة</span>
-                  <Download className="w-4 h-4 text-gray-500" />
                 </button>
               </div>
             </div>,
@@ -180,7 +117,7 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
   );
 };
 
-const Classifications = () => {
+const Advertisements = () => {
   const navigate = useNavigate();
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -200,21 +137,23 @@ const Classifications = () => {
       },
       {
         key: "status",
-        label: "حالة التصنيف",
+        label: "حالة الاعلان",
         width: "min-w-[150px]",
         priority: "high",
         render: (value: boolean) => (
           <StatusToggle
             isActive={value}
-            onToggle={() => {}}
-            statusText={value ? "معروض" : "غير معروض"}
+            onToggle={() => {
+              console.log("Toggle status for advertisement");
+            }}
+            statusText="معروض"
           />
         ),
       },
       {
-        key: "creationDate",
-        label: "تاريخ الانشاء",
-        width: "min-w-[180px]",
+        key: "display",
+        label: "العرض",
+        width: "min-w-[150px]",
         priority: "high",
       },
       {
@@ -240,22 +179,42 @@ const Classifications = () => {
         ),
       },
       {
-        key: "subClassificationsCount",
-        label: "التصنيفات الفرعي",
-        width: "min-w-[120px]",
-        priority: "high",
+        key: "description",
+        label: "الوصف",
+        width: "min-w-[200px]",
+        priority: "medium",
       },
       {
-        key: "englishName",
-        label: "التصنيف بالانجليزي",
+        key: "title",
+        label: "العنوان",
         width: "min-w-[150px]",
         priority: "high",
       },
       {
-        key: "arabicName",
-        label: "التصنيف الرئيسي",
-        width: "min-w-[150px]",
+        key: "design",
+        label: "التصميم",
+        width: "min-w-[100px]",
         priority: "high",
+        render: (value: string) => (
+          <div className="flex items-center justify-center">
+            <div className="w-16 h-12 rounded-md overflow-hidden bg-gray-200 flex items-center justify-center">
+              {value ? (
+                <img
+                  src={value}
+                  alt="تصميم الاعلان"
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-xs">
+                  تصميم
+                </div>
+              )}
+            </div>
+          </div>
+        ),
       },
       {
         key: "number",
@@ -269,7 +228,7 @@ const Classifications = () => {
 
   const paginatedData = useMemo(
     () =>
-      mockClassifications.slice(
+      mockAdvertisements.slice(
         (currentPage - 1) * itemsPerPage,
         currentPage * itemsPerPage
       ),
@@ -277,7 +236,7 @@ const Classifications = () => {
   );
 
   const handleExport = (format: string) => {
-    console.log(`Exporting classifications as ${format}`);
+    console.log(`Exporting advertisements as ${format}`);
   };
 
   return (
@@ -287,23 +246,23 @@ const Classifications = () => {
     >
       {/* Header */}
       <div className="flex items-center justify-between w-full">
-        {/* Title on right */}
+        {/* Title on right with icon */}
         <div className="flex items-center justify-end gap-1.5" dir="rtl">
-          <X className="w-5 h-5 text-gray-500" />
+          <Megaphone className="w-5 h-5 text-gray-500" />
           <h1 className="font-subtitle-subtitle-2 text-[length:var(--subtitle-subtitle-2-font-size)] text-color-mode-text-icons-t-sec">
-            التصنيفات ({mockClassifications.length})
+            الإعلانات ({mockAdvertisements.length})
           </h1>
         </div>
         {/* Buttons on left */}
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate("/admin-categories/add")}
+            onClick={() => navigate("/advertisements/add")}
             className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray transition-colors"
           >
             <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
               <div className="inline-flex items-center justify-center gap-2.5 pt-1 pb-0 px-0 relative flex-[0_0_auto]">
                 <span className="w-fit mt-[-1.00px] font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-sec text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] relative font-body-body-2 text-[length:var(--body-body-2-font-size)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
-                  إضافة تصنيف جديد
+                  إضافة إعلان جديد
                 </span>
               </div>
               <CirclePlus className="w-4 h-4 text-gray-500" />
@@ -321,12 +280,12 @@ const Classifications = () => {
       {/* Pagination */}
       <Pagination
         currentPage={currentPage}
-        totalPages={Math.ceil(mockClassifications.length / itemsPerPage) || 1}
+        totalPages={Math.ceil(mockAdvertisements.length / itemsPerPage) || 1}
         onPageChange={setCurrentPage}
       />
     </div>
   );
 };
 
-export default Classifications;
+export default Advertisements;
 
