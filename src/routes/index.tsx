@@ -95,6 +95,7 @@ import VehicleDetails from "../components/AdminDashboard/pages/vehicles/VehicleD
 import Classifications from "../components/AdminDashboard/pages/classifications/Classifications";
 import AddClassification from "../components/AdminDashboard/pages/classifications/AddClassification";
 import ClassificationDetails from "../components/AdminDashboard/pages/classifications/ClassificationDetails";
+import DefaultAccounts from "../components/AdminDashboard/pages/default-accounts/DefaultAccounts";
 
 // 404 Component
 const NotFound = () => (
@@ -207,6 +208,7 @@ export const AppRouter = () => {
         <Route path={ROUTES.ADMIN_CATEGORIES} element={<Classifications />} />
         <Route path={ROUTES.ADD_CLASSIFICATION} element={<AddClassification />} />
         <Route path={ROUTES.CLASSIFICATION_DETAILS} element={<ClassificationDetails />} />
+        <Route path={ROUTES.DEFAULT_ACCOUNTS} element={<DefaultAccounts />} />
       </Route>
 
       {/* All Protected Routes with Layout Wrapper */}
