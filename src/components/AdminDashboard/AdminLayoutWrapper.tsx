@@ -230,6 +230,17 @@ const ADMIN_PAGE_CONFIGS: Record<string, PageConfig> = {
     titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
     showSearch: false,
   },
+  "/special-notifications": {
+    title: "الاشعارات المخصصة",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث برقم العميل / العملية السجل التجاري / رقم الهاتف",
+  },
+  "/special-notifications/add": {
+    title: "الاشعارات المخصصة / إضافة اشعار مخصص جديد",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
 };
 
 // Helper to get config for dynamic routes
@@ -513,6 +524,19 @@ const getPageConfig = (pathname: string): PageConfig | null => {
   ) {
     return {
       title: "الإعلانات / مشاهدة الاعلان",
+      titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+      showSearch: false,
+    };
+  }
+
+  // Match dynamic routes for special-notifications (e.g., /special-notifications/:id)
+  if (
+    pathname.startsWith("/special-notifications/") &&
+    pathname !== "/special-notifications" &&
+    pathname !== "/special-notifications/add"
+  ) {
+    return {
+      title: "الاشعارات المخصصة / مشاهدة الاشعار المخصص",
       titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
       showSearch: false,
     };

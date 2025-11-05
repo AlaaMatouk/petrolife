@@ -116,6 +116,8 @@ export const ROUTES = {
   ADD_ADVERTISEMENT: "/advertisements/add",
   ADVERTISEMENT_DETAILS: "/advertisements/:id",
   SPECIAL_NOTIFICATIONS: "/special-notifications",
+  ADD_SPECIAL_NOTIFICATION: "/special-notifications/add",
+  SPECIAL_NOTIFICATION_DETAILS: "/special-notifications/:id",
   ADMIN_SUBSCRIPTIONS: "/admin-subscriptions",
   ADMIN_COMMUNICATION_POLICIES: "/admin-communication-policies",
   FAQ: "/faq",
