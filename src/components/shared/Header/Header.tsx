@@ -1,11 +1,12 @@
 import React, { ReactNode, useState, useRef, useEffect } from "react";
-import { Sun, Search, User, LogOut } from "lucide-react";
+import { Sun, Search, User, LogOut, Settings } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { auth } from "../../../config/firebase";
 import { signOutUser } from "../../../services/auth";
 import { useGlobalState } from "../../../context/GlobalStateContext";
 import { NotificationDropdown } from "../Notification";
 import { CartDropdown } from "../Cart";
+import { ROUTES } from "../../../constants/routes";
 
 // Breadcrumb route mapping
 const breadcrumbRoutes: Record<string, string> = {
@@ -152,6 +153,16 @@ const ProfileDropdown: React.FC = () => {
           </div>
 
           <div className="py-2">
+            <button
+              onClick={() => {
+                navigate(ROUTES.PROFILE);
+                setIsOpen(false);
+              }}
+              className="w-full px-4 py-2 text-right text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-150 flex items-center justify-end gap-2"
+            >
+              <span>الملف الشخصي</span>
+              <Settings className="w-4 h-4" />
+            </button>
             <button
               onClick={handleLogout}
               className="w-full px-4 py-2 text-right text-sm text-red-600 hover:bg-red-50 transition-colors duration-150 flex items-center justify-end gap-2"

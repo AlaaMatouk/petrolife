@@ -236,6 +236,11 @@ const ADMIN_PAGE_CONFIGS: Record<string, PageConfig> = {
     showSearch: true,
     searchPlaceholder: "بحث برقم العميل / العملية السجل التجاري / رقم الهاتف",
   },
+  "/profile": {
+    title: "الملف الشخصي",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
   "/advertisements": {
     title: "الإعلانات",
     titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,

@@ -125,6 +125,7 @@ export const ROUTES = {
   ADMIN_COMMUNICATION_POLICIES: "/admin-communication-policies",
   FAQ: "/faq",
   CUSTOMER_MESSAGES: "/customer-messages",
+  PROFILE: "/profile",
 } as const;
 
 // Helper function to generate dynamic routes
