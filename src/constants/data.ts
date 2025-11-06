@@ -96,7 +96,7 @@ export const navigationMenuData = {
       id: "refund-requests",
       label: "طلبات الاسترداد",
       icon: "/img/side-icons-10.svg",
-      href: ROUTES.REFUND_REQUESTS,
+      href: ROUTES.MONEY_REFUND_REQUESTS,
     },
     {
       id: "charge-requests",
