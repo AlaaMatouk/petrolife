@@ -219,6 +219,17 @@ const ADMIN_PAGE_CONFIGS: Record<string, PageConfig> = {
     showSearch: true,
     searchPlaceholder: "بحث برقم العميل / العملية السجل التجاري / رقم الهاتف",
   },
+  "/admin-communication-policies": {
+    title: "وسائل التواصل & السياسة",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
+  "/faq": {
+    title: "الأسئلة الشائعة",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث في الأسئلة الشائعة...",
+  },
   "/advertisements": {
     title: "الإعلانات",
     titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,

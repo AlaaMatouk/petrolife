@@ -25,6 +25,7 @@ export const ROUTES = {
   USED_STATIONS: "/used-stations",
   CHARGE_REQUESTS: "/walletchargerequests",
   PEROLIFE_STATION_LOCATIONS: "/perolifestationlocations",
+  MONEY_REFUND_REQUESTS: "/moneyrefundrequests",
 
   // Store and Subscriptions
   STORE: "/store",

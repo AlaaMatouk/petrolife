@@ -16,6 +16,7 @@ import { AddNewCar } from "../screens/AddNewCar/AddNewCar";
 import { CarDetails } from "../screens/CarDetails/CarDetails";
 import { MoneyReq } from "../components/AdminDashboard/pages/wallet-requests/MoneyReq";
 import { WalletChargeRequests } from "../screens/ChargeRequests/WalletChargeRequests";
+import { MoneyRefundRequests } from "../screens/MoneyRefundRequests/MoneyRefundRequests";
 import { ChargeWallet } from "../screens/ChargeWallet";
 import { PerolifeStationLocations } from "../screens/PerolifeStationLocations/perolifestationlocations";
 import { StoreScreen } from "../screens/Store";
@@ -96,6 +97,8 @@ import Classifications from "../components/AdminDashboard/pages/classifications/
 import AddClassification from "../components/AdminDashboard/pages/classifications/AddClassification";
 import ClassificationDetails from "../components/AdminDashboard/pages/classifications/ClassificationDetails";
 import DefaultAccounts from "../components/AdminDashboard/pages/default-accounts/DefaultAccounts";
+import CommunicationPolicies from "../components/AdminDashboard/pages/communication-policies/CommunicationPolicies";
+import FAQ from "../components/AdminDashboard/pages/faq/FAQ";
 import Advertisements from "../components/AdminDashboard/pages/advertisements/Advertisements";
 import AddAdvertisement from "../components/AdminDashboard/pages/advertisements/AddAdvertisement";
 import AdvertisementDetails from "../components/AdminDashboard/pages/advertisements/AdvertisementDetails";
@@ -218,6 +221,8 @@ export const AppRouter = () => {
         <Route path={ROUTES.ADD_CLASSIFICATION} element={<AddClassification />} />
         <Route path={ROUTES.CLASSIFICATION_DETAILS} element={<ClassificationDetails />} />
         <Route path={ROUTES.DEFAULT_ACCOUNTS} element={<DefaultAccounts />} />
+        <Route path={ROUTES.ADMIN_COMMUNICATION_POLICIES} element={<CommunicationPolicies />} />
+        <Route path={ROUTES.FAQ} element={<FAQ />} />
         <Route path={ROUTES.ADVERTISEMENTS} element={<Advertisements />} />
         <Route path={ROUTES.ADD_ADVERTISEMENT} element={<AddAdvertisement />} />
         <Route path={ROUTES.ADVERTISEMENT_DETAILS} element={<AdvertisementDetails />} />
@@ -258,6 +263,10 @@ export const AppRouter = () => {
         <Route
           path={ROUTES.CHARGE_REQUESTS}
           element={<WalletChargeRequests />}
+        />
+        <Route
+          path={ROUTES.MONEY_REFUND_REQUESTS}
+          element={<MoneyRefundRequests />}
         />
         <Route
           path={ROUTES.PEROLIFE_STATION_LOCATIONS}
