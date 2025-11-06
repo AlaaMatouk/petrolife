@@ -99,6 +99,8 @@ import ClassificationDetails from "../components/AdminDashboard/pages/classifica
 import DefaultAccounts from "../components/AdminDashboard/pages/default-accounts/DefaultAccounts";
 import CommunicationPolicies from "../components/AdminDashboard/pages/communication-policies/CommunicationPolicies";
 import FAQ from "../components/AdminDashboard/pages/faq/FAQ";
+import CustomerMessages from "../components/AdminDashboard/pages/customer-messages/CustomerMessages";
+import Profile from "../components/AdminDashboard/pages/profile/Profile";
 import Advertisements from "../components/AdminDashboard/pages/advertisements/Advertisements";
 import AddAdvertisement from "../components/AdminDashboard/pages/advertisements/AddAdvertisement";
 import AdvertisementDetails from "../components/AdminDashboard/pages/advertisements/AdvertisementDetails";
@@ -223,6 +225,8 @@ export const AppRouter = () => {
         <Route path={ROUTES.DEFAULT_ACCOUNTS} element={<DefaultAccounts />} />
         <Route path={ROUTES.ADMIN_COMMUNICATION_POLICIES} element={<CommunicationPolicies />} />
         <Route path={ROUTES.FAQ} element={<FAQ />} />
+        <Route path={ROUTES.CUSTOMER_MESSAGES} element={<CustomerMessages />} />
+        <Route path={ROUTES.PROFILE} element={<Profile />} />
         <Route path={ROUTES.ADVERTISEMENTS} element={<Advertisements />} />
         <Route path={ROUTES.ADD_ADVERTISEMENT} element={<AddAdvertisement />} />
         <Route path={ROUTES.ADVERTISEMENT_DETAILS} element={<AdvertisementDetails />} />
