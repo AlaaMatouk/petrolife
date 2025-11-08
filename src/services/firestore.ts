@@ -134,6 +134,297 @@ export const fetchCompaniesDrivers = async () => {
 };
 
 /**
+ * Fetch all documents from the Firestore "drivers" collection
+ * @returns Promise with the drivers data
+ */
+export const fetchDrivers = async () => {
+  try {
+    const driversRef = collection(db, "drivers");
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(driversRef);
+
+    const driversData: any[] = [];
+
+    querySnapshot.forEach((doc) => {
+      driversData.push({
+        docId: doc.id,
+        ...doc.data(),
+      });
+    });
+
+    return driversData;
+  } catch (error) {
+    console.error("Error fetching drivers data:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a single driver document from the Firestore "drivers" collection
+ * @param driverId - Driver document ID
+ * @returns Promise with the driver data
+ */
+export const fetchDriverDocumentById = async (driverId: string) => {
+  try {
+    const driverDocRef = doc(db, "drivers", driverId);
+    const driverDoc = await getDoc(driverDocRef);
+
+    if (!driverDoc.exists()) {
+      throw new Error("Driver not found");
+    }
+
+    return {
+      docId: driverDoc.id,
+      ...driverDoc.data(),
+    };
+  } catch (error) {
+    console.error("Error fetching driver document:", error);
+    throw error;
+  }
+};
+
+type DriverSchemaNode =
+  | { kind: "value" }
+  | { kind: "object"; fields: Record<string, DriverSchemaNode> }
+  | { kind: "array"; element: DriverSchemaNode | null };
+
+let driverSchemaCache: DriverSchemaNode | null = null;
+let driverSchemaPromise: Promise<DriverSchemaNode> | null = null;
+
+const isFirestoreTimestamp = (value: any): boolean =>
+  Boolean(value) &&
+  typeof value === "object" &&
+  typeof value.toDate === "function" &&
+  typeof value.seconds === "number";
+
+const isPlainObjectLike = (value: any): value is Record<string, any> =>
+  Boolean(value) &&
+  typeof value === "object" &&
+  !Array.isArray(value) &&
+  !isFirestoreTimestamp(value);
+
+const mergeSchemaNode = (
+  existing: DriverSchemaNode | undefined,
+  value: any
+): DriverSchemaNode => {
+  if (value === null || value === undefined) {
+    return existing ?? { kind: "value" };
+  }
+
+  if (Array.isArray(value)) {
+    const elementSchema =
+      existing && existing.kind === "array" ? existing.element : null;
+
+    const mergedElement = value.reduce<DriverSchemaNode | null>(
+      (acc, item) => {
+        if (item === undefined) {
+          return acc;
+        }
+        const next = mergeSchemaNode(acc ?? undefined, item);
+        return next;
+      },
+      elementSchema ?? null
+    );
+
+    return {
+      kind: "array",
+      element: mergedElement,
+    };
+  }
+
+  if (isPlainObjectLike(value)) {
+    const fields: Record<string, DriverSchemaNode> =
+      existing && existing.kind === "object" ? { ...existing.fields } : {};
+
+    Object.entries(value).forEach(([key, nestedValue]) => {
+      if (key === "docId") {
+        return;
+      }
+      fields[key] = mergeSchemaNode(fields[key], nestedValue);
+    });
+
+    return {
+      kind: "object",
+      fields,
+    };
+  }
+
+  return { kind: "value" };
+};
+
+const deriveSchemaFromDrivers = (drivers: any[]): DriverSchemaNode => {
+  // Collect a superset of every field (including deep nested paths) that
+  // already exists across historical driver documents.
+  const root: DriverSchemaNode = { kind: "object", fields: {} };
+
+  drivers.forEach((driver) => {
+    if (!isPlainObjectLike(driver)) {
+      return;
+    }
+
+    Object.entries(driver).forEach(([key, value]) => {
+      if (key === "docId") {
+        return;
+      }
+      root.fields[key] = mergeSchemaNode(root.fields[key], value);
+    });
+  });
+
+  return root;
+};
+
+const ensureDriverSchemaLoaded = async (): Promise<DriverSchemaNode> => {
+  if (driverSchemaCache) {
+    return driverSchemaCache;
+  }
+
+  if (!driverSchemaPromise) {
+    driverSchemaPromise = (async () => {
+      const drivers = await fetchDrivers();
+      const schema = deriveSchemaFromDrivers(drivers);
+      driverSchemaCache = schema;
+      return schema;
+    })();
+  }
+
+  return driverSchemaPromise;
+};
+
+const buildPayloadFromSchema = (
+  schema: DriverSchemaNode,
+  source: any
+): any => {
+  if (schema.kind === "value") {
+    // Leaf nodes fallback to null whenever the caller does not provide a value.
+    return source ?? null;
+  }
+
+  if (schema.kind === "array") {
+    if (!Array.isArray(source)) {
+      return [];
+    }
+
+    const elementSchema = schema.element;
+    if (!elementSchema) {
+      return source;
+    }
+
+    return source.map((item) => buildPayloadFromSchema(elementSchema, item));
+  }
+
+  const result: Record<string, any> = {};
+  const sourceObject = isPlainObjectLike(source) ? source : {};
+
+  Object.entries(schema.fields).forEach(([key, childSchema]) => {
+    // Materialise nested objects recursively to keep structure identical
+    // across all documents (missing values bubble down as nulls).
+    result[key] = buildPayloadFromSchema(childSchema, sourceObject[key]);
+  });
+
+  return result;
+};
+
+const TIMESTAMP_FIELD_NAMES = new Set([
+  "createdAt",
+  "createdDate",
+  "updatedAt",
+  "updatedDate",
+  "lastUpdatedAt",
+]);
+
+const applyTimestampOverrides = (value: any): void => {
+  if (Array.isArray(value)) {
+    value.forEach((entry) => applyTimestampOverrides(entry));
+    return;
+  }
+
+  if (!isPlainObjectLike(value)) {
+    return;
+  }
+
+  Object.entries(value).forEach(([key, nested]) => {
+    if (TIMESTAMP_FIELD_NAMES.has(key) && (nested === null || nested === undefined)) {
+      value[key] = serverTimestamp();
+      return;
+    }
+
+    applyTimestampOverrides(nested);
+  });
+};
+
+/**
+ * Generate a full driver payload by projecting the provided form data
+ * over the schema derived from existing driver documents.
+ *
+ * - We scan historic documents once to collect every field (including nested).
+ * - For each field, we copy the supplied value if present, otherwise we fall back to null.
+ * - Nested objects are always materialised so the Firestore document keeps a consistent shape.
+ */
+export const generateFullDriverPayload = async (
+  formData: Record<string, any>
+): Promise<Record<string, any>> => {
+  let schema = await ensureDriverSchemaLoaded();
+
+  if (
+    schema.kind === "object" &&
+    Object.keys(schema.fields).length === 0 &&
+    isPlainObjectLike(formData)
+  ) {
+    schema = deriveSchemaFromDrivers([formData]);
+    driverSchemaCache = schema;
+  }
+
+  return buildPayloadFromSchema(schema, formData);
+};
+
+/**
+ * Create a new driver document in the "drivers" collection while ensuring
+ * the payload respects the complete schema observed in previous documents.
+ *
+ * This prevents new records from dropping fields (they become null instead),
+ * which keeps Firestore data shape consistent for downstream consumers.
+ */
+export const createNewDriver = async (
+  formData: Record<string, any>
+) => {
+  const payload = await generateFullDriverPayload(formData);
+
+  applyTimestampOverrides(payload);
+
+  const driversRef = collection(db, "drivers");
+  const docRef = await addDoc(driversRef, payload);
+
+  return {
+    docId: docRef.id,
+    ...payload,
+  };
+};
+
+/**
+ * Fetch all documents from the Firestore "orders" collection
+ * @returns Promise with the orders data
+ */
+export const fetchAllOrdersDocuments = async () => {
+  try {
+    const ordersRef = collection(db, "orders");
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(ordersRef);
+
+    const ordersData: any[] = [];
+
+    querySnapshot.forEach((doc) => {
+      ordersData.push({
+        docId: doc.id,
+        ...doc.data(),
+      });
+    });
+
+    return ordersData;
+  } catch (error) {
+    console.error("Error fetching orders data:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetch all data from a specific collection
  * @param collectionName - Name of the collection to fetch
  * @returns Promise with the collection data

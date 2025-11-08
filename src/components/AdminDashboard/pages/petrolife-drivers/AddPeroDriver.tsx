@@ -2,9 +2,12 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Input, Select } from "../../../shared/Form";
 import { Upload, ArrowLeft } from "lucide-react";
+import { useToast } from "../../../../context/ToastContext";
+import { createNewDriver } from "../../../../services/firestore";
 
 const AddPeroDriver = () => {
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -14,6 +17,7 @@ const AddPeroDriver = () => {
     carNumber: "",
     imageFile: null as File | null,
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleFileUpload = () => {
     const input = document.createElement("input");
@@ -26,9 +30,52 @@ const AddPeroDriver = () => {
     input.click();
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const buildFormData = () => ({
+    name: form.name || null,
+    email: form.email || null,
+    phoneNumber: form.phone || null,
+    phone: form.phone || null,
+    address: form.address || null,
+    location: form.address || null,
+    city: {
+      name: {
+        ar: form.city || null,
+        en: form.city || null,
+      },
+    },
+    car: {
+      plateNumber: {
+        ar: form.carNumber || null,
+        en: form.carNumber || null,
+      },
+    },
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Submitting new driver:", form);
+    if (isSubmitting) {
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await createNewDriver(buildFormData());
+      addToast({
+        type: "success",
+        title: "تم الحفظ",
+        message: "تم إضافة السائق بنجاح إلى النظام.",
+      });
+      navigate("/petrolife-drivers");
+    } catch (error) {
+      console.error("Failed to create driver:", error);
+      addToast({
+        type: "error",
+        title: "فشل الإضافة",
+        message: "تعذر إضافة السائق. حاول مرة أخرى.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const fileName = form.imageFile ? form.imageFile.name : "hsgndkmmcjhpd.jpg";
@@ -142,9 +189,10 @@ const AddPeroDriver = () => {
         <div className="w-full flex justify-end">
           <button
             type="submit"
-            className="px-5 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors"
+            disabled={isSubmitting}
+            className="px-5 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] disabled:bg-[#5A66C1]/60 text-white font-medium transition-colors"
           >
-            إضافة السائق
+            {isSubmitting ? "جاري الإضافة..." : "إضافة السائق"}
           </button>
         </div>
       </div>
