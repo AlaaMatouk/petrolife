@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Table, Pagination } from "../../../shared";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { Table, Pagination, LoadingSpinner } from "../../../shared";
 import {
   ArrowLeft,
   Eye,
@@ -13,28 +13,93 @@ import {
   Building2,
 } from "lucide-react";
 import { createPortal } from "react-dom";
+import {
+  fetchDriverByIdentifier,
+  fetchVehicleById,
+  fetchDrivers,
+  addDriverToVehicle,
+} from "../../../../services/firestore";
+import { useToast } from "../../../../context/ToastContext";
 
-// Dummy car info matching screenshot style
-const carInfo = {
-  plateNumber: "215436654",
-  creator: "احمد محمد على",
-  carName: "",
-  creationDate: "12 فبراير 2025 10:15 ص",
-  chassisNumber: "21452635",
-  numberOfDrivers: "2",
-  carImage: "/img/car-image.png",
+interface VehicleInfo {
+  plateNumber: string;
+  creator: string;
+  carName: string;
+  creationDate: string;
+  chassisNumber: string;
+  numberOfDrivers: string;
+  carImage: string;
+}
+
+interface VehicleDriverRow {
+  id: string;
+  code: string;
+  name: string;
+  phone: string;
+  email: string;
+  city: string;
+  status: string;
+  isActive: boolean;
+}
+
+interface AllDriverRow {
+  id: string;
+  assignmentIdentifier: string;
+  name: string;
+  phone: string;
+  email: string;
+  city: string;
+  status: string;
+  isActive: boolean;
+}
+
+const formatValue = (value: any, placeholder = "-") => {
+  if (value === null || value === undefined) {
+    return placeholder;
+  }
+  const stringValue = String(value).trim();
+  return stringValue.length === 0 ? placeholder : stringValue;
 };
 
-// Dummy drivers data
-const drivers = Array.from({ length: 48 }).map((_, i) => ({
-  id: i + 1,
-  driverCode: "21A254",
-  driverName: { name: "احمد محمد", avatar: undefined },
-  phone: "00965284358",
-  email: "ahmedmohamed@gmail.com",
-  city: "الرياض",
-  accountStatus: { active: true, text: "مفعل" },
-}));
+const formatDateValue = (value: any): string => {
+  if (!value) {
+    return "-";
+  }
+
+  try {
+    if (typeof value === "string") {
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toLocaleString("ar-EG");
+      }
+      return value;
+    }
+
+    if (typeof value === "number") {
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toLocaleString("ar-EG");
+      }
+      return "-";
+    }
+
+    if (value?.toDate) {
+      const parsed = value.toDate();
+      return parsed.toLocaleString("ar-EG");
+    }
+
+    if (value?.seconds) {
+      const parsed = new Date(value.seconds * 1000);
+      return parsed.toLocaleString("ar-EG");
+    }
+
+    return "-";
+  } catch {
+    return "-";
+  }
+};
+
+const VEHICLE_FALLBACK_IMAGE = "/img/car-image.png";
 
 const ExportMenu = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -115,24 +180,40 @@ const ExportMenu = () => {
 
 const PetrolifeCarDetails = (): JSX.Element => {
   const navigate = useNavigate();
-  const [currentPage, setCurrentPage] = useState(3);
+  const { id: vehicleId } = useParams<{ id: string }>();
+  const { addToast } = useToast();
+  const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null);
+  const [drivers, setDrivers] = useState<VehicleDriverRow[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isDriversListOpen, setIsDriversListOpen] = useState(false);
+  const [allDrivers, setAllDrivers] = useState<AllDriverRow[]>([]);
+  const [isAllDriversLoading, setIsAllDriversLoading] = useState(false);
+  const [allDriversError, setAllDriversError] = useState<string | null>(null);
+  const [assigningDriverId, setAssigningDriverId] = useState<string | null>(
+    null
+  );
+  const [assignedDriverIdentifiers, setAssignedDriverIdentifiers] = useState<
+    string[]
+  >([]);
 
   const columns = useMemo(
     () => [
       {
-        key: "accountStatus",
+        key: "status",
         label: "حالة الحساب",
         width: "min-w-[120px]",
         priority: "high",
-        render: (value: { active: boolean; text: string }) => (
+        render: (_: string, row: VehicleDriverRow) => (
           <div className="flex items-center gap-2">
             <div
               className={`w-2 h-2 rounded-full ${
-                value.active ? "bg-green-500" : "bg-gray-400"
+                row.isActive ? "bg-green-500" : "bg-gray-400"
               }`}
             />
-            <span className="text-sm text-gray-700">{value.text}</span>
+            <span className="text-sm text-gray-700">{row.status}</span>
           </div>
         ),
       },
@@ -155,29 +236,13 @@ const PetrolifeCarDetails = (): JSX.Element => {
         priority: "high",
       },
       {
-        key: "driverName",
+        key: "name",
         label: "اسم السائق",
         width: "min-w-[180px]",
         priority: "high",
-        render: (value: { name: string; avatar?: string }) => (
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white font-semibold text-sm">
-              {value.avatar ? (
-                <img
-                  src={value.avatar}
-                  alt={value.name}
-                  className="w-full h-full rounded-full object-cover"
-                />
-              ) : (
-                value.name.charAt(0)
-              )}
-            </div>
-            <span className="font-medium text-gray-900">{value.name}</span>
-          </div>
-        ),
       },
       {
-        key: "driverCode",
+        key: "code",
         label: "كود السائق",
         width: "min-w-[120px]",
         priority: "high",
@@ -202,14 +267,262 @@ const PetrolifeCarDetails = (): JSX.Element => {
     [columns]
   );
 
-  const paginated = useMemo(
-    () =>
-      drivers.slice(
-        (currentPage - 1) * itemsPerPage,
-        currentPage * itemsPerPage
-      ),
-    [currentPage]
-  );
+  const paginated = useMemo(() => {
+    return drivers.slice(
+      (currentPage - 1) * itemsPerPage,
+      currentPage * itemsPerPage
+    );
+  }, [drivers, currentPage]);
+
+  const assignedIdentifiers = useMemo(() => {
+    return new Set(assignedDriverIdentifiers);
+  }, [assignedDriverIdentifiers]);
+
+  const handleAddDriverToVehicle = async (driver: AllDriverRow) => {
+    if (!vehicleId) {
+      addToast({
+        type: "error",
+        title: "خطأ",
+        message: "معرف المركبة غير متوفر.",
+      });
+      return;
+    }
+
+    if (assignedIdentifiers.has(driver.assignmentIdentifier)) {
+      addToast({
+        type: "info",
+        title: "إشعار",
+        message: "هذا السائق مضاف بالفعل إلى المركبة.",
+      });
+      return;
+    }
+
+    try {
+      setAssigningDriverId(driver.assignmentIdentifier);
+      await addDriverToVehicle(vehicleId, driver.assignmentIdentifier);
+
+      setDrivers((prev) => [
+        ...prev,
+        {
+          id: driver.assignmentIdentifier,
+          code: driver.assignmentIdentifier,
+          name: driver.name,
+          phone: driver.phone,
+          email: driver.email,
+          city: driver.city,
+          status: driver.status,
+          isActive: driver.isActive,
+        },
+      ]);
+
+      setAssignedDriverIdentifiers((prev) => {
+        if (prev.includes(driver.assignmentIdentifier)) {
+          return prev;
+        }
+        return [...prev, driver.assignmentIdentifier];
+      });
+
+      setVehicleInfo((prev) => {
+        if (!prev) return prev;
+        const nextCount = Number(prev.numberOfDrivers || "0") + 1;
+        return { ...prev, numberOfDrivers: String(nextCount) };
+      });
+
+      addToast({
+        type: "success",
+        title: "تم الإضافة",
+        message: "تم إضافة السائق إلى المركبة بنجاح.",
+      });
+    } catch (err) {
+      console.error("Failed to add driver to vehicle:", err);
+      addToast({
+        type: "error",
+        title: "فشل الإضافة",
+        message: "تعذر إضافة السائق. حاول مرة أخرى.",
+      });
+    } finally {
+      setAssigningDriverId(null);
+    }
+  };
+
+  useEffect(() => {
+    const loadVehicleDetails = async () => {
+      if (!vehicleId) {
+        setError("معرف المركبة غير متوفر.");
+        setIsLoading(false);
+        return;
+      }
+
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const vehicle: Record<string, any> = await fetchVehicleById(vehicleId);
+
+        const driverIds = Array.isArray(vehicle?.driverIds)
+          ? vehicle.driverIds.filter(
+              (driverId: any) =>
+                driverId !== null &&
+                driverId !== undefined &&
+                String(driverId).trim() !== ""
+            )
+          : [];
+
+        const vehicleDetails: VehicleInfo = {
+          plateNumber: formatValue(
+            vehicle?.plateNumber?.ar ?? vehicle?.plateNumber?.en
+          ),
+          creator: formatValue(vehicle?.createdUserId),
+          carName: formatValue(vehicle?.name),
+          creationDate: formatDateValue(vehicle?.createdDate),
+          chassisNumber: formatValue(vehicle?.chassisNumber),
+          numberOfDrivers: String(driverIds.length),
+          carImage:
+            vehicle?.image ||
+            vehicle?.car?.carModelImageUrl ||
+            VEHICLE_FALLBACK_IMAGE,
+        };
+
+        setVehicleInfo(vehicleDetails);
+        setAssignedDriverIdentifiers(driverIds.map((id: any) => String(id)));
+
+        if (driverIds.length === 0) {
+          setDrivers([]);
+          return;
+        }
+
+        const driverDocs = await Promise.all<Record<string, any> | null>(
+          driverIds.map(async (identifier: any) => {
+            const identifierString = String(identifier);
+            try {
+              return await fetchDriverByIdentifier(identifierString);
+            } catch (err) {
+              console.error(
+                `Error fetching driver with identifier ${identifierString}:`,
+                err
+              );
+              return null;
+            }
+          })
+        );
+
+        const driverRows = driverDocs
+          .filter((driverDoc): driverDoc is Record<string, any> =>
+            Boolean(driverDoc)
+          )
+          .map((driverDoc: Record<string, any>, index: number) => {
+            const status = driverDoc?.isActive ? "نشط" : "معطل";
+
+            const code = formatValue(
+              driverDoc?.uId ??
+                driverDoc?.email ??
+                driverDoc?.id ??
+                driverDoc?.docId
+            );
+
+            return {
+              id: String(driverDoc?.docId ?? driverDoc?.id ?? index),
+              code,
+              name: formatValue(
+                driverDoc?.name ?? driverDoc?.driverName ?? driverDoc?.fullName
+              ),
+              phone: formatValue(driverDoc?.phoneNumber ?? driverDoc?.phone),
+              email: formatValue(driverDoc?.email),
+              city: formatValue(driverDoc?.city?.name?.en),
+              status,
+              isActive: Boolean(driverDoc?.isActive),
+            } as VehicleDriverRow;
+          });
+
+        setDrivers(driverRows);
+      } catch (err) {
+        console.error("Failed to load vehicle details:", err);
+        setError("فشل في تحميل بيانات المركبة.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadVehicleDetails();
+  }, [vehicleId]);
+
+  useEffect(() => {
+    const loadAllDrivers = async () => {
+      if (!isDriversListOpen || isAllDriversLoading || allDrivers.length > 0) {
+        return;
+      }
+
+      setIsAllDriversLoading(true);
+      setAllDriversError(null);
+
+      try {
+        const driversSnapshot = await fetchDrivers();
+        const normalizedDrivers = Array.isArray(driversSnapshot)
+          ? driversSnapshot.map(
+              (driverDoc: Record<string, any>, index: number) => {
+                const identifier = String(
+                  driverDoc?.docId ??
+                    driverDoc?.id ??
+                    driverDoc?.uId ??
+                    driverDoc?.email ??
+                    index
+                );
+
+                const status = driverDoc?.isActive ? "نشط" : "معطل";
+
+                return {
+                  id: identifier,
+                  assignmentIdentifier: identifier,
+                  name: formatValue(
+                    driverDoc?.name ??
+                      driverDoc?.driverName ??
+                      driverDoc?.fullName
+                  ),
+                  phone: formatValue(
+                    driverDoc?.phoneNumber ?? driverDoc?.phone
+                  ),
+                  email: formatValue(driverDoc?.email),
+                  city: formatValue(driverDoc?.city?.name?.en),
+                  status,
+                  isActive: Boolean(driverDoc?.isActive),
+                } as AllDriverRow;
+              }
+            )
+          : [];
+
+        setAllDrivers(normalizedDrivers);
+      } catch (err) {
+        console.error("Failed to load all drivers:", err);
+        setAllDriversError("فشل في تحميل قائمة السائقين.");
+      } finally {
+        setIsAllDriversLoading(false);
+      }
+    };
+
+    loadAllDrivers();
+  }, [isDriversListOpen, isAllDriversLoading, allDrivers.length]);
+
+  if (isLoading) {
+    return (
+      <div className="flex w-full justify-center py-16">
+        <LoadingSpinner message="جاري تحميل بيانات المركبة..." />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center w-full py-20 gap-4">
+        <div className="text-red-600 text-lg [direction:rtl]">{error}</div>
+        <button
+          onClick={() => navigate(-1)}
+          className="px-4 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white"
+        >
+          الرجوع
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col w-full items-start gap-5">
@@ -244,9 +557,9 @@ const PetrolifeCarDetails = (): JSX.Element => {
           <div className="flex items-start gap-5 w-full">
             <div className="flex flex-col items-center justify-center gap-2">
               <div className="w-24 h-24 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden">
-                {carInfo.carImage ? (
+                {vehicleInfo?.carImage ? (
                   <img
-                    src={carInfo.carImage}
+                    src={vehicleInfo.carImage}
                     alt="Car"
                     className="w-full h-full object-cover"
                   />
@@ -261,12 +574,24 @@ const PetrolifeCarDetails = (): JSX.Element => {
           <div className="w-full rounded-[var(--corner-radius-large)] border border-color-mode-text-icons-t-placeholder bg-white p-4 shadow-sm">
             {(() => {
               const fields = [
-                { label: "رقم اللوحة", value: carInfo.plateNumber },
-                { label: "المنشيء", value: carInfo.creator },
-                { label: "اسم المركبة", value: carInfo.carName || "الاسم" },
-                { label: "تاريخ الانشاء", value: carInfo.creationDate },
-                { label: "رقم الهيكل", value: carInfo.chassisNumber },
-                { label: "عدد السائقين", value: carInfo.numberOfDrivers },
+                { label: "رقم اللوحة", value: vehicleInfo?.plateNumber ?? "-" },
+                { label: "المنشيء", value: vehicleInfo?.creator ?? "-" },
+                {
+                  label: "اسم المركبة",
+                  value: vehicleInfo?.carName ?? "الاسم",
+                },
+                {
+                  label: "تاريخ الانشاء",
+                  value: vehicleInfo?.creationDate ?? "-",
+                },
+                {
+                  label: "رقم الهيكل",
+                  value: vehicleInfo?.chassisNumber ?? "-",
+                },
+                {
+                  label: "عدد السائقين",
+                  value: vehicleInfo?.numberOfDrivers ?? "0",
+                },
               ];
 
               const rows = [] as JSX.Element[];
@@ -310,7 +635,10 @@ const PetrolifeCarDetails = (): JSX.Element => {
             </h2>
           </div>
           <div className="inline-flex items-center gap-[var(--corner-radius-medium)]">
-            <button className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray">
+            <button
+              onClick={() => setIsDriversListOpen(true)}
+              className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray"
+            >
               <div className="flex items-center gap-[var(--corner-radius-small)]">
                 <span className="font-body-body-2 text-[length:var(--body-body-2-font-size)] text-color-mode-text-icons-t-sec [direction:rtl]">
                   إضافة سائق جديد للمركبة
@@ -338,14 +666,87 @@ const PetrolifeCarDetails = (): JSX.Element => {
 
           <Pagination
             currentPage={currentPage}
-            totalPages={Math.ceil(drivers.length / itemsPerPage)}
+            totalPages={
+              paginated.length === 0
+                ? 1
+                : Math.ceil(drivers.length / itemsPerPage)
+            }
             onPageChange={setCurrentPage}
           />
         </div>
       </div>
+
+      {isDriversListOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm px-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-gray-200">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <UserRound className="w-5 h-5 text-gray-500" />
+                  <h3 className="text-base font-semibold text-gray-900">
+                    جميع السائقين المتاحين
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setIsDriversListOpen(false)}
+                  className="w-9 h-9 rounded-full hover:bg-gray-100 flex items-center justify-center transition-colors"
+                  aria-label="إغلاق"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div
+                className="px-5 py-4 max-h-[55vh] overflow-y-auto space-y-2"
+                dir="rtl"
+              >
+                {isAllDriversLoading ? (
+                  <div className="flex justify-center py-10">
+                    <LoadingSpinner message="جاري تحميل قائمة السائقين..." />
+                  </div>
+                ) : allDriversError ? (
+                  <div className="py-10 text-center text-red-600">
+                    {allDriversError}
+                  </div>
+                ) : allDrivers.length === 0 ? (
+                  <div className="py-10 text-center text-gray-500">
+                    لا توجد بيانات للسائقين حالياً.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {allDrivers.map((driver) => (
+                      <div
+                        key={driver.id}
+                        className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 py-3"
+                      >
+                        <span className="text-sm font-medium text-gray-900">
+                          {driver.name}
+                        </span>
+                        <button
+                          onClick={() => handleAddDriverToVehicle(driver)}
+                          disabled={
+                            assigningDriverId === driver.assignmentIdentifier ||
+                            assignedIdentifiers.has(driver.assignmentIdentifier)
+                          }
+                          className="px-3 py-1.5 rounded-full text-xs font-medium bg-[#5A66C1] text-white hover:bg-[#4A5AB1] disabled:bg-gray-200 disabled:text-gray-500 transition-colors"
+                        >
+                          {assignedIdentifiers.has(driver.assignmentIdentifier)
+                            ? "مضاف"
+                            : assigningDriverId === driver.assignmentIdentifier
+                            ? "جاري الإضافة..."
+                            : "إضافة"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };
 
 export default PetrolifeCarDetails;
-

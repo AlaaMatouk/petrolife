@@ -5140,6 +5140,443 @@ export const addCompanyDriver = async (driverData: AddDriverData) => {
 };
 
 /**
+ * Fetch all documents from the Firestore "vehicles" collection
+ * @returns Promise with the vehicles data
+ */
+export const fetchVehicles = async () => {
+  try {
+    const vehiclesRef = collection(db, "vehicles");
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(vehiclesRef);
+
+    const vehiclesData: any[] = [];
+
+    querySnapshot.forEach((doc) => {
+      vehiclesData.push({
+        docId: doc.id,
+        ...doc.data(),
+      });
+    });
+
+    return vehiclesData;
+  } catch (error) {
+    console.error("Error fetching vehicles data:", error);
+    throw error;
+  }
+};
+
+export interface CreateVehicleOptions {
+  chassisNumber: string | null;
+  plateNumber: string | null;
+  name: string | null;
+  imageFile?: File | string | null;
+  driverIdentifiers?: Array<string | null | undefined> | string | null;
+}
+
+export interface UpdateVehicleOptions {
+  vehicleId: string;
+  chassisNumber?: string | null;
+  plateNumber?: string | null;
+  name?: string | null;
+  imageFile?: File | string | null;
+  driverIdentifiers?: Array<string | null | undefined> | string | null;
+}
+
+type VehiclePayloadOverrides = {
+  chassisNumber?: string | null;
+  createdDate?: any;
+  createdUserId?: string | null;
+  driverIds?: string[];
+  name?: string | null;
+  plateNumber?: {
+    ar: string | null;
+    en: string | null;
+  };
+  image?: string | null;
+  workingStatus?: string | null;
+  isActive?: boolean;
+};
+
+const normalizeDriverIdentifiers = (
+  identifiers: Array<string | null | undefined> | string | null | undefined
+): string[] => {
+  if (!identifiers) {
+    return [];
+  }
+
+  const list = Array.isArray(identifiers) ? identifiers : [identifiers];
+
+  const normalized = list
+    .map((value) => {
+      if (value === null || value === undefined) {
+        return null;
+      }
+
+      const trimmed = String(value).trim();
+      return trimmed.length > 0 ? trimmed : null;
+    })
+    .filter((value): value is string => Boolean(value));
+
+  return Array.from(new Set(normalized));
+};
+
+const buildVehicleSchemaPayload = (
+  source: Record<string, any> | null | undefined,
+  overrides: VehiclePayloadOverrides = {}
+) => {
+  const basePlateNumber = {
+    ar: source?.plateNumber?.ar ?? null,
+    en: source?.plateNumber?.en ?? null,
+  };
+
+  const payload = {
+    chassisNumber: source?.chassisNumber ?? null,
+    createdDate: source?.createdDate ?? null,
+    createdUserId: source?.createdUserId ?? null,
+    driver: null,
+    driverIds: Array.isArray(source?.driverIds)
+      ? source.driverIds.map((id: any) => String(id))
+      : [],
+    name: source?.name ?? null,
+    plateNumber: basePlateNumber,
+    city: source?.city ?? null,
+    companyUid: source?.companyUid ?? null,
+    email: source?.email ?? null,
+    fuelType: source?.fuelType ?? null,
+    id: source?.id ?? null,
+    image: source?.image ?? null,
+    isActive:
+      typeof source?.isActive === "boolean" ? source.isActive : true,
+    licenceAttachment: source?.licenceAttachment ?? null,
+    location: source?.location ?? null,
+    phoneNumber: source?.phoneNumber ?? null,
+    plan: source?.plan ?? null,
+    uId: source?.uId ?? null,
+    workingStatus:
+      source?.workingStatus !== undefined
+        ? source.workingStatus
+        : "offWorking",
+  };
+
+  if (overrides.chassisNumber !== undefined) {
+    payload.chassisNumber = overrides.chassisNumber ?? null;
+  }
+
+  if (overrides.createdDate !== undefined) {
+    payload.createdDate = overrides.createdDate;
+  }
+
+  if (overrides.createdUserId !== undefined) {
+    payload.createdUserId = overrides.createdUserId ?? null;
+  }
+
+  if (overrides.driverIds !== undefined) {
+    payload.driverIds = overrides.driverIds;
+  }
+
+  if (overrides.name !== undefined) {
+    payload.name = overrides.name ?? null;
+  }
+
+  if (overrides.plateNumber !== undefined) {
+    payload.plateNumber = {
+      ar: overrides.plateNumber?.ar ?? null,
+      en: overrides.plateNumber?.en ?? null,
+    };
+  }
+
+  if (overrides.image !== undefined) {
+    payload.image = overrides.image ?? null;
+  }
+
+  if (overrides.workingStatus !== undefined) {
+    payload.workingStatus = overrides.workingStatus ?? null;
+  }
+
+  if (overrides.isActive !== undefined) {
+    payload.isActive = overrides.isActive ?? false;
+  }
+
+  payload.driver = null;
+
+  return payload;
+};
+
+/**
+ * Create a new vehicle document in Firestore with the standardized schema
+ * observed in existing vehicle documents.
+ */
+export const createVehicleWithSchema = async ({
+  chassisNumber,
+  plateNumber,
+  name,
+  imageFile = null,
+  driverIdentifiers = null,
+}: CreateVehicleOptions) => {
+  try {
+    const currentUser = auth.currentUser;
+
+    if (!currentUser) {
+      throw new Error("No user is currently logged in.");
+    }
+
+    let imageUrl: string | null = null;
+
+    if (imageFile instanceof File) {
+      const timestamp = Date.now();
+      const storagePath = `vehicles/${timestamp}-${imageFile.name}`;
+      imageUrl = await uploadFileToStorage(imageFile, storagePath);
+    } else if (typeof imageFile === "string" && imageFile.trim() !== "") {
+      imageUrl = imageFile;
+    }
+
+    const driverIds = normalizeDriverIdentifiers(driverIdentifiers);
+
+    const vehiclePayload = buildVehicleSchemaPayload(null, {
+      chassisNumber: chassisNumber ?? null,
+      createdDate: serverTimestamp(),
+      createdUserId: currentUser.email ?? null,
+      driverIds,
+      name: name ?? null,
+      plateNumber: {
+        ar: plateNumber ?? null,
+        en: plateNumber ?? null,
+      },
+      image: imageUrl,
+      workingStatus: "offWorking",
+      isActive: true,
+    });
+
+    const vehiclesCollection = collection(db, "vehicles");
+    const vehicleDocRef = doc(vehiclesCollection);
+    await setDoc(vehicleDocRef, vehiclePayload);
+
+    return {
+      id: vehicleDocRef.id,
+      data: vehiclePayload,
+    };
+  } catch (error) {
+    console.error("Error creating vehicle document:", error);
+    throw error;
+  }
+};
+
+export const updateVehicleWithSchema = async ({
+  vehicleId,
+  chassisNumber,
+  plateNumber,
+  name,
+  imageFile = undefined,
+  driverIdentifiers,
+}: UpdateVehicleOptions) => {
+  try {
+    if (!vehicleId) {
+      throw new Error("Vehicle ID is required to update a vehicle.");
+    }
+
+    const vehicleDocRef = doc(db, "vehicles", vehicleId);
+    const snapshot = await getDoc(vehicleDocRef);
+
+    if (!snapshot.exists()) {
+      throw new Error("Vehicle not found.");
+    }
+
+    const existingData = snapshot.data() ?? {};
+
+    let resolvedImage: string | null | undefined = undefined;
+
+    if (imageFile !== undefined) {
+      if (imageFile instanceof File) {
+        const timestamp = Date.now();
+        const storagePath = `vehicles/${timestamp}-${imageFile.name}`;
+        resolvedImage = await uploadFileToStorage(imageFile, storagePath);
+      } else if (typeof imageFile === "string") {
+        const trimmed = imageFile.trim();
+        resolvedImage = trimmed.length > 0 ? trimmed : null;
+      } else {
+        resolvedImage = null;
+      }
+    }
+
+    const normalizedDriverIds =
+      driverIdentifiers !== undefined
+        ? normalizeDriverIdentifiers(driverIdentifiers)
+        : undefined;
+
+    const payload = buildVehicleSchemaPayload(existingData, {
+      chassisNumber: chassisNumber !== undefined ? chassisNumber ?? null : undefined,
+      name: name !== undefined ? name ?? null : undefined,
+      plateNumber:
+        plateNumber !== undefined
+          ? {
+              ar: plateNumber ?? null,
+              en: plateNumber ?? null,
+            }
+          : undefined,
+      image: resolvedImage,
+      driverIds: normalizedDriverIds,
+    });
+
+    if (!payload.createdDate) {
+      payload.createdDate = serverTimestamp();
+    }
+
+    if (payload.createdUserId === null && existingData?.createdUserId) {
+      payload.createdUserId = existingData.createdUserId;
+    }
+
+    await setDoc(vehicleDocRef, payload, { merge: false });
+
+    return {
+      id: vehicleId,
+      data: payload,
+    };
+  } catch (error) {
+    console.error("Error updating vehicle document:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a single vehicle document from Firestore
+ * @param vehicleId - Vehicle document ID
+ * @returns Promise with the vehicle data
+ */
+export const fetchVehicleById = async (vehicleId: string) => {
+  try {
+    const vehicleDocRef = doc(db, "vehicles", vehicleId);
+    const vehicleDoc = await getDoc(vehicleDocRef);
+
+    if (!vehicleDoc.exists()) {
+      throw new Error("Vehicle not found");
+    }
+
+    return {
+      docId: vehicleDoc.id,
+      ...vehicleDoc.data(),
+    };
+  } catch (error) {
+    console.error("Error fetching vehicle by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a driver document from Firestore by document ID or email fallback
+ * @param identifier - Driver document ID or email
+ * @returns Promise with the driver data or null if not found
+ */
+export const fetchDriverByIdentifier = async (
+  identifier: string
+): Promise<Record<string, any> | null> => {
+  try {
+    const trimmedIdentifier = identifier?.trim?.() ?? identifier;
+    const candidateIds = [
+      identifier,
+      trimmedIdentifier,
+      trimmedIdentifier?.toLowerCase?.(),
+      trimmedIdentifier?.toUpperCase?.(),
+    ];
+
+    for (const candidate of candidateIds) {
+      if (!candidate) continue;
+      const driverDocRef = doc(db, "drivers", candidate);
+      const driverDoc = await getDoc(driverDocRef);
+      if (driverDoc.exists()) {
+        return {
+          docId: driverDoc.id,
+          ...driverDoc.data(),
+        };
+      }
+    }
+
+    const emailCandidates = Array.from(
+      new Set(
+        [identifier, trimmedIdentifier, trimmedIdentifier?.toLowerCase?.()].filter(
+          (value) => value !== null && value !== undefined && String(value).trim() !== ""
+        )
+      )
+    );
+
+    if (emailCandidates.length === 0) {
+      return null;
+    }
+
+    const driversRef = collection(db, "drivers");
+    for (const emailCandidate of emailCandidates) {
+      const emailQuerySnapshot = await getDocs(
+        query(driversRef, where("email", "==", emailCandidate))
+      );
+
+      if (!emailQuerySnapshot.empty) {
+        const driverDoc = emailQuerySnapshot.docs[0];
+        return {
+          docId: driverDoc.id,
+          ...driverDoc.data(),
+        };
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Error fetching driver by identifier:", error);
+    throw error;
+  }
+};
+
+export const assignVehicleToDriver = async ({
+  driverIdentifier,
+  vehicleId,
+  vehicleName,
+  plateNumber,
+}: {
+  driverIdentifier: string;
+  vehicleId: string;
+  vehicleName: string;
+  plateNumber: string;
+}) => {
+  const driverRecord = await fetchDriverByIdentifier(driverIdentifier);
+
+  if (!driverRecord || !driverRecord.docId) {
+    throw new Error("Driver not found for the provided identifier.");
+  }
+
+  const driverDocRef = doc(db, "drivers", driverRecord.docId);
+
+  await updateDoc(driverDocRef, {
+    vehicle: {
+      id: vehicleId,
+      name: vehicleName ?? null,
+      plateNumber: plateNumber ?? null,
+    },
+    driverIds: arrayUnion(vehicleId),
+  });
+};
+
+/**
+ * Add driver reference to a vehicle document (driverIds array)
+ * @param vehicleId - Vehicle document ID
+ * @param driverIdentifier - Driver identifier (document ID or legacy identifier)
+ */
+export const addDriverToVehicle = async (
+  vehicleId: string,
+  driverIdentifier: string
+) => {
+  try {
+    if (!vehicleId || !driverIdentifier) {
+      throw new Error("Vehicle ID and Driver identifier are required");
+    }
+
+    const vehicleDocRef = doc(db, "vehicles", vehicleId);
+    await updateDoc(vehicleDocRef, {
+      driverIds: arrayUnion(driverIdentifier),
+    });
+  } catch (error) {
+    console.error("Error adding driver to vehicle:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetch a single driver by ID from Firestore
  * @param driverId - Driver document ID
  * @returns Promise with the driver data
