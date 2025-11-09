@@ -1,10 +1,14 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Input, Select } from "../../../shared/Form";
-import { Upload, ArrowLeft } from "lucide-react";
+import { Upload, ArrowLeft, Loader2 } from "lucide-react";
+import { useToast } from "../../../../context/ToastContext";
+import { createProductWithSchema } from "../../../../services/firestore";
 
 const AddPetrolifeProduct = () => {
   const navigate = useNavigate();
+  const { addToast } = useToast();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [form, setForm] = useState({
     productName: "",
     category: "فلاتر",
@@ -25,9 +29,75 @@ const AddPetrolifeProduct = () => {
     input.click();
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Submitting new product:", form);
+
+    if (!form.productName.trim() || !form.category.trim()) {
+      addToast({
+        type: "error",
+        title: "بيانات ناقصة",
+        message: "يرجى إدخال اسم المنتج والتصنيف على الأقل.",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const parsedQuantity = form.availableQuantity.trim();
+      const parsedPrice = form.price.trim();
+
+      const payload: Record<string, any> = {
+        title: {
+          ar: form.productName || null,
+          en: null,
+        },
+        desc: {
+          ar: form.description || null,
+          en: null,
+        },
+        category: form.category || null,
+        quantity:
+          parsedQuantity.length > 0 && !Number.isNaN(Number(parsedQuantity))
+            ? Number(parsedQuantity)
+            : null,
+        price:
+          parsedPrice.length > 0 && !Number.isNaN(Number(parsedPrice))
+            ? Number(parsedPrice)
+            : null,
+        productName: form.productName || null,
+        productDescription: form.description || null,
+      };
+
+      await createProductWithSchema(payload, form.productImage);
+
+      addToast({
+        type: "success",
+        title: "تم إضافة المنتج",
+        message: "تم حفظ بيانات المنتج بنجاح.",
+      });
+
+      setForm({
+        productName: "",
+        category: "فلاتر",
+        availableQuantity: "",
+        price: "",
+        description: "",
+        productImage: null,
+      });
+
+      setTimeout(() => navigate(-1), 600);
+    } catch (error: any) {
+      console.error("Error adding product:", error);
+      addToast({
+        type: "error",
+        title: "خطأ",
+        message:
+          error?.message || "حدث خطأ أثناء إضافة المنتج. يرجى المحاولة مرة أخرى.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const fileName = form.productImage
@@ -144,12 +214,13 @@ const AddPetrolifeProduct = () => {
           </div>
         </div>
 
-        {/* Submit - aligned right */}
         <div className="w-full flex justify-end">
           <button
             type="submit"
-            className="px-5 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors"
+            disabled={isSubmitting}
+            className="px-5 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors disabled:bg-[#5A66C1]/60 disabled:cursor-not-allowed flex items-center gap-2"
           >
+            {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
             إضافة المنتج
           </button>
         </div>

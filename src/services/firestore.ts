@@ -13,6 +13,7 @@ import {
   where,
   orderBy,
   setDoc,
+  limit,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getFunctions, httpsCallable } from "firebase/functions";
@@ -702,7 +703,6 @@ export const fetchOrders = async () => {
     throw error;
   }
 };
-
 /**
  * Fetch orders data for a specific company from Firestore orders collection
  * Filtered by companyUid matching the provided company ID or email
@@ -1422,6 +1422,24 @@ export const calculateOilChangeStatistics = (
  * @param orders - Array of order documents
  * @returns Object with battery orders grouped by car size
  */
+export const fetchProductById = async (productId: string) => {
+  try {
+    const productDocRef = doc(db, "products", productId);
+    const productDoc = await getDoc(productDocRef);
+
+    if (!productDoc.exists()) {
+      throw new Error("Product not found");
+    }
+
+    return {
+      id: productDoc.id,
+      ...productDoc.data(),
+    };
+  } catch (error) {
+    console.error("Error fetching product by ID:", error);
+    throw error;
+  }
+};
 export const calculateBatteryChangeStatistics = (
   orders: any[]
 ): {
@@ -2188,7 +2206,6 @@ export const fetchCarStationsWithConsumption = async (): Promise<any[]> => {
     return [];
   }
 };
-
 /**
  * Fetch orders and transform them for financial reports
  * @returns Promise with formatted financial report data
@@ -2620,8 +2637,6 @@ export const fetchUserSubscriptions = async (): Promise<any[]> => {
  */
 export const fetchProducts = async (): Promise<any[]> => {
   try {
-    // console.log('Fetching products from Firestore...');
-
     const productsCollection = collection(db, "products");
     const q = query(productsCollection, orderBy("createdDate", "desc"));
     const productsSnapshot = await getDocs(q);
@@ -2631,11 +2646,71 @@ export const fetchProducts = async (): Promise<any[]> => {
       ...doc.data(),
     }));
 
-    // console.log('Fetched products:', products.length);
     return products;
   } catch (error) {
     console.error("Error fetching products:", error);
     return [];
+  }
+};
+
+export const createProductWithSchema = async (
+  formFields: Record<string, any>,
+  imageFile?: File | string | null
+) => {
+  try {
+    let imageUrl: string | null = null;
+
+    if (imageFile instanceof File) {
+      const timestamp = Date.now();
+      const storagePath = `products/${timestamp}-${imageFile.name}`;
+      imageUrl = await uploadFileToStorage(imageFile, storagePath);
+    } else if (typeof imageFile === "string" && imageFile.trim() !== "") {
+      imageUrl = imageFile.trim();
+    }
+
+    const productsCollection = collection(db, "products");
+    const snapshot = await getDocs(query(productsCollection, limit(1)));
+    const sampleSchema = snapshot.empty ? {} : snapshot.docs[0].data();
+
+    const combined: Record<string, any> = {};
+
+    Object.keys(sampleSchema).forEach((key) => {
+      if (key === "image") {
+        combined[key] = imageUrl ?? null;
+      } else if (Object.prototype.hasOwnProperty.call(formFields, key)) {
+        combined[key] = formFields[key];
+      } else {
+        combined[key] = null;
+      }
+    });
+
+    Object.entries(formFields).forEach(([key, value]) => {
+      if (!Object.prototype.hasOwnProperty.call(combined, key)) {
+        combined[key] = value;
+      }
+    });
+
+    if (!Object.prototype.hasOwnProperty.call(combined, "image")) {
+      combined.image = imageUrl;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(combined, "createdDate") &&
+      (combined.createdDate === null || combined.createdDate === undefined)
+    ) {
+      combined.createdDate = serverTimestamp();
+    }
+
+    const productDocRef = doc(productsCollection);
+    await setDoc(productDocRef, combined);
+
+    return {
+      id: productDocRef.id,
+      data: combined,
+    };
+  } catch (error) {
+    console.error("Error creating product document:", error);
+    throw error;
   }
 };
 
@@ -2819,8 +2894,6 @@ export const updateService = async (
  */
 export const fetchWalletChargeRequests = async () => {
   try {
-    // console.log('\n🔄 Fetching companies-wallets-requests...');
-
     const requestsRef = collection(db, "companies-wallets-requests");
     const q = query(requestsRef, orderBy("createdDate", "desc"));
     const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
@@ -2834,19 +2907,14 @@ export const fetchWalletChargeRequests = async () => {
       });
     });
 
-    // console.log('✅ Total requests found:', allRequestsData.length);
-
-    // Get current user
     const currentUser = auth.currentUser;
 
     if (!currentUser) {
-      // console.log('⚠️ No user logged in. Returning all data.');
       return allRequestsData;
     }
 
     const userEmail = currentUser.email;
 
-    // Filter requests where requestedUser.email matches current user's email
     const filteredRequests = allRequestsData.filter((request) => {
       const requestedUserEmail = request.requestedUser?.email;
 
@@ -2858,15 +2926,10 @@ export const fetchWalletChargeRequests = async () => {
       return emailMatch;
     });
 
-    // console.log('✅ Filtered requests:', filteredRequests.length);
-
-    // Add oldBalance from requestedUser.balance
     const enrichedRequests = filteredRequests.map((request) => ({
       ...request,
       oldBalance: request.requestedUser?.balance || 0,
     }));
-
-    // console.log('✅ Requests with balance:', enrichedRequests.length);
 
     return enrichedRequests;
   } catch (error) {
@@ -2874,7 +2937,6 @@ export const fetchWalletChargeRequests = async () => {
     throw error;
   }
 };
-
 /**
  * Fetch admin wallet reports data from wallets-requests collection
  * @returns Promise with admin wallet reports data
@@ -2889,7 +2951,6 @@ export const fetchAdminWalletReports = async () => {
 
     const allRequestsData: any[] = [];
 
-    // Helper function to format Firestore timestamp
     const formatDate = (timestamp: any): string => {
       if (!timestamp) return "-";
 
@@ -2927,16 +2988,16 @@ export const fetchAdminWalletReports = async () => {
     querySnapshot.forEach((doc) => {
       const data = doc.data();
       allRequestsData.push({
-        id: doc.id, // رقم العملية
-        date: formatDate(data.actionDate), // التاريخ (formatted)
-        clientType: data.requestedUser?.type || "-", // نوع العميل
-        clientName: data.requestedUser?.name || "-", // اسم العميل
-        operationNumber: doc.id, // رقم العملية (document ID)
-        operationType: "-", // نوع العملية (leave as "-" for now)
-        debit: data.value || "-", // مدين
-        credit: "-", // دائن (leave as "-" for now)
-        balance: data.requestedUser?.balance || "-", // الرصيد (ر.س)
-        rawDate: data.actionDate, // Store raw date for sorting
+        id: doc.id,
+        date: formatDate(data.actionDate),
+        clientType: data.requestedUser?.type || "-",
+        clientName: data.requestedUser?.name || "-",
+        operationNumber: doc.id,
+        operationType: "-",
+        debit: data.value || "-",
+        credit: "-",
+        balance: data.requestedUser?.balance || "-",
+        rawDate: data.actionDate,
       });
     });
 
@@ -2949,7 +3010,6 @@ export const fetchAdminWalletReports = async () => {
     throw error;
   }
 };
-
 /**
  * Fetch all companies-wallets-requests data for admin dashboard
  * @returns Promise with all wallet requests data
@@ -3623,7 +3683,6 @@ export const fetchAllOrders = async (): Promise<any[]> => {
     throw error;
   }
 };
-
 /**
  * Calculate total fuel liter usage by type from all orders
  * @returns Promise with fuel usage breakdown
@@ -3709,7 +3768,6 @@ export const getTotalFuelUsageByType = async (): Promise<{
     };
   }
 };
-
 /**
  * Calculate total fuel cost by type from all orders
  * Uses same logic as companies dashboard calculateFuelStatistics but without filtering
@@ -4495,7 +4553,6 @@ export const getMostConsumingCompanies = async (): Promise<
     return [];
   }
 };
-
 /**
  * Calculate car wash operations by car size from all orders
  * Uses same logic as companies dashboard calculateCarWashStatistics but without filtering by company
@@ -5195,7 +5252,6 @@ type VehiclePayloadOverrides = {
   workingStatus?: string | null;
   isActive?: boolean;
 };
-
 const normalizeDriverIdentifiers = (
   identifiers: Array<string | null | undefined> | string | null | undefined
 ): string[] => {
@@ -5218,7 +5274,6 @@ const normalizeDriverIdentifiers = (
 
   return Array.from(new Set(normalized));
 };
-
 const buildVehicleSchemaPayload = (
   source: Record<string, any> | null | undefined,
   overrides: VehiclePayloadOverrides = {}
@@ -5995,7 +6050,6 @@ export const fetchCompaniesCars = async () => {
     throw error;
   }
 };
-
 /**
  * Fetch notifications from Firestore notifications collection
  * Filtered by current company ID in the companies array
@@ -6756,7 +6810,6 @@ export const addCarStation = async (stationData: AddStationData) => {
     throw error;
   }
 };
-
 /**
  * Add a new company to Firestore companies collection
  * 1. Uploads files to Firebase Storage
@@ -8334,7 +8387,6 @@ export const declineStationsCompanyRequest = async (
     throw error;
   }
 };
-
 export const fetchFuelStationRequests = async (
   currentUserEmail: string
 ): Promise<any[]> => {

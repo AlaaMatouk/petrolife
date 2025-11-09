@@ -3,6 +3,7 @@ import { DataTableSection } from "../../../sections/DataTableSection/DataTableSe
 import { Package, Star, Settings } from "lucide-react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, X } from "lucide-react";
+import { fetchProducts } from "../../../../services/firestore";
 
 const columns = [
   { key: "actions", label: "الإجراءات", width: "w-16", priority: "high" },
@@ -11,15 +12,7 @@ const columns = [
     label: "التقييمات",
     width: "min-w-[150px]",
     priority: "high",
-    render: (value: { rating: string; reviews: string }) => (
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1">
-          <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-          <span className="font-medium">{value.rating}</span>
-        </div>
-        <span className="text-sm text-gray-500">({value.reviews})</span>
-      </div>
-    ),
+    render: (value: string) => <span className="text-sm">{value || "-"}</span>,
   },
   {
     key: "availableQuantity",
@@ -28,8 +21,8 @@ const columns = [
     priority: "high",
   },
   {
-    key: "productSales",
-    label: "مبيعات المنتج (ر.س)",
+    key: "sales",
+    label: "المبيعات",
     width: "min-w-[150px]",
     priority: "high",
   },
@@ -46,7 +39,7 @@ const columns = [
     priority: "high",
   },
   {
-    key: "description",
+    key: "productDescription",
     label: "وصف المنتج",
     width: "min-w-[200px]",
     priority: "medium",
@@ -65,96 +58,44 @@ const columns = [
   },
 ];
 
-const fetchData = async () => [
-  {
-    id: 1,
-    productCode: "21A254",
-    productName: "مسند ظهر للسائقين",
-    description: "مسند مميز يساعد السائقين على الراحة أثناء القيادة",
-    category: "فلاتر",
-    price: "30",
-    productSales: "15326",
-    availableQuantity: "200",
-    ratings: { rating: "4.5", reviews: "12 مراجعة" },
-  },
-  {
-    id: 2,
-    productCode: "21A255",
-    productName: "مسند ظهر للسائقين",
-    description: "مسند مميز يساعد السائقين على الراحة أثناء القيادة",
-    category: "فلاتر",
-    price: "30",
-    productSales: "15326",
-    availableQuantity: "200",
-    ratings: { rating: "4.5", reviews: "12 مراجعة" },
-  },
-  {
-    id: 3,
-    productCode: "21A256",
-    productName: "مسند ظهر للسائقين",
-    description: "مسند مميز يساعد السائقين على الراحة أثناء القيادة",
-    category: "فلاتر",
-    price: "30",
-    productSales: "15326",
-    availableQuantity: "200",
-    ratings: { rating: "4.5", reviews: "12 مراجعة" },
-  },
-  {
-    id: 4,
-    productCode: "21A257",
-    productName: "مسند ظهر للسائقين",
-    description: "مسند مميز يساعد السائقين على الراحة أثناء القيادة",
-    category: "فلاتر",
-    price: "30",
-    productSales: "15326",
-    availableQuantity: "200",
-    ratings: { rating: "4.5", reviews: "12 مراجعة" },
-  },
-  {
-    id: 5,
-    productCode: "21A258",
-    productName: "مسند ظهر للسائقين",
-    description: "مسند مميز يساعد السائقين على الراحة أثناء القيادة",
-    category: "فلاتر",
-    price: "30",
-    productSales: "15326",
-    availableQuantity: "200",
-    ratings: { rating: "4.5", reviews: "12 مراجعة" },
-  },
-  {
-    id: 6,
-    productCode: "21A259",
-    productName: "مسند ظهر للسائقين",
-    description: "مسند مميز يساعد السائقين على الراحة أثناء القيادة",
-    category: "فلاتر",
-    price: "30",
-    productSales: "15326",
-    availableQuantity: "200",
-    ratings: { rating: "4.5", reviews: "12 مراجعة" },
-  },
-  {
-    id: 7,
-    productCode: "21A260",
-    productName: "مسند ظهر للسائقين",
-    description: "مسند مميز يساعد السائقين على الراحة أثناء القيادة",
-    category: "فلاتر",
-    price: "30",
-    productSales: "15326",
-    availableQuantity: "200",
-    ratings: { rating: "4.5", reviews: "12 مراجعة" },
-  },
-  {
-    id: 8,
-    productCode: "21A261",
-    productName: "مسند ظهر للسائقين",
-    description: "مسند مميز يساعد السائقين على الراحة أثناء القيادة",
-    category: "فلاتر",
-    price: "30",
-    productSales: "15326",
-    availableQuantity: "200",
-    ratings: { rating: "4.5", reviews: "12 مراجعة" },
-  },
-];
+const formatValue = (value: any): string => {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value.toString() : "-";
+  }
+
+  const stringValue = String(value).trim();
+  return stringValue.length > 0 ? stringValue : "-";
+};
+
+const mapProductToRow = (product: Record<string, any>) => ({
+  id: product?.id ?? undefined,
+  productCode: formatValue(product?.id),
+  productName: formatValue(product?.title?.ar),
+  productDescription: formatValue(product?.desc?.ar),
+  category: formatValue(product?.category),
+  price: formatValue(product?.price),
+  sales: formatValue(product?.sales),
+  availableQuantity: formatValue(product?.quantity),
+  ratings: formatValue(product?.ratings),
+});
+
+const fetchData = async () => {
+  try {
+    const products = await fetchProducts();
+    if (!Array.isArray(products)) {
+      return [];
+    }
+
+    return products.map((product) => mapProductToRow(product));
+  } catch (error) {
+    console.error("Failed to load Petrolife products:", error);
+    return [];
+  }
+};
 
 const LoyaltyProgramModal = ({
   isOpen,
@@ -181,7 +122,6 @@ const LoyaltyProgramModal = ({
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
       <div className="bg-white rounded-[var(--corner-radius-large)] w-full max-w-md mx-4 flex flex-col">
-        {/* Modal Header */}
         <div
           className="flex items-center justify-between p-4 border-b border-gray-200"
           dir="rtl"
@@ -199,7 +139,6 @@ const LoyaltyProgramModal = ({
           </button>
         </div>
 
-        {/* Modal Content */}
         <div className="p-6 space-y-4" dir="rtl">
           <div className="flex flex-col gap-2">
             <label className="text-sm font-medium text-gray-700">
@@ -251,7 +190,6 @@ const LoyaltyProgramModal = ({
           </div>
         </div>
 
-        {/* Modal Footer */}
         <div
           className="flex items-center justify-between p-4 border-t border-gray-200 gap-3"
           dir="rtl"
@@ -295,7 +233,7 @@ const PetrolifeProducts = () => {
       </div>
 
       <DataTableSection
-        title="منتجات بترولايف (144)"
+        title="منتجات بترولايف"
         entityName="منتج"
         entityNamePlural="منتجات"
         icon={Package}
