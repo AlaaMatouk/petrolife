@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Table, Pagination } from "../../../shared";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { Table, Pagination, LoadingSpinner } from "../../../shared";
 import {
   ArrowLeft,
   Info,
@@ -8,40 +8,75 @@ import {
   Star,
   Package,
   Building2,
-  User,
 } from "lucide-react";
+import { fetchProductById } from "../../../../services/firestore";
 
-// Dummy product info matching screenshot style
-const productInfo = {
-  productName: "مسند الظهر",
-  category: "فلاتر",
-  availableQuantity: "150",
-  price: "10",
-  description: "منتج مميز عالي الطلب",
+interface ProductInfo {
+  productName: string;
+  category: string;
+  availableQuantity: string;
+  price: string;
+  description: string;
+  image?: string | null;
+}
+
+const formatValue = (value: any, fallback = "-"): string => {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value.toString() : fallback;
+  }
+
+  const stringValue = String(value).trim();
+  return stringValue.length > 0 ? stringValue : fallback;
 };
-
-// Dummy sales data
-const sales = Array.from({ length: 125 }).map((_, i) => ({
-  id: i + 1,
-  number: i + 1,
-  buyerName: {
-    name: i % 2 === 0 ? "شركة النصر" : "أحمد محمد",
-    avatar: undefined,
-  },
-  accountType: i % 2 === 0 ? "شركة" : "فرد",
-  piecesQuantity: i % 3 === 0 ? "1" : i % 3 === 1 ? "12" : "2",
-  totalPrice: i % 3 === 0 ? "10" : i % 3 === 1 ? "120" : "20",
-  rating: i % 5 === 0 ? "4.5" : "-",
-  deliveryStatus: i % 2 === 0 ? { status: "مكتمل", color: "green" } : { status: "جاري التوصيل", color: "orange" },
-}));
 
 const PetrolifeProductDetails = (): JSX.Element => {
   const navigate = useNavigate();
-  const [currentPage, setCurrentPage] = useState(3);
+  const { id } = useParams<{ id: string }>();
+  const [currentPage, setCurrentPage] = useState(1);
   const [selectedTimeFilter, setSelectedTimeFilter] = useState("12 شهر");
   const itemsPerPage = 10;
+  const [productInfo, setProductInfo] = useState<ProductInfo | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const timeFilters = ["اسبوع", "30 يوم", "6 شهور", "12 شهر"];
+
+  useEffect(() => {
+    const loadProduct = async () => {
+      if (!id) {
+        setError("معرف المنتج غير متوفر.");
+        setIsLoading(false);
+        return;
+      }
+
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const product = await fetchProductById(id);
+
+        setProductInfo({
+          productName: formatValue(product?.title?.ar ?? product?.title?.en),
+          category: formatValue(product?.category),
+          availableQuantity: formatValue(product?.quantity),
+          price: formatValue(product?.price),
+          description: formatValue(product?.desc?.ar ?? product?.desc?.en),
+          image: product?.image ?? null,
+        });
+      } catch (err) {
+        console.error("Failed to load product details:", err);
+        setError("فشل في تحميل بيانات المنتج.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadProduct();
+  }, [id]);
 
   const columns = useMemo(
     () => [
@@ -50,32 +85,12 @@ const PetrolifeProductDetails = (): JSX.Element => {
         label: "حالة التوصيل",
         width: "min-w-[120px]",
         priority: "high",
-        render: (value: { status: string; color: string }) => (
-          <span
-            className={`px-2 py-1 rounded-full text-xs font-medium ${
-              value.color === "green"
-                ? "bg-green-100 text-green-700"
-                : "bg-orange-100 text-orange-700"
-            }`}
-          >
-            {value.status}
-          </span>
-        ),
       },
       {
         key: "rating",
         label: "التقييم",
         width: "min-w-[100px]",
         priority: "high",
-        render: (value: string) =>
-          value === "-" ? (
-            <span className="text-gray-400">-</span>
-          ) : (
-            <div className="flex items-center gap-1">
-              <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-              <span className="font-medium">{value}</span>
-            </div>
-          ),
       },
       {
         key: "totalPrice",
@@ -94,31 +109,12 @@ const PetrolifeProductDetails = (): JSX.Element => {
         label: "نوع الحساب",
         width: "min-w-[100px]",
         priority: "high",
-        render: (value: string) => (
-          <span className="text-sm text-gray-700">{value}</span>
-        ),
       },
       {
         key: "buyerName",
         label: "اسم المشتري",
         width: "min-w-[180px]",
         priority: "high",
-        render: (value: { name: string; avatar?: string }) => (
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white font-semibold text-sm">
-              {value.avatar ? (
-                <img
-                  src={value.avatar}
-                  alt={value.name}
-                  className="w-full h-full rounded-full object-cover"
-                />
-              ) : (
-                value.name.charAt(0)
-              )}
-            </div>
-            <span className="font-medium text-gray-900">{value.name}</span>
-          </div>
-        ),
       },
       {
         key: "number",
@@ -147,30 +143,47 @@ const PetrolifeProductDetails = (): JSX.Element => {
   );
 
   const paginated = useMemo(
-    () =>
-      sales.slice(
-        (currentPage - 1) * itemsPerPage,
-        currentPage * itemsPerPage
-      ),
+    () => [] as any[],
     [currentPage]
   );
 
+  if (isLoading) {
+    return (
+      <div className="flex w-full justify-center py-16">
+        <LoadingSpinner message="جاري تحميل بيانات المنتج..." />
+      </div>
+    );
+  }
+
+  if (error || !productInfo) {
+    return (
+      <div className="flex flex-col items-center justify-center w-full py-20 gap-4">
+        <div className="text-red-600 text-lg [direction:rtl]">
+          {error || "لا توجد بيانات لهذا المنتج."}
+        </div>
+        <button
+          onClick={() => navigate(-1)}
+          className="px-4 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white"
+        >
+          الرجوع
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col w-full items-start gap-5">
-      {/* Product Info Card */}
       <div
         className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder w-full"
         dir="rtl"
       >
         <div className="flex items-center justify-between w-full">
-          {/* Title on right */}
           <div className="flex items-center justify-end gap-1.5">
             <h1 className="font-subtitle-subtitle-2 text-[length:var(--subtitle-subtitle-2-font-size)] text-color-mode-text-icons-t-sec">
               معلومات المنتج
             </h1>
             <Info className="w-5 h-5 text-gray-500" />
           </div>
-          {/* Back button on left */}
           <button
             onClick={() => navigate(-1)}
             aria-label="رجوع"
@@ -182,9 +195,7 @@ const PetrolifeProductDetails = (): JSX.Element => {
           </button>
         </div>
 
-        {/* Product info - read-only inputs style */}
         <section className="flex flex-col items-start gap-5 relative self-stretch w-full">
-          {/* Bordered frame around read-only fields */}
           <div className="w-full rounded-[var(--corner-radius-large)] border border-color-mode-text-icons-t-placeholder bg-white p-4 shadow-sm">
             {(() => {
               const fields = [
@@ -213,7 +224,6 @@ const PetrolifeProductDetails = (): JSX.Element => {
                 );
               }
 
-              // Add description field full width
               rows.push(
                 <div key="description" className="flex flex-col gap-2 w-full mb-4">
                   <label className="text-sm font-normal text-[var(--form-readonly-label-color)] text-right [direction:rtl]">
@@ -228,20 +238,9 @@ const PetrolifeProductDetails = (): JSX.Element => {
               return rows;
             })()}
           </div>
-
-          {/* Edit Button */}
-          <div className="w-full flex items-center justify-end">
-            <button
-              type="button"
-              className="px-4 h-10 rounded-[10px] bg-yellow-500 hover:bg-yellow-600 text-white font-medium"
-            >
-              تعديل البيانات
-            </button>
-          </div>
         </section>
       </div>
 
-      {/* Product Images Card */}
       <div
         className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder w-full"
         dir="rtl"
@@ -249,19 +248,28 @@ const PetrolifeProductDetails = (): JSX.Element => {
         <div className="w-full">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">صور المنتج</h2>
           <div className="flex gap-3">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div
-                key={i}
-                className="w-20 h-20 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden"
-              >
-                <Package className="w-8 h-8 text-gray-400" />
-              </div>
-            ))}
+            {[productInfo.image, productInfo.image, productInfo.image, null, null].map(
+              (img, i) => (
+                <div
+                  key={i}
+                  className="w-20 h-20 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden"
+                >
+                  {img ? (
+                    <img
+                      src={img}
+                      alt="Product"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <Package className="w-8 h-8 text-gray-400" />
+                  )}
+                </div>
+              )
+            )}
           </div>
         </div>
       </div>
 
-      {/* Sales table section */}
       <div
         className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder w-full"
         dir="rtl"
@@ -270,12 +278,11 @@ const PetrolifeProductDetails = (): JSX.Element => {
           <div className="flex items-center justify-end gap-1.5">
             <Package className="w-5 h-5 text-gray-500" />
             <h2 className="font-subtitle-subtitle-2 text-[length:var(--subtitle-subtitle-2-font-size)] text-color-mode-text-icons-t-sec">
-              مبيعات المنتج (125)
+              مبيعات المنتج
             </h2>
           </div>
         </header>
 
-        {/* Time Filters */}
         <div className="flex gap-2 mb-4" dir="rtl">
           {timeFilters.map((filter) => (
             <button
@@ -292,7 +299,6 @@ const PetrolifeProductDetails = (): JSX.Element => {
           ))}
         </div>
 
-        {/* Bordered frame around table and pagination */}
         <div className="w-full rounded-[var(--corner-radius-large)] border border-color-mode-text-icons-t-placeholder bg-white p-4 shadow-sm">
           <div className="w-full overflow-x-auto hidden lg:block">
             <Table columns={columnsReversed as any} data={paginated as any} />
@@ -308,7 +314,7 @@ const PetrolifeProductDetails = (): JSX.Element => {
 
           <Pagination
             currentPage={currentPage}
-            totalPages={Math.ceil(sales.length / itemsPerPage)}
+            totalPages={1}
             onPageChange={setCurrentPage}
           />
         </div>

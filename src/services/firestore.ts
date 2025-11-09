@@ -13,6 +13,7 @@ import {
   where,
   orderBy,
   setDoc,
+  limit,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getFunctions, httpsCallable } from "firebase/functions";
@@ -129,6 +130,388 @@ export const fetchCompaniesDrivers = async () => {
     }
   } catch (error) {
     console.error("Error fetching companies-drivers data:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all documents from the Firestore "drivers" collection
+ * @returns Promise with the drivers data
+ */
+export const fetchDrivers = async () => {
+  try {
+    const driversRef = collection(db, "drivers");
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(driversRef);
+
+    const driversData: any[] = [];
+
+    querySnapshot.forEach((doc) => {
+      driversData.push({
+        docId: doc.id,
+        ...doc.data(),
+      });
+    });
+
+    return driversData;
+  } catch (error) {
+    console.error("Error fetching drivers data:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a single driver document from the Firestore "drivers" collection
+ * @param driverId - Driver document ID
+ * @returns Promise with the driver data
+ */
+export const fetchDriverDocumentById = async (driverId: string) => {
+  try {
+    const driverDocRef = doc(db, "drivers", driverId);
+    const driverDoc = await getDoc(driverDocRef);
+
+    if (!driverDoc.exists()) {
+      throw new Error("Driver not found");
+    }
+
+    return {
+      docId: driverDoc.id,
+      ...driverDoc.data(),
+    };
+  } catch (error) {
+    console.error("Error fetching driver document:", error);
+    throw error;
+  }
+};
+
+type DriverSchemaNode =
+  | { kind: "value" }
+  | { kind: "object"; fields: Record<string, DriverSchemaNode> }
+  | { kind: "array"; element: DriverSchemaNode | null };
+
+let driverSchemaCache: DriverSchemaNode | null = null;
+let driverSchemaPromise: Promise<DriverSchemaNode> | null = null;
+let couponSchemaCache: DriverSchemaNode | null = null;
+let couponSchemaPromise: Promise<DriverSchemaNode> | null = null;
+
+const isFirestoreTimestamp = (value: any): boolean =>
+  Boolean(value) &&
+  typeof value === "object" &&
+  typeof value.toDate === "function" &&
+  typeof value.seconds === "number";
+
+const isPlainObjectLike = (value: any): value is Record<string, any> =>
+  Boolean(value) &&
+  typeof value === "object" &&
+  !Array.isArray(value) &&
+  !isFirestoreTimestamp(value);
+
+const mergeSchemaNode = (
+  existing: DriverSchemaNode | undefined,
+  value: any
+): DriverSchemaNode => {
+  if (value === null || value === undefined) {
+    return existing ?? { kind: "value" };
+  }
+
+  if (Array.isArray(value)) {
+    const elementSchema =
+      existing && existing.kind === "array" ? existing.element : null;
+
+    const mergedElement = value.reduce<DriverSchemaNode | null>(
+      (acc, item) => {
+        if (item === undefined) {
+          return acc;
+        }
+        const next = mergeSchemaNode(acc ?? undefined, item);
+        return next;
+      },
+      elementSchema ?? null
+    );
+
+    return {
+      kind: "array",
+      element: mergedElement,
+    };
+  }
+
+  if (isPlainObjectLike(value)) {
+    const fields: Record<string, DriverSchemaNode> =
+      existing && existing.kind === "object" ? { ...existing.fields } : {};
+
+    Object.entries(value).forEach(([key, nestedValue]) => {
+      if (key === "docId") {
+        return;
+      }
+      fields[key] = mergeSchemaNode(fields[key], nestedValue);
+    });
+
+    return {
+      kind: "object",
+      fields,
+    };
+  }
+
+  return { kind: "value" };
+};
+
+const deriveSchemaFromDocuments = (documents: any[]): DriverSchemaNode => {
+  const root: DriverSchemaNode = { kind: "object", fields: {} };
+
+  documents.forEach((document) => {
+    if (!isPlainObjectLike(document)) {
+      return;
+    }
+
+    Object.entries(document).forEach(([key, value]) => {
+      if (key === "docId") {
+        return;
+      }
+      root.fields[key] = mergeSchemaNode(root.fields[key], value);
+    });
+  });
+
+  return root;
+};
+
+const deriveSchemaFromDrivers = (drivers: any[]): DriverSchemaNode =>
+  deriveSchemaFromDocuments(drivers);
+
+const ensureDriverSchemaLoaded = async (): Promise<DriverSchemaNode> => {
+  if (driverSchemaCache) {
+    return driverSchemaCache;
+  }
+
+  if (!driverSchemaPromise) {
+    driverSchemaPromise = (async () => {
+      const drivers = await fetchDrivers();
+      const schema = deriveSchemaFromDrivers(drivers);
+      driverSchemaCache = schema;
+      return schema;
+    })();
+  }
+
+  return driverSchemaPromise;
+};
+
+const ensureCouponSchemaLoaded = async (): Promise<DriverSchemaNode> => {
+  if (couponSchemaCache) {
+    return couponSchemaCache;
+  }
+
+  if (!couponSchemaPromise) {
+    couponSchemaPromise = (async () => {
+      const couponsSnapshot = await getDocs(collection(db, "coupons"));
+      const coupons = couponsSnapshot.docs.map((docSnapshot) => docSnapshot.data());
+      const schema = deriveSchemaFromDocuments(coupons);
+      couponSchemaCache = schema;
+      return schema;
+    })();
+  }
+
+  return couponSchemaPromise;
+};
+
+const buildPayloadFromSchema = (
+  schema: DriverSchemaNode,
+  source: any
+): any => {
+  if (schema.kind === "value") {
+    // Leaf nodes fallback to null whenever the caller does not provide a value.
+    return source ?? null;
+  }
+
+  if (schema.kind === "array") {
+    if (!Array.isArray(source)) {
+      return [];
+    }
+
+    const elementSchema = schema.element;
+    if (!elementSchema) {
+      return source;
+    }
+
+    return source.map((item) => buildPayloadFromSchema(elementSchema, item));
+  }
+
+  const result: Record<string, any> = {};
+  const sourceObject = isPlainObjectLike(source) ? source : {};
+
+  Object.entries(schema.fields).forEach(([key, childSchema]) => {
+    // Materialise nested objects recursively to keep structure identical
+    // across all documents (missing values bubble down as nulls).
+    result[key] = buildPayloadFromSchema(childSchema, sourceObject[key]);
+  });
+
+  return result;
+};
+
+const TIMESTAMP_FIELD_NAMES = new Set([
+  "createdAt",
+  "createdDate",
+  "updatedAt",
+  "updatedDate",
+  "lastUpdatedAt",
+]);
+
+const applyTimestampOverrides = (value: any): void => {
+  if (Array.isArray(value)) {
+    value.forEach((entry) => applyTimestampOverrides(entry));
+    return;
+  }
+
+  if (!isPlainObjectLike(value)) {
+    return;
+  }
+
+  Object.entries(value).forEach(([key, nested]) => {
+    if (TIMESTAMP_FIELD_NAMES.has(key) && (nested === null || nested === undefined)) {
+      value[key] = serverTimestamp();
+      return;
+    }
+
+    applyTimestampOverrides(nested);
+  });
+};
+
+/**
+ * Generate a full driver payload by projecting the provided form data
+ * over the schema derived from existing driver documents.
+ *
+ * - We scan historic documents once to collect every field (including nested).
+ * - For each field, we copy the supplied value if present, otherwise we fall back to null.
+ * - Nested objects are always materialised so the Firestore document keeps a consistent shape.
+ */
+export const generateFullDriverPayload = async (
+  formData: Record<string, any>
+): Promise<Record<string, any>> => {
+  let schema = await ensureDriverSchemaLoaded();
+
+  if (
+    schema.kind === "object" &&
+    Object.keys(schema.fields).length === 0 &&
+    isPlainObjectLike(formData)
+  ) {
+    schema = deriveSchemaFromDrivers([formData]);
+    driverSchemaCache = schema;
+  }
+
+  return buildPayloadFromSchema(schema, formData);
+};
+
+export const generateFullCouponPayload = async (
+  formData: Record<string, any>
+): Promise<Record<string, any>> => {
+  let schema = await ensureCouponSchemaLoaded();
+
+  if (
+    schema.kind === "object" &&
+    Object.keys(schema.fields).length === 0 &&
+    isPlainObjectLike(formData)
+  ) {
+    schema = deriveSchemaFromDocuments([formData]);
+    couponSchemaCache = schema;
+  }
+
+  const payload = buildPayloadFromSchema(schema, formData);
+
+  if (isPlainObjectLike(formData)) {
+    Object.entries(formData).forEach(([key, value]) => {
+      if (!(key in payload)) {
+        payload[key] = value;
+      }
+    });
+  }
+
+  return payload;
+};
+
+/**
+ * Create a new driver document in the "drivers" collection while ensuring
+ * the payload respects the complete schema observed in previous documents.
+ *
+ * This prevents new records from dropping fields (they become null instead),
+ * which keeps Firestore data shape consistent for downstream consumers.
+ */
+export const createNewDriver = async (
+  formData: Record<string, any>
+) => {
+  const payload = await generateFullDriverPayload(formData);
+
+  applyTimestampOverrides(payload);
+
+  const driversRef = collection(db, "drivers");
+  const docRef = await addDoc(driversRef, payload);
+
+  return {
+    docId: docRef.id,
+    ...payload,
+  };
+};
+
+export const createCouponWithSchema = async (
+  formData: Record<string, any>
+) => {
+  const payload = await generateFullCouponPayload(formData);
+
+  if (
+    payload.createdDate === null ||
+    payload.createdDate === undefined
+  ) {
+    payload.createdDate = serverTimestamp();
+  }
+
+  const currentUser = auth.currentUser;
+  const currentUserIdentifier =
+    currentUser?.uid ?? currentUser?.email ?? null;
+
+  payload.createdUserId = currentUserIdentifier ?? payload.createdUserId ?? null;
+
+  if (payload.percentage === undefined) {
+    payload.percentage = formData.percentage ?? null;
+  }
+
+  if (payload.precentage === undefined) {
+    payload.precentage =
+      formData.precentage ?? payload.percentage ?? null;
+  } else if (payload.precentage === null && payload.percentage != null) {
+    payload.precentage = payload.percentage;
+  }
+
+  applyTimestampOverrides(payload);
+
+  const couponsRef = collection(db, "coupons");
+  const docRef = await addDoc(couponsRef, payload);
+
+  couponSchemaCache = null;
+  couponSchemaPromise = null;
+
+  return {
+    id: docRef.id,
+    ...payload,
+  };
+};
+
+/**
+ * Fetch all documents from the Firestore "orders" collection
+ * @returns Promise with the orders data
+ */
+export const fetchAllOrdersDocuments = async () => {
+  try {
+    const ordersRef = collection(db, "orders");
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(ordersRef);
+
+    const ordersData: any[] = [];
+
+    querySnapshot.forEach((doc) => {
+      ordersData.push({
+        docId: doc.id,
+        ...doc.data(),
+      });
+    });
+
+    return ordersData;
+  } catch (error) {
+    console.error("Error fetching orders data:", error);
     throw error;
   }
 };
@@ -411,7 +794,6 @@ export const fetchOrders = async () => {
     throw error;
   }
 };
-
 /**
  * Fetch orders data for a specific company from Firestore orders collection
  * Filtered by companyUid matching the provided company ID or email
@@ -1131,6 +1513,58 @@ export const calculateOilChangeStatistics = (
  * @param orders - Array of order documents
  * @returns Object with battery orders grouped by car size
  */
+export const fetchProductById = async (productId: string) => {
+  try {
+    const productDocRef = doc(db, "products", productId);
+    const productDoc = await getDoc(productDocRef);
+
+    if (!productDoc.exists()) {
+      throw new Error("Product not found");
+    }
+
+    return {
+      id: productDoc.id,
+      ...productDoc.data(),
+    };
+  } catch (error) {
+    console.error("Error fetching product by ID:", error);
+    throw error;
+  }
+};
+
+export const fetchCouponById = async (couponId: string) => {
+  try {
+    const couponDocRef = doc(db, "coupons", couponId);
+    const couponDoc = await getDoc(couponDocRef);
+
+    if (!couponDoc.exists()) {
+      throw new Error("Coupon not found");
+    }
+
+    return {
+      id: couponDoc.id,
+      ...couponDoc.data(),
+    };
+  } catch (error) {
+    console.error("Error fetching coupon by ID:", error);
+    throw error;
+  }
+};
+
+export const fetchCoupons = async (): Promise<any[]> => {
+  try {
+    const couponsCollection = collection(db, "coupons");
+    const couponsSnapshot = await getDocs(couponsCollection);
+
+    return couponsSnapshot.docs.map((couponDoc) => ({
+      id: couponDoc.id,
+      ...couponDoc.data(),
+    }));
+  } catch (error) {
+    console.error("Error fetching coupons:", error);
+    return [];
+  }
+};
 export const calculateBatteryChangeStatistics = (
   orders: any[]
 ): {
@@ -1897,7 +2331,6 @@ export const fetchCarStationsWithConsumption = async (): Promise<any[]> => {
     return [];
   }
 };
-
 /**
  * Fetch orders and transform them for financial reports
  * @returns Promise with formatted financial report data
@@ -2329,8 +2762,6 @@ export const fetchUserSubscriptions = async (): Promise<any[]> => {
  */
 export const fetchProducts = async (): Promise<any[]> => {
   try {
-    // console.log('Fetching products from Firestore...');
-
     const productsCollection = collection(db, "products");
     const q = query(productsCollection, orderBy("createdDate", "desc"));
     const productsSnapshot = await getDocs(q);
@@ -2340,11 +2771,71 @@ export const fetchProducts = async (): Promise<any[]> => {
       ...doc.data(),
     }));
 
-    // console.log('Fetched products:', products.length);
     return products;
   } catch (error) {
     console.error("Error fetching products:", error);
     return [];
+  }
+};
+
+export const createProductWithSchema = async (
+  formFields: Record<string, any>,
+  imageFile?: File | string | null
+) => {
+  try {
+    let imageUrl: string | null = null;
+
+    if (imageFile instanceof File) {
+      const timestamp = Date.now();
+      const storagePath = `products/${timestamp}-${imageFile.name}`;
+      imageUrl = await uploadFileToStorage(imageFile, storagePath);
+    } else if (typeof imageFile === "string" && imageFile.trim() !== "") {
+      imageUrl = imageFile.trim();
+    }
+
+    const productsCollection = collection(db, "products");
+    const snapshot = await getDocs(query(productsCollection, limit(1)));
+    const sampleSchema = snapshot.empty ? {} : snapshot.docs[0].data();
+
+    const combined: Record<string, any> = {};
+
+    Object.keys(sampleSchema).forEach((key) => {
+      if (key === "image") {
+        combined[key] = imageUrl ?? null;
+      } else if (Object.prototype.hasOwnProperty.call(formFields, key)) {
+        combined[key] = formFields[key];
+      } else {
+        combined[key] = null;
+      }
+    });
+
+    Object.entries(formFields).forEach(([key, value]) => {
+      if (!Object.prototype.hasOwnProperty.call(combined, key)) {
+        combined[key] = value;
+      }
+    });
+
+    if (!Object.prototype.hasOwnProperty.call(combined, "image")) {
+      combined.image = imageUrl;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(combined, "createdDate") &&
+      (combined.createdDate === null || combined.createdDate === undefined)
+    ) {
+      combined.createdDate = serverTimestamp();
+    }
+
+    const productDocRef = doc(productsCollection);
+    await setDoc(productDocRef, combined);
+
+    return {
+      id: productDocRef.id,
+      data: combined,
+    };
+  } catch (error) {
+    console.error("Error creating product document:", error);
+    throw error;
   }
 };
 
@@ -2528,8 +3019,6 @@ export const updateService = async (
  */
 export const fetchWalletChargeRequests = async () => {
   try {
-    // console.log('\n🔄 Fetching companies-wallets-requests...');
-
     const requestsRef = collection(db, "companies-wallets-requests");
     const q = query(requestsRef, orderBy("createdDate", "desc"));
     const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
@@ -2543,19 +3032,14 @@ export const fetchWalletChargeRequests = async () => {
       });
     });
 
-    // console.log('✅ Total requests found:', allRequestsData.length);
-
-    // Get current user
     const currentUser = auth.currentUser;
 
     if (!currentUser) {
-      // console.log('⚠️ No user logged in. Returning all data.');
       return allRequestsData;
     }
 
     const userEmail = currentUser.email;
 
-    // Filter requests where requestedUser.email matches current user's email
     const filteredRequests = allRequestsData.filter((request) => {
       const requestedUserEmail = request.requestedUser?.email;
 
@@ -2567,15 +3051,10 @@ export const fetchWalletChargeRequests = async () => {
       return emailMatch;
     });
 
-    // console.log('✅ Filtered requests:', filteredRequests.length);
-
-    // Add oldBalance from requestedUser.balance
     const enrichedRequests = filteredRequests.map((request) => ({
       ...request,
       oldBalance: request.requestedUser?.balance || 0,
     }));
-
-    // console.log('✅ Requests with balance:', enrichedRequests.length);
 
     return enrichedRequests;
   } catch (error) {
@@ -2583,7 +3062,6 @@ export const fetchWalletChargeRequests = async () => {
     throw error;
   }
 };
-
 /**
  * Fetch admin wallet reports data from wallets-requests collection
  * @returns Promise with admin wallet reports data
@@ -2598,7 +3076,6 @@ export const fetchAdminWalletReports = async () => {
 
     const allRequestsData: any[] = [];
 
-    // Helper function to format Firestore timestamp
     const formatDate = (timestamp: any): string => {
       if (!timestamp) return "-";
 
@@ -2636,16 +3113,16 @@ export const fetchAdminWalletReports = async () => {
     querySnapshot.forEach((doc) => {
       const data = doc.data();
       allRequestsData.push({
-        id: doc.id, // رقم العملية
-        date: formatDate(data.actionDate), // التاريخ (formatted)
-        clientType: data.requestedUser?.type || "-", // نوع العميل
-        clientName: data.requestedUser?.name || "-", // اسم العميل
-        operationNumber: doc.id, // رقم العملية (document ID)
-        operationType: "-", // نوع العملية (leave as "-" for now)
-        debit: data.value || "-", // مدين
-        credit: "-", // دائن (leave as "-" for now)
-        balance: data.requestedUser?.balance || "-", // الرصيد (ر.س)
-        rawDate: data.actionDate, // Store raw date for sorting
+        id: doc.id,
+        date: formatDate(data.actionDate),
+        clientType: data.requestedUser?.type || "-",
+        clientName: data.requestedUser?.name || "-",
+        operationNumber: doc.id,
+        operationType: "-",
+        debit: data.value || "-",
+        credit: "-",
+        balance: data.requestedUser?.balance || "-",
+        rawDate: data.actionDate,
       });
     });
 
@@ -2658,7 +3135,6 @@ export const fetchAdminWalletReports = async () => {
     throw error;
   }
 };
-
 /**
  * Fetch all companies-wallets-requests data for admin dashboard
  * @returns Promise with all wallet requests data
@@ -3332,7 +3808,6 @@ export const fetchAllOrders = async (): Promise<any[]> => {
     throw error;
   }
 };
-
 /**
  * Calculate total fuel liter usage by type from all orders
  * @returns Promise with fuel usage breakdown
@@ -3418,7 +3893,6 @@ export const getTotalFuelUsageByType = async (): Promise<{
     };
   }
 };
-
 /**
  * Calculate total fuel cost by type from all orders
  * Uses same logic as companies dashboard calculateFuelStatistics but without filtering
@@ -4204,7 +4678,6 @@ export const getMostConsumingCompanies = async (): Promise<
     return [];
   }
 };
-
 /**
  * Calculate car wash operations by car size from all orders
  * Uses same logic as companies dashboard calculateCarWashStatistics but without filtering by company
@@ -4849,6 +5322,441 @@ export const addCompanyDriver = async (driverData: AddDriverData) => {
 };
 
 /**
+ * Fetch all documents from the Firestore "vehicles" collection
+ * @returns Promise with the vehicles data
+ */
+export const fetchVehicles = async () => {
+  try {
+    const vehiclesRef = collection(db, "vehicles");
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(vehiclesRef);
+
+    const vehiclesData: any[] = [];
+
+    querySnapshot.forEach((doc) => {
+      vehiclesData.push({
+        docId: doc.id,
+        ...doc.data(),
+      });
+    });
+
+    return vehiclesData;
+  } catch (error) {
+    console.error("Error fetching vehicles data:", error);
+    throw error;
+  }
+};
+
+export interface CreateVehicleOptions {
+  chassisNumber: string | null;
+  plateNumber: string | null;
+  name: string | null;
+  imageFile?: File | string | null;
+  driverIdentifiers?: Array<string | null | undefined> | string | null;
+}
+
+export interface UpdateVehicleOptions {
+  vehicleId: string;
+  chassisNumber?: string | null;
+  plateNumber?: string | null;
+  name?: string | null;
+  imageFile?: File | string | null;
+  driverIdentifiers?: Array<string | null | undefined> | string | null;
+}
+
+type VehiclePayloadOverrides = {
+  chassisNumber?: string | null;
+  createdDate?: any;
+  createdUserId?: string | null;
+  driverIds?: string[];
+  name?: string | null;
+  plateNumber?: {
+    ar: string | null;
+    en: string | null;
+  };
+  image?: string | null;
+  workingStatus?: string | null;
+  isActive?: boolean;
+};
+const normalizeDriverIdentifiers = (
+  identifiers: Array<string | null | undefined> | string | null | undefined
+): string[] => {
+  if (!identifiers) {
+    return [];
+  }
+
+  const list = Array.isArray(identifiers) ? identifiers : [identifiers];
+
+  const normalized = list
+    .map((value) => {
+      if (value === null || value === undefined) {
+        return null;
+      }
+
+      const trimmed = String(value).trim();
+      return trimmed.length > 0 ? trimmed : null;
+    })
+    .filter((value): value is string => Boolean(value));
+
+  return Array.from(new Set(normalized));
+};
+const buildVehicleSchemaPayload = (
+  source: Record<string, any> | null | undefined,
+  overrides: VehiclePayloadOverrides = {}
+) => {
+  const basePlateNumber = {
+    ar: source?.plateNumber?.ar ?? null,
+    en: source?.plateNumber?.en ?? null,
+  };
+
+  const payload = {
+    chassisNumber: source?.chassisNumber ?? null,
+    createdDate: source?.createdDate ?? null,
+    createdUserId: source?.createdUserId ?? null,
+    driver: null,
+    driverIds: Array.isArray(source?.driverIds)
+      ? source.driverIds.map((id: any) => String(id))
+      : [],
+    name: source?.name ?? null,
+    plateNumber: basePlateNumber,
+    city: source?.city ?? null,
+    companyUid: source?.companyUid ?? null,
+    email: source?.email ?? null,
+    fuelType: source?.fuelType ?? null,
+    id: source?.id ?? null,
+    image: source?.image ?? null,
+    isActive:
+      typeof source?.isActive === "boolean" ? source.isActive : true,
+    licenceAttachment: source?.licenceAttachment ?? null,
+    location: source?.location ?? null,
+    phoneNumber: source?.phoneNumber ?? null,
+    plan: source?.plan ?? null,
+    uId: source?.uId ?? null,
+    workingStatus:
+      source?.workingStatus !== undefined
+        ? source.workingStatus
+        : "offWorking",
+  };
+
+  if (overrides.chassisNumber !== undefined) {
+    payload.chassisNumber = overrides.chassisNumber ?? null;
+  }
+
+  if (overrides.createdDate !== undefined) {
+    payload.createdDate = overrides.createdDate;
+  }
+
+  if (overrides.createdUserId !== undefined) {
+    payload.createdUserId = overrides.createdUserId ?? null;
+  }
+
+  if (overrides.driverIds !== undefined) {
+    payload.driverIds = overrides.driverIds;
+  }
+
+  if (overrides.name !== undefined) {
+    payload.name = overrides.name ?? null;
+  }
+
+  if (overrides.plateNumber !== undefined) {
+    payload.plateNumber = {
+      ar: overrides.plateNumber?.ar ?? null,
+      en: overrides.plateNumber?.en ?? null,
+    };
+  }
+
+  if (overrides.image !== undefined) {
+    payload.image = overrides.image ?? null;
+  }
+
+  if (overrides.workingStatus !== undefined) {
+    payload.workingStatus = overrides.workingStatus ?? null;
+  }
+
+  if (overrides.isActive !== undefined) {
+    payload.isActive = overrides.isActive ?? false;
+  }
+
+  payload.driver = null;
+
+  return payload;
+};
+
+/**
+ * Create a new vehicle document in Firestore with the standardized schema
+ * observed in existing vehicle documents.
+ */
+export const createVehicleWithSchema = async ({
+  chassisNumber,
+  plateNumber,
+  name,
+  imageFile = null,
+  driverIdentifiers = null,
+}: CreateVehicleOptions) => {
+  try {
+    const currentUser = auth.currentUser;
+
+    if (!currentUser) {
+      throw new Error("No user is currently logged in.");
+    }
+
+    let imageUrl: string | null = null;
+
+    if (imageFile instanceof File) {
+      const timestamp = Date.now();
+      const storagePath = `vehicles/${timestamp}-${imageFile.name}`;
+      imageUrl = await uploadFileToStorage(imageFile, storagePath);
+    } else if (typeof imageFile === "string" && imageFile.trim() !== "") {
+      imageUrl = imageFile;
+    }
+
+    const driverIds = normalizeDriverIdentifiers(driverIdentifiers);
+
+    const vehiclePayload = buildVehicleSchemaPayload(null, {
+      chassisNumber: chassisNumber ?? null,
+      createdDate: serverTimestamp(),
+      createdUserId: currentUser.email ?? null,
+      driverIds,
+      name: name ?? null,
+      plateNumber: {
+        ar: plateNumber ?? null,
+        en: plateNumber ?? null,
+      },
+      image: imageUrl,
+      workingStatus: "offWorking",
+      isActive: true,
+    });
+
+    const vehiclesCollection = collection(db, "vehicles");
+    const vehicleDocRef = doc(vehiclesCollection);
+    await setDoc(vehicleDocRef, vehiclePayload);
+
+    return {
+      id: vehicleDocRef.id,
+      data: vehiclePayload,
+    };
+  } catch (error) {
+    console.error("Error creating vehicle document:", error);
+    throw error;
+  }
+};
+
+export const updateVehicleWithSchema = async ({
+  vehicleId,
+  chassisNumber,
+  plateNumber,
+  name,
+  imageFile = undefined,
+  driverIdentifiers,
+}: UpdateVehicleOptions) => {
+  try {
+    if (!vehicleId) {
+      throw new Error("Vehicle ID is required to update a vehicle.");
+    }
+
+    const vehicleDocRef = doc(db, "vehicles", vehicleId);
+    const snapshot = await getDoc(vehicleDocRef);
+
+    if (!snapshot.exists()) {
+      throw new Error("Vehicle not found.");
+    }
+
+    const existingData = snapshot.data() ?? {};
+
+    let resolvedImage: string | null | undefined = undefined;
+
+    if (imageFile !== undefined) {
+      if (imageFile instanceof File) {
+        const timestamp = Date.now();
+        const storagePath = `vehicles/${timestamp}-${imageFile.name}`;
+        resolvedImage = await uploadFileToStorage(imageFile, storagePath);
+      } else if (typeof imageFile === "string") {
+        const trimmed = imageFile.trim();
+        resolvedImage = trimmed.length > 0 ? trimmed : null;
+      } else {
+        resolvedImage = null;
+      }
+    }
+
+    const normalizedDriverIds =
+      driverIdentifiers !== undefined
+        ? normalizeDriverIdentifiers(driverIdentifiers)
+        : undefined;
+
+    const payload = buildVehicleSchemaPayload(existingData, {
+      chassisNumber: chassisNumber !== undefined ? chassisNumber ?? null : undefined,
+      name: name !== undefined ? name ?? null : undefined,
+      plateNumber:
+        plateNumber !== undefined
+          ? {
+              ar: plateNumber ?? null,
+              en: plateNumber ?? null,
+            }
+          : undefined,
+      image: resolvedImage,
+      driverIds: normalizedDriverIds,
+    });
+
+    if (!payload.createdDate) {
+      payload.createdDate = serverTimestamp();
+    }
+
+    if (payload.createdUserId === null && existingData?.createdUserId) {
+      payload.createdUserId = existingData.createdUserId;
+    }
+
+    await setDoc(vehicleDocRef, payload, { merge: false });
+
+    return {
+      id: vehicleId,
+      data: payload,
+    };
+  } catch (error) {
+    console.error("Error updating vehicle document:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a single vehicle document from Firestore
+ * @param vehicleId - Vehicle document ID
+ * @returns Promise with the vehicle data
+ */
+export const fetchVehicleById = async (vehicleId: string) => {
+  try {
+    const vehicleDocRef = doc(db, "vehicles", vehicleId);
+    const vehicleDoc = await getDoc(vehicleDocRef);
+
+    if (!vehicleDoc.exists()) {
+      throw new Error("Vehicle not found");
+    }
+
+    return {
+      docId: vehicleDoc.id,
+      ...vehicleDoc.data(),
+    };
+  } catch (error) {
+    console.error("Error fetching vehicle by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a driver document from Firestore by document ID or email fallback
+ * @param identifier - Driver document ID or email
+ * @returns Promise with the driver data or null if not found
+ */
+export const fetchDriverByIdentifier = async (
+  identifier: string
+): Promise<Record<string, any> | null> => {
+  try {
+    const trimmedIdentifier = identifier?.trim?.() ?? identifier;
+    const candidateIds = [
+      identifier,
+      trimmedIdentifier,
+      trimmedIdentifier?.toLowerCase?.(),
+      trimmedIdentifier?.toUpperCase?.(),
+    ];
+
+    for (const candidate of candidateIds) {
+      if (!candidate) continue;
+      const driverDocRef = doc(db, "drivers", candidate);
+      const driverDoc = await getDoc(driverDocRef);
+      if (driverDoc.exists()) {
+        return {
+          docId: driverDoc.id,
+          ...driverDoc.data(),
+        };
+      }
+    }
+
+    const emailCandidates = Array.from(
+      new Set(
+        [identifier, trimmedIdentifier, trimmedIdentifier?.toLowerCase?.()].filter(
+          (value) => value !== null && value !== undefined && String(value).trim() !== ""
+        )
+      )
+    );
+
+    if (emailCandidates.length === 0) {
+      return null;
+    }
+
+    const driversRef = collection(db, "drivers");
+    for (const emailCandidate of emailCandidates) {
+      const emailQuerySnapshot = await getDocs(
+        query(driversRef, where("email", "==", emailCandidate))
+      );
+
+      if (!emailQuerySnapshot.empty) {
+        const driverDoc = emailQuerySnapshot.docs[0];
+        return {
+          docId: driverDoc.id,
+          ...driverDoc.data(),
+        };
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Error fetching driver by identifier:", error);
+    throw error;
+  }
+};
+
+export const assignVehicleToDriver = async ({
+  driverIdentifier,
+  vehicleId,
+  vehicleName,
+  plateNumber,
+}: {
+  driverIdentifier: string;
+  vehicleId: string;
+  vehicleName: string;
+  plateNumber: string;
+}) => {
+  const driverRecord = await fetchDriverByIdentifier(driverIdentifier);
+
+  if (!driverRecord || !driverRecord.docId) {
+    throw new Error("Driver not found for the provided identifier.");
+  }
+
+  const driverDocRef = doc(db, "drivers", driverRecord.docId);
+
+  await updateDoc(driverDocRef, {
+    vehicle: {
+      id: vehicleId,
+      name: vehicleName ?? null,
+      plateNumber: plateNumber ?? null,
+    },
+    driverIds: arrayUnion(vehicleId),
+  });
+};
+
+/**
+ * Add driver reference to a vehicle document (driverIds array)
+ * @param vehicleId - Vehicle document ID
+ * @param driverIdentifier - Driver identifier (document ID or legacy identifier)
+ */
+export const addDriverToVehicle = async (
+  vehicleId: string,
+  driverIdentifier: string
+) => {
+  try {
+    if (!vehicleId || !driverIdentifier) {
+      throw new Error("Vehicle ID and Driver identifier are required");
+    }
+
+    const vehicleDocRef = doc(db, "vehicles", vehicleId);
+    await updateDoc(vehicleDocRef, {
+      driverIds: arrayUnion(driverIdentifier),
+    });
+  } catch (error) {
+    console.error("Error adding driver to vehicle:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetch a single driver by ID from Firestore
  * @param driverId - Driver document ID
  * @returns Promise with the driver data
@@ -5267,7 +6175,6 @@ export const fetchCompaniesCars = async () => {
     throw error;
   }
 };
-
 /**
  * Fetch notifications from Firestore notifications collection
  * Filtered by current company ID in the companies array
@@ -6028,7 +6935,6 @@ export const addCarStation = async (stationData: AddStationData) => {
     throw error;
   }
 };
-
 /**
  * Add a new company to Firestore companies collection
  * 1. Uploads files to Firebase Storage
@@ -7606,7 +8512,6 @@ export const declineStationsCompanyRequest = async (
     throw error;
   }
 };
-
 export const fetchFuelStationRequests = async (
   currentUserEmail: string
 ): Promise<any[]> => {

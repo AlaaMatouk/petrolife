@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Table, Pagination } from "../../../shared";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { Table, Pagination, LoadingSpinner } from "../../../shared";
 import {
   ArrowLeft,
   UserRound,
@@ -10,36 +10,7 @@ import {
   FileText,
 } from "lucide-react";
 import { createPortal } from "react-dom";
-
-// Dummy driver info matching screenshot style
-const driverInfo = {
-  name: "محمد طارق محمد",
-  email: "hesham@gmail.com",
-  phone: "رقم الهاتف هنا",
-  city: "الرياض",
-  address: ", Riyadh 13245, Saudi Arabia ,شرطة ,7453 ص",
-  carNumber: "2145364",
-  lastUsed: "ص 10:15 ، 2025 فبراير 12",
-  avatar: "/img/image-2.png",
-};
-
-// Dummy deliveries data
-const deliveries = Array.from({ length: 24 }).map((_, i) => ({
-  id: i + 1,
-  tripNumber: "12563",
-  fuelType: "بنزين 91",
-  quantity: "200",
-  address: "12 ش المنيل ، محافظة القاهرة",
-  orderDate: "ص 5:05 - 2025 فبراير 21",
-  status:
-    i % 7 === 0
-      ? { color: "text-red-600", bg: "bg-red-50", text: "ملغي" }
-      : i % 3 === 0
-      ? { color: "text-yellow-600", bg: "bg-yellow-50", text: "جاري التوصيل" }
-      : i % 5 === 0
-      ? { color: "text-blue-600", bg: "bg-blue-50", text: "طلب تغيير سائق" }
-      : { color: "text-gray-600", bg: "bg-gray-50", text: "مكتمل" },
-}));
+import { fetchDriverDocumentById, fetchAllOrdersDocuments } from "../../../../services/firestore";
 
 const StatusBadge = ({
   text,
@@ -139,8 +110,213 @@ const ExportMenu = () => {
 
 const PetrolifeDriverDetails = (): JSX.Element => {
   const navigate = useNavigate();
-  const [currentPage, setCurrentPage] = useState(3);
+  const { id } = useParams<{ id: string }>();
+  const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [driverInfo, setDriverInfo] = useState<{
+    id: string;
+    driverCode: string;
+    name: string;
+    email: string;
+    phone: string;
+    city: string;
+    address: string;
+    carNumber: string;
+    status: string;
+    lastUsed: string;
+    avatar: string;
+  } | null>(null);
+  const [orders, setOrders] = useState<
+    Array<{
+      tripNumber: string;
+      fuelType: string;
+      litreAmount: string;
+      deliveryAddress: string;
+      orderDate: string;
+      orderStatus: string;
+    }>
+  >([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [ordersError, setOrdersError] = useState<string | null>(null);
+
+  const mapDriverDocumentToInfo = (driver: any) => {
+    const fallback = (value: any, defaultValue = "-") =>
+      value === null || value === undefined || value === ""
+        ? defaultValue
+        : String(value);
+
+    const driverCodeValue =
+      driver?.id ?? driver?.uId ?? (driver?.docId ? String(driver.docId) : "-");
+
+    const cityValue =
+      driver?.city && typeof driver.city === "object"
+        ? driver.city?.name?.ar || driver.city?.name?.en
+        : driver?.city;
+
+    const carNumberValue =
+      driver?.car?.plateNumber?.en ||
+      driver?.car?.plateNumber?.ar ||
+      driver?.car?.plateNumber ||
+      driver?.plateNumber?.en ||
+      driver?.plateNumber?.ar ||
+      driver?.plateNumber;
+
+    const avatarValue =
+      driver?.avatar ||
+      driver?.imageUrl ||
+      driver?.profileImage ||
+      driver?.driverImage ||
+      "/img/image-2.png";
+
+    const addressValue =
+      driver?.address ||
+      driver?.location ||
+      driver?.city?.address ||
+      driver?.car?.address;
+
+    const lastUsedValue =
+      driver?.lastUsedAt ||
+      driver?.lastTransactionDate ||
+      driver?.lastTripDate ||
+      "-";
+
+    return {
+      id: fallback(driver?.docId ?? driver?.id ?? driver?.uId ?? id ?? "-"),
+      driverCode: fallback(driverCodeValue),
+      name: fallback(driver?.name ?? driver?.driverName ?? driver?.fullName),
+      email: fallback(driver?.email),
+      phone: fallback(driver?.phoneNumber ?? driver?.phone ?? driver?.mobile),
+      city: fallback(cityValue, "غير محدد"),
+      address: fallback(addressValue, "غير محدد"),
+      carNumber: fallback(carNumberValue, "-"),
+      status: driver?.isActive === true ? "نشط" : "معطل",
+      lastUsed:
+        lastUsedValue && lastUsedValue !== "-"
+          ? fallback(lastUsedValue)
+          : "غير متوفر",
+      avatar: String(avatarValue),
+    };
+  };
+
+  useEffect(() => {
+    const loadDriverInfo = async () => {
+      if (!id) {
+        setError("لم يتم العثور على معرف السائق.");
+        setIsLoading(false);
+        return;
+      }
+
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const driver = await fetchDriverDocumentById(id);
+        const mappedDriver = mapDriverDocumentToInfo(driver);
+        setDriverInfo(mappedDriver);
+
+        try {
+          setOrdersLoading(true);
+          setOrdersError(null);
+
+          const allOrders = await fetchAllOrdersDocuments();
+          const filteredOrders = allOrders.filter((order: any) => {
+            const serviceMatch =
+              order?.service?.desc?.ar === "نصلك في أسرع وقد لتزويدك بالوقود" ||
+              order?.service?.id === "0987eXediDwG7LrN9gtk";
+
+            if (!serviceMatch) {
+              return false;
+            }
+
+            const assigned = order?.assignedDriver || {};
+
+            const matchesDriver =
+              (mappedDriver?.id &&
+                (order?.assignedDriver === mappedDriver.id ||
+                  assigned?.id === mappedDriver.id)) ||
+              (mappedDriver?.driverCode &&
+                (order?.assignedDriver === mappedDriver.driverCode ||
+                  assigned?.id === mappedDriver.driverCode)) ||
+              (mappedDriver?.email &&
+                (assigned?.email === mappedDriver.email ||
+                  order?.assignedDriver === mappedDriver.email)) ||
+              (mappedDriver?.phone &&
+                (assigned?.phoneNumber === mappedDriver.phone ||
+                  order?.assignedDriver === mappedDriver.phone)) ||
+              (mappedDriver?.phone &&
+                assigned?.phone === mappedDriver.phone) ||
+              (mappedDriver?.phone &&
+                assigned?.mobile === mappedDriver.phone) ||
+              (mappedDriver?.id &&
+                assigned?.uid === mappedDriver.id) ||
+              (mappedDriver?.driverCode &&
+                assigned?.driverCode === mappedDriver.driverCode) ||
+              (mappedDriver?.email &&
+                assigned?.contactEmail === mappedDriver.email) ||
+              (mappedDriver?.phone &&
+                assigned?.contactPhone === mappedDriver.phone);
+
+            return matchesDriver;
+          });
+
+          const mappedOrders = filteredOrders.map((order: any) => {
+            const getValue = (value: any, fallback = "-") =>
+              value === null || value === undefined || value === ""
+                ? fallback
+                : value;
+
+            const tripNumber =
+              getValue(order?.refId) || getValue(order?.id, "-");
+
+            const fuelType =
+              order?.selectedOption?.name?.ar ||
+              order?.selectedOption?.label ||
+              "-";
+
+            const litreAmount = getValue(order?.totalLitre, "-");
+
+            const deliveryAddress =
+              order?.location?.address ||
+              order?.carStation?.address ||
+              "-";
+
+            const orderDate = getValue(order?.createdDate, "-");
+
+            const orderStatus = getValue(order?.status, "-");
+
+            return {
+              tripNumber: String(tripNumber),
+              fuelType: String(fuelType),
+              litreAmount: String(litreAmount),
+              deliveryAddress: String(deliveryAddress),
+              orderDate: String(orderDate),
+              orderStatus: String(orderStatus),
+            };
+          });
+
+          setOrders(mappedOrders);
+        } catch (ordersErr) {
+          console.error("Failed to load driver orders:", ordersErr);
+          setOrdersError("فشل في تحميل رحلات السائق.");
+          setOrders([]);
+        } finally {
+          setOrdersLoading(false);
+        }
+      } catch (err) {
+        console.error("Failed to load driver details:", err);
+        setError("فشل في تحميل بيانات السائق.");
+        setOrders([]);
+        setOrdersLoading(false);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadDriverInfo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   const columns = useMemo(
     () => [
@@ -157,13 +333,13 @@ const PetrolifeDriverDetails = (): JSX.Element => {
         priority: "high",
       },
       {
-        key: "quantity",
+        key: "litreAmount",
         label: "الكمية (لتر)",
         width: "min-w-[90px]",
         priority: "high",
       },
       {
-        key: "address",
+        key: "deliveryAddress",
         label: "عنوان التوصيل",
         width: "min-w-[220px]",
         priority: "medium",
@@ -175,12 +351,16 @@ const PetrolifeDriverDetails = (): JSX.Element => {
         priority: "medium",
       },
       {
-        key: "status",
+        key: "orderStatus",
         label: "حالة الطلب",
         width: "min-w-[140px]",
         priority: "high",
         render: (value: any) => (
-          <StatusBadge text={value.text} color={value.color} bg={value.bg} />
+          <StatusBadge
+            text={getOrderStatusLabel(value)}
+            color={getOrderStatusColor(value).color}
+            bg={getOrderStatusColor(value).bg}
+          />
         ),
       },
       {
@@ -203,14 +383,72 @@ const PetrolifeDriverDetails = (): JSX.Element => {
     [columns]
   );
 
-  const paginated = useMemo(
-    () =>
-      deliveries.slice(
-        (currentPage - 1) * itemsPerPage,
-        currentPage * itemsPerPage
-      ),
-    [currentPage]
-  );
+  const paginated = useMemo(() => {
+    return Array.isArray(orders)
+      ? orders.slice(
+          (currentPage - 1) * itemsPerPage,
+          currentPage * itemsPerPage
+        )
+      : [];
+  }, [orders, currentPage]);
+
+  const getOrderStatusColor = (status: string) => {
+    switch (status) {
+      case "pending":
+        return { color: "text-yellow-600", bg: "bg-yellow-50" };
+      case "assigned":
+        return { color: "text-blue-600", bg: "bg-blue-50" };
+      case "onWay":
+        return { color: "text-orange-600", bg: "bg-orange-50" };
+      case "done":
+        return { color: "text-green-600", bg: "bg-green-50" };
+      case "canceled":
+        return { color: "text-red-600", bg: "bg-red-50" };
+      default:
+        return { color: "text-gray-600", bg: "bg-gray-50" };
+    }
+  };
+
+  const getOrderStatusLabel = (status: string) => {
+    switch (status) {
+      case "pending":
+        return "معلق";
+      case "assigned":
+        return "تم التعيين";
+      case "onWay":
+        return "في الطريق";
+      case "done":
+        return "مكتمل";
+      case "canceled":
+        return "ملغي";
+      default:
+        return status || "-";
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex w-full justify-center py-20">
+        <LoadingSpinner size="lg" message="جاري تحميل بيانات السائق..." />
+      </div>
+    );
+  }
+
+  if (error || !driverInfo) {
+    return (
+      <div className="flex flex-col items-center justify-center w-full py-20">
+        <div className="text-red-600 text-lg [direction:rtl]">
+          {error || "لا توجد بيانات متاحة لهذا السائق."}
+        </div>
+        <button
+          onClick={() => navigate(-1)}
+          className="mt-6 px-4 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white"
+        >
+          الرجوع
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col w-full items-start gap-5">
@@ -256,13 +494,15 @@ const PetrolifeDriverDetails = (): JSX.Element => {
           <div className="w-full rounded-[var(--corner-radius-large)] border border-color-mode-text-icons-t-placeholder bg-white p-4 shadow-sm">
             {(() => {
               const fields = [
+                { label: "كود السائق", value: driverInfo.driverCode },
                 { label: "اسم السائق", value: driverInfo.name },
-                { label: "البريد الإلكتروني", value: driverInfo.email },
                 { label: "رقم الهاتف", value: driverInfo.phone },
+                { label: "البريد الإلكتروني", value: driverInfo.email },
                 { label: "المدينة", value: driverInfo.city },
                 { label: "العنوان", value: driverInfo.address },
                 { label: "رقم السيارة", value: driverInfo.carNumber },
-                { label: "تاريخ الاستخدام", value: driverInfo.lastUsed },
+                { label: "حالة الحساب", value: driverInfo.status },
+                { label: "آخر استخدام", value: driverInfo.lastUsed },
               ];
 
               const rows = [] as JSX.Element[];
@@ -321,23 +561,41 @@ const PetrolifeDriverDetails = (): JSX.Element => {
 
         {/* Bordered frame around table and pagination */}
         <div className="w-full rounded-[var(--corner-radius-large)] border border-color-mode-text-icons-t-placeholder bg-white p-4 shadow-sm">
-          <div className="w-full overflow-x-auto hidden lg:block">
-            <Table columns={columnsReversed as any} data={paginated as any} />
-          </div>
-          <div className="w-full overflow-x-auto hidden md:block lg:hidden">
-            <Table
-              columns={(columnsReversed as any).filter(
-                (c: any) => c.priority !== "low"
-              )}
-              data={paginated as any}
-            />
-          </div>
+          {ordersLoading ? (
+            <div className="py-12 flex justify-center">
+              <LoadingSpinner message="جاري تحميل رحلات السائق..." />
+            </div>
+          ) : ordersError ? (
+            <div className="py-12 text-center text-red-600">
+              {ordersError}
+            </div>
+          ) : paginated.length === 0 ? (
+            <div className="py-12 text-center text-gray-500">
+              لا توجد رحلات توصيل وقود لهذا السائق
+            </div>
+          ) : (
+            <>
+              <div className="w-full overflow-x-auto hidden lg:block">
+                <Table columns={columnsReversed as any} data={paginated as any} />
+              </div>
+              <div className="w-full overflow-x-auto hidden md:block lg:hidden">
+                <Table
+                  columns={(columnsReversed as any).filter(
+                    (c: any) => c.priority !== "low"
+                  )}
+                  data={paginated as any}
+                />
+              </div>
 
-          <Pagination
-            currentPage={currentPage}
-            totalPages={Math.ceil(deliveries.length / itemsPerPage)}
-            onPageChange={setCurrentPage}
-          />
+              <Pagination
+                currentPage={currentPage}
+                totalPages={
+                  Math.ceil((orders?.length || 0) / itemsPerPage) || 1
+                }
+                onPageChange={setCurrentPage}
+            />
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Table, Pagination, TimeFilter } from "../../../shared";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { Table, Pagination, TimeFilter, LoadingSpinner } from "../../../shared";
 import {
   ArrowLeft,
   Info,
@@ -8,18 +8,116 @@ import {
   User,
   Building2,
 } from "lucide-react";
+import { fetchCouponById } from "../../../../services/firestore";
 
-// Dummy coupon info matching screenshot style
-const couponInfo = {
-  discountPercentage: "10",
-  discountCode: "21542635",
-  capacity: "200",
-  maxDiscount: "5000",
-  expirationDate: "21 فبراير 2025",
-  couponStatus: { status: "جاري", color: "blue" },
-  categories: "زيوت ، غسيل",
-  numberOfBeneficiaries: "150",
-  beneficiary: "شركات ، افراد",
+interface CouponInfo {
+  discountPercentage: string;
+  discountCode: string;
+  capacity: string;
+  maxDiscount: string;
+  expirationDate: string;
+  couponStatus: string;
+  categories: string;
+  numberOfBeneficiaries: string;
+  beneficiary: string;
+}
+
+const formatValue = (value: any, fallback = "-"): string => {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value.toString() : fallback;
+  }
+
+  const str = String(value).trim();
+  return str.length > 0 ? str : fallback;
+};
+
+const formatDateValue = (value: any, fallback = "-"): string => {
+  if (!value) return fallback;
+
+  try {
+    if (typeof value === "string") {
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return new Intl.DateTimeFormat("ar-SA", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }).format(parsed);
+      }
+      return value;
+    }
+
+    if (value instanceof Date) {
+      return new Intl.DateTimeFormat("ar-SA", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      }).format(value);
+    }
+
+    if (value?.seconds) {
+      const date = new Date(value.seconds * 1000);
+      return new Intl.DateTimeFormat("ar-SA", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      }).format(date);
+    }
+  } catch (error) {
+    console.warn("Failed to format coupon date", error);
+  }
+
+  return fallback;
+};
+
+const formatCategories = (value: any): string => {
+  if (!value) return "-";
+
+  if (Array.isArray(value)) {
+    const cleaned = value
+      .map((entry) => {
+        if (!entry) return null;
+        if (typeof entry === "string") return entry.trim();
+        if (entry?.name) return entry.name;
+        return JSON.stringify(entry);
+      })
+      .filter(Boolean);
+
+    return cleaned.length ? cleaned.join(" ، ") : "-";
+  }
+
+  return formatValue(value);
+};
+
+const formatBeneficiary = (coupon: Record<string, any>): string => {
+  const raw = coupon?.beneficiary ?? coupon?.beneficiaries ?? null;
+  if (raw) {
+    return formatValue(raw);
+  }
+
+  if (coupon?.isCompany === true) return "شركات";
+  if (coupon?.isCompany === false) return "أفراد";
+
+  return "-";
+};
+
+const deriveStatus = (coupon: Record<string, any>): string => {
+  const rawStatus = coupon?.couponStatus ?? coupon?.status ?? coupon?.accountStatus ?? null;
+
+  if (rawStatus && typeof rawStatus === "object" && rawStatus.status) {
+    return formatValue(rawStatus.status);
+  }
+
+  if (typeof rawStatus === "string") {
+    return formatValue(rawStatus);
+  }
+
+  if (typeof coupon?.isActive === "boolean") {
+    return coupon.isActive ? "جاري" : "معطل";
+  }
+
+  return "-";
 };
 
 // Dummy beneficiaries data
@@ -65,9 +163,63 @@ const allBeneficiaries = generateBeneficiaries();
 
 const PetrolifeCouponDetails = (): JSX.Element => {
   const navigate = useNavigate();
-  const [currentPage, setCurrentPage] = useState(3);
+  const { id } = useParams<{ id: string }>();
+  const [currentPage, setCurrentPage] = useState(1);
   const [selectedTimeFilter, setSelectedTimeFilter] = useState("اخر 12 شهر");
   const itemsPerPage = 10;
+  const [couponInfo, setCouponInfo] = useState<CouponInfo | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadCoupon = async () => {
+      if (!id) {
+        setError("معرف الكوبون غير متوفر.");
+        setIsLoading(false);
+        return;
+      }
+
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const coupon = await fetchCouponById(id);
+
+        const percentageValue = coupon?.percentage ?? coupon?.precentage ?? coupon?.discountPercentage;
+        const maxDiscountValue =
+          coupon?.minmumValueToApplyCoupon ??
+          coupon?.minimumValueToApplyCoupon ??
+          coupon?.maxDiscount ??
+          coupon?.maxDiscountValue;
+        const capacityValue = coupon?.capacity ?? coupon?.limit ?? coupon?.usageLimit;
+
+        setCouponInfo({
+          discountPercentage: formatValue(percentageValue),
+          discountCode: formatValue(coupon?.code ?? coupon?.discountCode),
+          capacity: formatValue(capacityValue),
+          maxDiscount: formatValue(maxDiscountValue),
+          expirationDate: formatDateValue(
+            coupon?.expireDate ?? coupon?.expiryDate ?? coupon?.expireAt ?? coupon?.expirationDate
+          ),
+          couponStatus: deriveStatus(coupon),
+          categories: formatCategories(
+            coupon?.categories ?? coupon?.specificCategories ?? coupon?.category ?? coupon?.allowedCategories
+          ),
+          numberOfBeneficiaries: formatValue(
+            coupon?.numberOfUsers ?? coupon?.usage ?? coupon?.usageCount ?? coupon?.usedCount ?? coupon?.userCount
+          ),
+          beneficiary: formatBeneficiary(coupon),
+        });
+      } catch (err) {
+        console.error("Failed to load coupon details:", err);
+        setError("فشل في تحميل بيانات الكوبون.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadCoupon();
+  }, [id]);
 
   // Filter beneficiaries based on time filter
   const filteredBeneficiaries = useMemo(() => {
@@ -193,6 +345,30 @@ const PetrolifeCouponDetails = (): JSX.Element => {
     [filteredBeneficiaries, currentPage]
   );
 
+  if (isLoading) {
+    return (
+      <div className="flex w-full justify-center py-16">
+        <LoadingSpinner message="جاري تحميل بيانات الكوبون..." />
+      </div>
+    );
+  }
+
+  if (error || !couponInfo) {
+    return (
+      <div className="flex flex-col items-center justify-center w-full py-20 gap-4">
+        <div className="text-red-600 text-lg [direction:rtl]">
+          {error || "لا توجد بيانات لهذا الكوبون."}
+        </div>
+        <button
+          onClick={() => navigate(-1)}
+          className="px-4 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white"
+        >
+          الرجوع
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col w-full items-start gap-5">
       {/* Coupon Info Card */}
@@ -230,7 +406,7 @@ const PetrolifeCouponDetails = (): JSX.Element => {
                 { label: "نسبة الخصم (%)", value: couponInfo.discountPercentage },
                 { label: "تاريخ الانتهاء", value: couponInfo.expirationDate },
                 { label: "كود الخصم", value: couponInfo.discountCode },
-                { label: "حالة الكوبون", value: couponInfo.couponStatus.status },
+                { label: "حالة الكوبون", value: couponInfo.couponStatus },
                 { label: "سعة الكوبون", value: couponInfo.capacity },
               ];
 
@@ -256,6 +432,7 @@ const PetrolifeCouponDetails = (): JSX.Element => {
               // Add full-width fields
               const fullWidthFields = [
                 { label: "التصنيفات المتاحة", value: couponInfo.categories },
+                { label: "عدد المستفيدين", value: couponInfo.numberOfBeneficiaries },
                 { label: "الجهة المستفيدة", value: couponInfo.beneficiary },
               ];
 
