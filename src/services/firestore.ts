@@ -190,6 +190,8 @@ type DriverSchemaNode =
 
 let driverSchemaCache: DriverSchemaNode | null = null;
 let driverSchemaPromise: Promise<DriverSchemaNode> | null = null;
+let couponSchemaCache: DriverSchemaNode | null = null;
+let couponSchemaPromise: Promise<DriverSchemaNode> | null = null;
 
 const isFirestoreTimestamp = (value: any): boolean =>
   Boolean(value) &&
@@ -252,17 +254,15 @@ const mergeSchemaNode = (
   return { kind: "value" };
 };
 
-const deriveSchemaFromDrivers = (drivers: any[]): DriverSchemaNode => {
-  // Collect a superset of every field (including deep nested paths) that
-  // already exists across historical driver documents.
+const deriveSchemaFromDocuments = (documents: any[]): DriverSchemaNode => {
   const root: DriverSchemaNode = { kind: "object", fields: {} };
 
-  drivers.forEach((driver) => {
-    if (!isPlainObjectLike(driver)) {
+  documents.forEach((document) => {
+    if (!isPlainObjectLike(document)) {
       return;
     }
 
-    Object.entries(driver).forEach(([key, value]) => {
+    Object.entries(document).forEach(([key, value]) => {
       if (key === "docId") {
         return;
       }
@@ -272,6 +272,9 @@ const deriveSchemaFromDrivers = (drivers: any[]): DriverSchemaNode => {
 
   return root;
 };
+
+const deriveSchemaFromDrivers = (drivers: any[]): DriverSchemaNode =>
+  deriveSchemaFromDocuments(drivers);
 
 const ensureDriverSchemaLoaded = async (): Promise<DriverSchemaNode> => {
   if (driverSchemaCache) {
@@ -288,6 +291,24 @@ const ensureDriverSchemaLoaded = async (): Promise<DriverSchemaNode> => {
   }
 
   return driverSchemaPromise;
+};
+
+const ensureCouponSchemaLoaded = async (): Promise<DriverSchemaNode> => {
+  if (couponSchemaCache) {
+    return couponSchemaCache;
+  }
+
+  if (!couponSchemaPromise) {
+    couponSchemaPromise = (async () => {
+      const couponsSnapshot = await getDocs(collection(db, "coupons"));
+      const coupons = couponsSnapshot.docs.map((docSnapshot) => docSnapshot.data());
+      const schema = deriveSchemaFromDocuments(coupons);
+      couponSchemaCache = schema;
+      return schema;
+    })();
+  }
+
+  return couponSchemaPromise;
 };
 
 const buildPayloadFromSchema = (
@@ -377,6 +398,33 @@ export const generateFullDriverPayload = async (
   return buildPayloadFromSchema(schema, formData);
 };
 
+export const generateFullCouponPayload = async (
+  formData: Record<string, any>
+): Promise<Record<string, any>> => {
+  let schema = await ensureCouponSchemaLoaded();
+
+  if (
+    schema.kind === "object" &&
+    Object.keys(schema.fields).length === 0 &&
+    isPlainObjectLike(formData)
+  ) {
+    schema = deriveSchemaFromDocuments([formData]);
+    couponSchemaCache = schema;
+  }
+
+  const payload = buildPayloadFromSchema(schema, formData);
+
+  if (isPlainObjectLike(formData)) {
+    Object.entries(formData).forEach(([key, value]) => {
+      if (!(key in payload)) {
+        payload[key] = value;
+      }
+    });
+  }
+
+  return payload;
+};
+
 /**
  * Create a new driver document in the "drivers" collection while ensuring
  * the payload respects the complete schema observed in previous documents.
@@ -396,6 +444,49 @@ export const createNewDriver = async (
 
   return {
     docId: docRef.id,
+    ...payload,
+  };
+};
+
+export const createCouponWithSchema = async (
+  formData: Record<string, any>
+) => {
+  const payload = await generateFullCouponPayload(formData);
+
+  if (
+    payload.createdDate === null ||
+    payload.createdDate === undefined
+  ) {
+    payload.createdDate = serverTimestamp();
+  }
+
+  const currentUser = auth.currentUser;
+  const currentUserIdentifier =
+    currentUser?.uid ?? currentUser?.email ?? null;
+
+  payload.createdUserId = currentUserIdentifier ?? payload.createdUserId ?? null;
+
+  if (payload.percentage === undefined) {
+    payload.percentage = formData.percentage ?? null;
+  }
+
+  if (payload.precentage === undefined) {
+    payload.precentage =
+      formData.precentage ?? payload.percentage ?? null;
+  } else if (payload.precentage === null && payload.percentage != null) {
+    payload.precentage = payload.percentage;
+  }
+
+  applyTimestampOverrides(payload);
+
+  const couponsRef = collection(db, "coupons");
+  const docRef = await addDoc(couponsRef, payload);
+
+  couponSchemaCache = null;
+  couponSchemaPromise = null;
+
+  return {
+    id: docRef.id,
     ...payload,
   };
 };
@@ -1438,6 +1529,40 @@ export const fetchProductById = async (productId: string) => {
   } catch (error) {
     console.error("Error fetching product by ID:", error);
     throw error;
+  }
+};
+
+export const fetchCouponById = async (couponId: string) => {
+  try {
+    const couponDocRef = doc(db, "coupons", couponId);
+    const couponDoc = await getDoc(couponDocRef);
+
+    if (!couponDoc.exists()) {
+      throw new Error("Coupon not found");
+    }
+
+    return {
+      id: couponDoc.id,
+      ...couponDoc.data(),
+    };
+  } catch (error) {
+    console.error("Error fetching coupon by ID:", error);
+    throw error;
+  }
+};
+
+export const fetchCoupons = async (): Promise<any[]> => {
+  try {
+    const couponsCollection = collection(db, "coupons");
+    const couponsSnapshot = await getDocs(couponsCollection);
+
+    return couponsSnapshot.docs.map((couponDoc) => ({
+      id: couponDoc.id,
+      ...couponDoc.data(),
+    }));
+  } catch (error) {
+    console.error("Error fetching coupons:", error);
+    return [];
   }
 };
 export const calculateBatteryChangeStatistics = (

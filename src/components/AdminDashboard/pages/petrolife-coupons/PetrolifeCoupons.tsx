@@ -1,9 +1,132 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Table, Pagination } from "../../../shared";
+import { Table, Pagination, LoadingSpinner } from "../../../shared";
 import { Tag, CirclePlus, MoreVertical, Download, FileSpreadsheet, FileText, Trash2, Edit, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { StatusToggle } from "../../../shared/StatusToggle";
+import { fetchCoupons } from "../../../../services/firestore";
+
+const formatValue = (value: any, fallback = "-") => {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value.toString() : fallback;
+  }
+
+  const stringValue = String(value).trim();
+  return stringValue.length > 0 ? stringValue : fallback;
+};
+
+const formatCategories = (value: any) => {
+  if (!value) return "-";
+  if (Array.isArray(value)) {
+    const filtered = value
+      .map((item) => {
+        if (!item) return null;
+        if (typeof item === "string") return item.trim();
+        if (item?.name) return item.name;
+        return JSON.stringify(item);
+      })
+      .filter(Boolean);
+
+    return filtered.length ? filtered.join("، ") : "-";
+  }
+
+  return formatValue(value);
+};
+
+const formatDateValue = (value: any) => {
+  if (!value) return "-";
+
+  try {
+    if (typeof value === "string") {
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toLocaleDateString("ar-SA", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        });
+      }
+      return value;
+    }
+
+    if (value instanceof Date) {
+      return value.toLocaleDateString("ar-SA", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+    }
+
+    if (value?.seconds) {
+      const date = new Date(value.seconds * 1000);
+      return date.toLocaleDateString("ar-SA", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+    }
+  } catch (error) {
+    console.warn("Failed to format expire date", error);
+  }
+
+  return formatValue(value);
+};
+
+const mapCouponDocument = (coupon: Record<string, any>) => {
+  const discountPercentageRaw = coupon?.percentage ?? coupon?.precentage;
+  const maxDiscountRaw = coupon?.minmumValueToApplyCoupon ?? coupon?.minimumValueToApplyCoupon;
+  const categoriesRaw = coupon?.categories ?? coupon?.specificCategories ?? coupon?.category ?? null;
+  const numberOfUsersRaw =
+    coupon?.numberOfUsers ?? coupon?.usersCount ?? coupon?.userCount ?? coupon?.maxUsers ?? coupon?.usageLimit;
+  const usageRaw = coupon?.usage ?? coupon?.usageCount ?? coupon?.usedCount ?? coupon?.usageTimes;
+  const expireDateRaw = coupon?.expireDate ?? coupon?.expiryDate ?? coupon?.expireAt ?? coupon?.expirationDate;
+  const statusRaw = coupon?.couponStatus ?? coupon?.status ?? coupon?.isActive ?? null;
+
+  const accountStatus = (() => {
+    if (statusRaw === null || statusRaw === undefined) return null;
+
+    if (typeof statusRaw === "boolean") {
+      return {
+        active: statusRaw,
+        text: statusRaw ? "جاري" : "معطل",
+      };
+    }
+
+    const normalized = String(statusRaw).trim();
+    if (!normalized) return null;
+
+    const lower = normalized.toLowerCase();
+    const activeKeywords = ["active", "جاري", "نشط", "enabled"];
+    const inactiveKeywords = ["inactive", "معطل", "منتهي", "expired", "disabled"];
+
+    let active = false;
+
+    if (activeKeywords.some((keyword) => lower.includes(keyword))) {
+      active = true;
+    } else if (inactiveKeywords.some((keyword) => lower.includes(keyword))) {
+      active = false;
+    }
+
+    return {
+      active,
+      text: normalized,
+    };
+  })();
+
+  return {
+    id: coupon?.id ?? coupon?.code ?? `temp-${Date.now()}-${Math.random()}`,
+    discountCode: formatValue(coupon?.code),
+    discountPercentage: formatValue(discountPercentageRaw),
+    maxDiscount: formatValue(maxDiscountRaw),
+    expirationDate: formatDateValue(expireDateRaw),
+    specificCategories: formatCategories(categoriesRaw),
+    numberOfUsers: formatValue(numberOfUsersRaw),
+    usage: formatValue(usageRaw),
+    accountStatus,
+    isCompany: Boolean(coupon?.isCompany),
+  };
+};
 
 const columns = [
   { key: "actions", label: "الإجراءات", width: "w-16", priority: "high" },
@@ -56,42 +179,6 @@ const columns = [
     priority: "high",
   },
 ];
-
-// Mock data for Individuals tab
-const individualsData = Array.from({ length: 72 }).map((_, i) => ({
-  id: i + 1,
-  discountCode: `IND${(i + 1).toString().padStart(3, "0")}`,
-  discountPercentage: i % 3 === 0 ? "10" : i % 3 === 1 ? "15" : "20",
-  maxDiscount: i % 2 === 0 ? "5000" : "3000",
-  expirationDate: "21 فبراير 2025",
-  specificCategories: i % 4 === 0 ? "زيوت" : i % 4 === 1 ? "فلاتر" : i % 4 === 2 ? "غسيل" : "منتجات",
-  numberOfUsers: i % 5 === 0 ? "10" : i % 5 === 1 ? "15" : i % 5 === 2 ? "20" : i % 5 === 3 ? "25" : "30",
-  usage: i % 3 === 0 ? "150" : i % 3 === 1 ? "200" : "250",
-  accountStatus:
-    i % 3 === 0
-      ? { active: true, text: "جاري" }
-      : i % 3 === 1
-      ? { active: false, text: "معلق" }
-      : { active: false, text: "منتهي" },
-}));
-
-// Mock data for Companies tab
-const companiesData = Array.from({ length: 72 }).map((_, i) => ({
-  id: i + 73,
-  discountCode: `COMP${(i + 1).toString().padStart(3, "0")}`,
-  discountPercentage: i % 3 === 0 ? "15" : i % 3 === 1 ? "20" : "25",
-  maxDiscount: i % 2 === 0 ? "8000" : "6000",
-  expirationDate: "21 فبراير 2025",
-  specificCategories: i % 4 === 0 ? "زيوت" : i % 4 === 1 ? "إطارات" : i % 4 === 2 ? "اكسسوارات" : "غسيل",
-  numberOfUsers: i % 5 === 0 ? "20" : i % 5 === 1 ? "25" : i % 5 === 2 ? "30" : i % 5 === 3 ? "35" : "40",
-  usage: i % 3 === 0 ? "300" : i % 3 === 1 ? "350" : "400",
-  accountStatus:
-    i % 2 === 0
-      ? { active: true, text: "جاري" }
-      : i % 4 === 1
-      ? { active: false, text: "معلق" }
-      : { active: false, text: "منتهي" },
-}));
 
 const ExportMenu = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -248,32 +335,70 @@ const PetrolifeCoupons = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"individuals" | "companies">("individuals");
   const [currentPage, setCurrentPage] = useState(1);
-  const [data, setData] = useState<any[]>([]);
+  const [individualCoupons, setIndividualCoupons] = useState<any[]>([]);
+  const [companyCoupons, setCompanyCoupons] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const itemsPerPage = 10;
 
   useEffect(() => {
-    setData(activeTab === "individuals" ? individualsData : companiesData);
     setCurrentPage(1);
   }, [activeTab]);
 
-  const handleToggleStatus = useCallback((id: number | string) => {
-    console.log("Toggle status for coupon:", id);
-    setData((prev) =>
-      prev.map((item) => {
-        if (item.id === id) {
-          if (item.accountStatus) {
-            return {
-              ...item,
-              accountStatus: {
-                active: !item.accountStatus.active,
-                text: !item.accountStatus.active ? "جاري" : "معطل",
-              },
-            };
+  useEffect(() => {
+    const loadCoupons = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const coupons = await fetchCoupons();
+        const individuals: any[] = [];
+        const companies: any[] = [];
+
+        coupons.forEach((coupon) => {
+          const mapped = mapCouponDocument(coupon);
+          if (mapped.isCompany) {
+            companies.push(mapped);
+          } else {
+            individuals.push(mapped);
           }
-        }
-        return item;
-      })
-    );
+        });
+
+        setIndividualCoupons(individuals);
+        setCompanyCoupons(companies);
+      } catch (err: any) {
+        console.error("Failed to fetch coupons:", err);
+        setError("تعذر تحميل بيانات الكوبونات.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadCoupons();
+  }, []);
+
+  const activeData = useMemo(
+    () => (activeTab === "individuals" ? individualCoupons : companyCoupons),
+    [activeTab, individualCoupons, companyCoupons]
+  );
+
+  const handleToggleStatus = useCallback((id: number | string) => {
+    const toggleStatus = (list: any[]) =>
+      list.map((item) => {
+        if (item.id !== id) return item;
+        if (!item.accountStatus) return item;
+        const isActive = !item.accountStatus.active;
+        return {
+          ...item,
+          accountStatus: {
+            active: isActive,
+            text: isActive ? "جاري" : "معطل",
+          },
+        };
+      });
+
+    setIndividualCoupons((prev) => toggleStatus(prev));
+    setCompanyCoupons((prev) => toggleStatus(prev));
   }, []);
 
   const viewDetailsRoute = useCallback((id: string | number) => `/petrolife-coupons/${id}`, []);
@@ -295,11 +420,15 @@ const PetrolifeCoupons = () => {
           return {
             ...col,
             render: (value: any, row: any) => (
-              <StatusToggle
-                isActive={value.active}
-                onToggle={() => handleToggleStatus(row.id)}
-                statusText={value.text}
-              />
+              value ? (
+                <StatusToggle
+                  isActive={Boolean(value.active)}
+                  onToggle={() => handleToggleStatus(row.id)}
+                  statusText={value.text ?? "-"}
+                />
+              ) : (
+                <span className="text-gray-400">-</span>
+              )
             ),
           };
         }
@@ -308,9 +437,47 @@ const PetrolifeCoupons = () => {
     [handleToggleStatus, viewDetailsRoute]
   );
 
-  const paginatedData = useMemo(
-    () => data.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage),
-    [data, currentPage]
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return activeData.slice(start, start + itemsPerPage);
+  }, [activeData, currentPage]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(activeData.length / itemsPerPage));
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [activeData, currentPage]);
+
+  const renderTableContent = useCallback(
+    (visibleColumns: any[], className?: string) => {
+      if (loading) {
+        return (
+          <div className="flex w-full justify-center py-16">
+            <LoadingSpinner message="جاري تحميل بيانات الكوبونات..." />
+          </div>
+        );
+      }
+
+      if (error) {
+        return (
+          <div className="flex w-full justify-center py-16 text-red-600 text-base">
+            {error}
+          </div>
+        );
+      }
+
+      if (!activeData.length) {
+        return (
+          <div className="flex w-full justify-center py-16 text-gray-500 text-base">
+            لا توجد كوبونات متاحة للعرض.
+          </div>
+        );
+      }
+
+      return <Table columns={visibleColumns} data={paginatedData} className={className} />;
+    },
+    [activeData, error, loading, paginatedData]
   );
 
   return (
@@ -323,7 +490,7 @@ const PetrolifeCoupons = () => {
           {/* Title on right side (RTL) */}
           <div className="flex items-center justify-end gap-1.5 relative">
             <h1 className="relative mt-[-1.00px] font-[number:var(--subtitle-subtitle-2-font-weight)] text-color-mode-text-icons-t-sec text-[length:var(--subtitle-subtitle-2-font-size)] tracking-[var(--subtitle-subtitle-2-letter-spacing)] leading-[var(--subtitle-subtitle-2-line-height)] [direction:rtl] font-subtitle-subtitle-2 whitespace-nowrap [font-style:var(--subtitle-subtitle-2-font-style)]">
-              الكوبونات ({activeTab === "individuals" ? individualsData.length : companiesData.length})
+              الكوبونات ({activeTab === "individuals" ? individualCoupons.length : companyCoupons.length})
             </h1>
             <Tag className="w-5 h-5 text-gray-500" />
           </div>
@@ -377,20 +544,15 @@ const PetrolifeCoupons = () => {
         <div className="flex flex-col items-end gap-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto]">
           {/* Desktop Table View */}
           <div className="hidden lg:block w-full overflow-x-auto">
-            <Table
-              columns={enhancedColumns}
-              data={paginatedData}
-              className="relative self-stretch w-full flex-[0_0_auto]"
-            />
+            {renderTableContent(enhancedColumns, "relative self-stretch w-full flex-[0_0_auto]")}
           </div>
 
           {/* Tablet Responsive Table View */}
           <div className="hidden md:block lg:hidden w-full overflow-x-auto">
-            <Table
-              columns={(enhancedColumns as any).filter((col: any) => col.priority !== "low")}
-              data={paginatedData}
-              className="relative self-stretch w-full flex-[0_0_auto]"
-            />
+            {renderTableContent(
+              (enhancedColumns as any).filter((col: any) => col.priority !== "low"),
+              "relative self-stretch w-full flex-[0_0_auto]"
+            )}
           </div>
 
           {/* Mobile Card View */}
@@ -403,7 +565,7 @@ const PetrolifeCoupons = () => {
 
         <Pagination
           currentPage={currentPage}
-          totalPages={Math.ceil(data.length / itemsPerPage) || 1}
+          totalPages={Math.ceil(activeData.length / itemsPerPage) || 1}
           onPageChange={setCurrentPage}
         />
       </main>

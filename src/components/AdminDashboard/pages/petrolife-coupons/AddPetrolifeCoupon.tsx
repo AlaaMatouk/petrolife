@@ -1,10 +1,14 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Input, Select } from "../../../shared/Form";
-import { Calendar, ArrowLeft } from "lucide-react";
+import { Calendar, ArrowLeft, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { useToast } from "../../../../context/ToastContext";
+import { createCouponWithSchema } from "../../../../services/firestore";
 
 const AddPetrolifeCoupon = () => {
   const navigate = useNavigate();
+  const { addToast } = useToast();
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [form, setForm] = useState({
     discountCode: "",
     discountPercentage: "0",
@@ -13,20 +17,286 @@ const AddPetrolifeCoupon = () => {
     categories: "",
     beneficiary: "",
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const calendarRef = useRef<HTMLDivElement | null>(null);
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
 
-  const handleDateChange = () => {
-    const input = document.createElement("input");
-    input.type = "date";
-    input.onchange = (e) => {
-      const date = (e.target as HTMLInputElement).value;
-      setForm((prev) => ({ ...prev, expirationDate: date }));
+  useEffect(() => {
+    if (!isCalendarOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (calendarRef.current && !calendarRef.current.contains(event.target as Node)) {
+        setIsCalendarOpen(false);
+      }
     };
-    input.click();
+
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isCalendarOpen]);
+
+  useEffect(() => {
+    if (form.expirationDate) {
+      const [year, month] = form.expirationDate.split("-").map((part) => Number(part));
+      if (!Number.isNaN(year) && !Number.isNaN(month)) {
+        setCalendarMonth(new Date(year, month - 1, 1));
+      }
+    }
+  }, [form.expirationDate]);
+
+  const getDisplayDate = () => {
+    if (!form.expirationDate) return "عين تاريخ الانتهاء";
+    const [year, month, day] = form.expirationDate.split("-").map((p) => Number(p));
+    if ([year, month, day].some((part) => Number.isNaN(part))) return "عين تاريخ الانتهاء";
+
+    const date = new Date(year, month - 1, day);
+    return new Intl.DateTimeFormat("ar-SA", { year: "numeric", month: "long", day: "numeric" }).format(date);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const renderCalendar = () => {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+    const firstDayOfMonth = new Date(year, month, 1);
+    const startDayOfWeek = firstDayOfMonth.getDay(); // 0 (Sunday) - 6 (Saturday)
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const days: Array<number | null> = [];
+    for (let i = 0; i < startDayOfWeek; i += 1) {
+      days.push(null);
+    }
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      days.push(day);
+    }
+    while (days.length % 7 !== 0) {
+      days.push(null);
+    }
+
+    const weeks: Array<Array<number | null>> = [];
+    for (let i = 0; i < days.length; i += 7) {
+      weeks.push(days.slice(i, i + 7));
+    }
+
+    const weekdays = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+
+    const handleDaySelect = (day: number) => {
+      const isoDate = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      setForm((prev) => ({
+        ...prev,
+        expirationDate: isoDate,
+      }));
+      setIsCalendarOpen(false);
+    };
+
+    const selectedDay = (() => {
+      if (!form.expirationDate) return null;
+      const [selectedYear, selectedMonth, selectedDayValue] = form.expirationDate.split("-").map((p) => Number(p));
+      if (selectedYear === year && selectedMonth - 1 === month) {
+        return selectedDayValue;
+      }
+      return null;
+    })();
+
+    return (
+      <div
+        ref={calendarRef}
+        className="absolute top-full mt-2 w-full rounded-[var(--corner-radius-large)] border border-color-mode-text-icons-t-placeholder bg-white shadow-lg z-20 p-4"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <button
+            type="button"
+            onClick={() => setCalendarMonth(new Date(year, month - 1, 1))}
+            className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+            aria-label="الشهر السابق"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+          <div className="font-medium text-gray-800">
+            {new Intl.DateTimeFormat("ar-SA", { year: "numeric", month: "long" }).format(calendarMonth)}
+          </div>
+          <button
+            type="button"
+            onClick={() => setCalendarMonth(new Date(year, month + 1, 1))}
+            className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+            aria-label="الشهر التالي"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="grid grid-cols-7 gap-1 text-center text-sm text-gray-600">
+          {weekdays.map((day) => (
+            <div key={day} className="font-medium py-1">
+              {day}
+            </div>
+          ))}
+          {weeks.map((week, index) =>
+            week.map((day, dayIndex) => {
+              if (day === null) {
+                return (
+                  <div key={`empty-${index}-${dayIndex}`} className="py-2" />
+                );
+              }
+
+              const isSelected = day === selectedDay;
+              const isToday = (() => {
+                const today = new Date();
+                return (
+                  today.getFullYear() === year &&
+                  today.getMonth() === month &&
+                  today.getDate() === day
+                );
+              })();
+
+              return (
+                <button
+                  key={`day-${index}-${day}`}
+                  type="button"
+                  onClick={() => handleDaySelect(day)}
+                  className={`py-2 rounded-lg transition-colors ${
+                    isSelected
+                      ? "bg-[#5A66C1] text-white"
+                      : isToday
+                      ? "bg-gray-100 text-gray-900"
+                      : "hover:bg-gray-100 text-gray-700"
+                  }`}
+                >
+                  {day}
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const toggleCalendar = () => {
+    if (!isCalendarOpen) {
+      if (form.expirationDate) {
+        const [year, month] = form.expirationDate.split("-").map((p) => Number(p));
+        if (!Number.isNaN(year) && !Number.isNaN(month)) {
+          setCalendarMonth(new Date(year, month - 1, 1));
+        } else {
+          setCalendarMonth(new Date());
+        }
+      } else {
+        setCalendarMonth(new Date());
+      }
+    }
+    setIsCalendarOpen((prev) => !prev);
+  };
+
+  const resetForm = () => {
+    setForm({
+      discountCode: "",
+      discountPercentage: "0",
+      capacity: "0",
+      expirationDate: "",
+      categories: "",
+      beneficiary: "",
+    });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Submitting new coupon:", form);
+
+    if (!form.discountCode.trim()) {
+      addToast({
+        type: "error",
+        title: "كود الخصم مطلوب",
+        message: "يرجى إدخال كود الخصم قبل متابعة الإضافة.",
+      });
+      return;
+    }
+
+    if (!form.discountPercentage.trim()) {
+      addToast({
+        type: "error",
+        title: "نسبة الخصم مطلوبة",
+        message: "يرجى إدخال نسبة الخصم قبل متابعة الإضافة.",
+      });
+      return;
+    }
+
+    const beneficiaryValue = form.beneficiary.trim();
+    if (!beneficiaryValue) {
+      addToast({
+        type: "error",
+        title: "تحديد الجهة المستفيدة",
+        message: "يرجى اختيار الجهة المستفيدة من الكوبون.",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const percentageValue = form.discountPercentage.trim();
+      const parsedPercentage =
+        percentageValue.length > 0 && !Number.isNaN(Number(percentageValue))
+          ? Number(percentageValue)
+          : null;
+
+      const capacityValue = form.capacity.trim();
+      const parsedCapacity =
+        capacityValue.length > 0 && !Number.isNaN(Number(capacityValue))
+          ? Number(capacityValue)
+          : null;
+
+      const expireDateValue = form.expirationDate.trim().length
+        ? form.expirationDate.trim()
+        : null;
+
+      const mappedCategories =
+        form.categories && form.categories.trim().length
+          ? form.categories.trim()
+          : null;
+
+      let isCompany: boolean | null = null;
+      if (beneficiaryValue === "شركات") {
+        isCompany = true;
+      } else if (beneficiaryValue === "افراد") {
+        isCompany = false;
+      } else {
+        isCompany = null;
+      }
+
+      const payload: Record<string, any> = {
+        code: form.discountCode.trim() || null,
+        percentage: parsedPercentage,
+        precentage: parsedPercentage,
+        minmumValueToApplyCoupon: parsedCapacity,
+        expireDate: expireDateValue,
+        categories: mappedCategories,
+        beneficiary: beneficiaryValue || null,
+        isCompany,
+        capacity: parsedCapacity,
+        numberOfUsers: null,
+        usage: null,
+      };
+
+      await createCouponWithSchema(payload);
+
+      addToast({
+        type: "success",
+        title: "تمت الإضافة",
+        message: "تم إضافة الكوبون الجديد بنجاح.",
+      });
+
+      resetForm();
+      setTimeout(() => navigate(-1), 600);
+    } catch (error: any) {
+      console.error("Error adding coupon:", error);
+      addToast({
+        type: "error",
+        title: "خطأ",
+        message:
+          error?.message || "حدث خطأ أثناء إضافة الكوبون. يرجى المحاولة مرة أخرى.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const categoryOptions = [
@@ -114,17 +384,18 @@ const AddPetrolifeCoupon = () => {
               تاريخ الانتهاء
             </label>
             <div className="relative w-full">
-              <input
-                type="text"
-                value={form.expirationDate}
-                readOnly
-                onClick={handleDateChange}
-                className="w-full pr-10 py-2.5 pl-4 border-[0.5px] border-solid border-color-mode-text-icons-t-placeholder rounded-[var(--corner-radius-small)] focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                placeholder="عين تاريخ الانتهاء"
-                dir="rtl"
-              />
-              <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600">&lt;</span>
+              <button
+                type="button"
+                onClick={toggleCalendar}
+                className="w-full pr-10 py-2.5 pl-4 border-[0.5px] border-solid border-color-mode-text-icons-t-placeholder rounded-[var(--corner-radius-small)] text-right focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors bg-white"
+              >
+                <span className="text-[length:var(--body-body-2-font-size)] text-color-mode-text-icons-t-sec">
+                  {getDisplayDate()}
+                </span>
+              </button>
+              <Calendar className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-600">&lt;</span>
+              {isCalendarOpen && renderCalendar()}
             </div>
           </div>
 
@@ -156,8 +427,10 @@ const AddPetrolifeCoupon = () => {
         <div className="w-full flex justify-end">
           <button
             type="submit"
-            className="px-5 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors"
+            disabled={isSubmitting}
+            className="px-5 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors disabled:bg-[#5A66C1]/60 disabled:cursor-not-allowed flex items-center gap-2"
           >
+            {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
             إضافة الكوبون
           </button>
         </div>
