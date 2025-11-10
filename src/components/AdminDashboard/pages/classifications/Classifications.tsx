@@ -1,52 +1,11 @@
 import { useState, useMemo, useEffect } from "react";
-import { Table, Pagination, ExportButton } from "../../../shared";
-import { CirclePlus, MoreVertical, Eye, Trash2, X, FileText, Upload, Download } from "lucide-react";
+import { Table, Pagination, ExportButton, LoadingSpinner } from "../../../shared";
+import { CirclePlus, MoreVertical, Eye, Trash2, X, Upload, Download } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { StatusToggle } from "../../../shared";
-
-// Mock data for classifications
-const mockClassifications = [
-  {
-    id: 1,
-    number: 1,
-    arabicName: "زيوت",
-    englishName: "Oils",
-    subClassificationsCount: 4,
-    creator: {
-      name: "أحمد محمد",
-      avatar: undefined,
-    },
-    creationDate: "21 فبراير 2025 - 5:05 ص",
-    status: true,
-  },
-  {
-    id: 2,
-    number: 2,
-    arabicName: "وقود",
-    englishName: "Fuel",
-    subClassificationsCount: 6,
-    creator: {
-      name: "أحمد محمد",
-      avatar: undefined,
-    },
-    creationDate: "21 فبراير 2025 - 5:05 ص",
-    status: true,
-  },
-  {
-    id: 3,
-    number: 3,
-    arabicName: "غسيل",
-    englishName: "washing",
-    subClassificationsCount: 5,
-    creator: {
-      name: "أحمد محمد",
-      avatar: undefined,
-    },
-    creationDate: "21 فبراير 2025 - 5:05 ص",
-    status: true,
-  },
-];
+import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { db } from "../../../../config/firebase";
 
 // Action Menu Component for each row
 interface ActionMenuProps {
@@ -184,6 +143,108 @@ const Classifications = () => {
   const navigate = useNavigate();
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [categories, setCategories] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const extractText = (value: any): string => {
+    if (value === null || value === undefined) return "-";
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      return trimmed.length ? trimmed : "-";
+    }
+    if (typeof value === "number") return value.toString();
+    if (Array.isArray(value)) {
+      const combined = value
+        .map((entry) => extractText(entry))
+        .filter((entry) => entry !== "-")
+        .join("، ");
+      return combined.length ? combined : "-";
+    }
+    if (typeof value === "object") {
+      if (value.ar && typeof value.ar === "string" && value.ar.trim().length) {
+        return value.ar.trim();
+      }
+      if (value.en && typeof value.en === "string" && value.en.trim().length) {
+        return value.en.trim();
+      }
+      if (value.name) {
+        return extractText(value.name);
+      }
+      if (value.label) {
+        return extractText(value.label);
+      }
+    }
+    return "-";
+  };
+
+  const formatDateValue = (value: any): string => {
+    if (!value) return "-";
+
+    try {
+      const date =
+        typeof value?.toDate === "function"
+          ? value.toDate()
+          : value instanceof Date
+          ? value
+          : typeof value === "number"
+          ? new Date(value)
+          : typeof value === "string"
+          ? new Date(value)
+          : value?.seconds
+          ? new Date(value.seconds * 1000)
+          : null;
+
+      if (!date || Number.isNaN(date.getTime())) {
+        return "-";
+      }
+
+      const day = `${date.getDate()}`.padStart(2, "0");
+      const month = `${date.getMonth() + 1}`.padStart(2, "0");
+      const year = date.getFullYear();
+      return `${day}/${month}/${year}`;
+    } catch (err) {
+      console.warn("Failed to format category date:", value, err);
+      return "-";
+    }
+  };
+
+  const normalizeId = (value: any): string | null => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === "string") return value;
+    if (typeof value === "number") return value.toString();
+    if (typeof value === "object") {
+      if (typeof value.id === "string" && value.id.trim().length) return value.id;
+      if (typeof value.id === "number") return value.id.toString();
+      if (typeof value._keyPath === "string") return value._keyPath;
+      if (typeof value.path === "string") return value.path;
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    setIsLoading(true);
+
+    const categoriesRef = collection(db, "categories");
+    const q = query(categoriesRef, orderBy("createdDate", "desc"));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const data = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        setCategories(data);
+        setIsLoading(false);
+      },
+      (error) => {
+        console.error("❌ Error listening to categories:", error);
+        setIsLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
 
   const columns = useMemo(
     () => [
@@ -203,11 +264,11 @@ const Classifications = () => {
         label: "حالة التصنيف",
         width: "min-w-[150px]",
         priority: "high",
-        render: (value: boolean) => (
+        render: (_: any, row: any) => (
           <StatusToggle
-            isActive={value}
+            isActive={row.isActive}
             onToggle={() => {}}
-            statusText={value ? "معروض" : "غير معروض"}
+            statusText={row.statusLabel}
           />
         ),
       },
@@ -240,8 +301,8 @@ const Classifications = () => {
         ),
       },
       {
-        key: "subClassificationsCount",
-        label: "التصنيفات الفرعي",
+        key: "subCategories",
+        label: "التصنيفات الفرعية",
         width: "min-w-[120px]",
         priority: "high",
       },
@@ -252,7 +313,7 @@ const Classifications = () => {
         priority: "high",
       },
       {
-        key: "arabicName",
+        key: "mainCategory",
         label: "التصنيف الرئيسي",
         width: "min-w-[150px]",
         priority: "high",
@@ -267,13 +328,83 @@ const Classifications = () => {
     [navigate]
   );
 
+  const transformedCategories = useMemo(() => {
+    if (!categories.length) return [];
+
+    const parentChildMap = new Map<string, any[]>();
+
+    categories.forEach((category) => {
+      const parentId = normalizeId(category.parentId);
+      if (!parentId) return;
+      const existing = parentChildMap.get(parentId) ?? [];
+      existing.push(category);
+      parentChildMap.set(parentId, existing);
+    });
+
+    return categories.map((category, index) => {
+      const categoryId = category.id ?? normalizeId(category.refId) ?? `temp-${index}`;
+      const parentId = normalizeId(category.parentId);
+      const children = parentChildMap.get(categoryId) ?? [];
+
+      let subCategoriesDisplay = "-";
+      if (parentId === null) {
+        subCategoriesDisplay = "Main Category";
+      } else if (children.length > 0) {
+        const childNames = children
+          .map((child) => extractText(child?.name?.ar ?? child?.name?.en ?? child?.label))
+          .filter((name) => name !== "-");
+        subCategoriesDisplay = childNames.length
+          ? childNames.join("، ")
+          : `${children.length}`;
+      } else {
+        subCategoriesDisplay = "0";
+      }
+
+      const creatorName =
+        category?.createdUserEmail ||
+        category?.createdUserId ||
+        "-";
+
+      const categoryType = extractText(category?.categoryTypeEnum ?? category?.majorTypeEnum ?? category?.label);
+      const englishName = extractText(category?.name?.en ?? category?.name);
+      const isActive =
+        typeof category?.isActive === "boolean" ? category.isActive : true;
+
+      return {
+        id: categoryId,
+        number: index + 1,
+        mainCategory: categoryType,
+        englishName,
+        subCategories: subCategoriesDisplay,
+        creator: { name: creatorName },
+        creationDate: formatDateValue(category?.createdDate),
+        isActive,
+        statusLabel: isActive ? "فعال" : "غير فعال",
+      };
+    });
+  }, [categories]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [transformedCategories.length]);
+
+  useEffect(() => {
+    const totalPages = Math.max(
+      1,
+      Math.ceil(transformedCategories.length / itemsPerPage)
+    );
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, transformedCategories.length, itemsPerPage]);
+
   const paginatedData = useMemo(
     () =>
-      mockClassifications.slice(
+      transformedCategories.slice(
         (currentPage - 1) * itemsPerPage,
         currentPage * itemsPerPage
       ),
-    [currentPage]
+    [currentPage, transformedCategories]
   );
 
   const handleExport = (format: string) => {
@@ -291,7 +422,7 @@ const Classifications = () => {
         <div className="flex items-center justify-end gap-1.5" dir="rtl">
           <X className="w-5 h-5 text-gray-500" />
           <h1 className="font-subtitle-subtitle-2 text-[length:var(--subtitle-subtitle-2-font-size)] text-color-mode-text-icons-t-sec">
-            التصنيفات ({mockClassifications.length})
+            التصنيفات ({transformedCategories.length})
           </h1>
         </div>
         {/* Buttons on left */}
@@ -314,14 +445,22 @@ const Classifications = () => {
       </div>
 
       {/* Table Section */}
-      <div className="w-full overflow-x-auto">
-        <Table columns={columns} data={paginatedData} />
-      </div>
+      {isLoading ? (
+        <div className="w-full flex justify-center items-center py-12">
+          <LoadingSpinner message="جاري تحميل التصنيفات..." />
+        </div>
+      ) : (
+        <div className="w-full overflow-x-auto">
+          <Table columns={columns} data={paginatedData} />
+        </div>
+      )}
 
       {/* Pagination */}
       <Pagination
         currentPage={currentPage}
-        totalPages={Math.ceil(mockClassifications.length / itemsPerPage) || 1}
+        totalPages={
+          Math.max(1, Math.ceil(transformedCategories.length / itemsPerPage)) || 1
+        }
         onPageChange={setCurrentPage}
       />
     </div>
