@@ -1,8 +1,9 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { MoveLeft, Upload, Cloud, Loader2 } from "lucide-react";
+import { MoveLeft, Cloud, Loader2 } from "lucide-react";
 import { useForm } from "../../../../hooks/useForm";
 import { Input, Select } from "../../../../components/shared/Form";
+import { createCategory } from "../../../../services/firestore";
 
 const initialValues = {
   arabicName: "",
@@ -74,21 +75,17 @@ const AddClassification = () => {
     form.setIsSubmitting(true);
 
     try {
-      // Prepare classification data
-      const classificationData = {
+      await createCategory({
         arabicName: form.values.arabicName,
         englishName: form.values.englishName,
         accountingSystemId: form.values.accountingSystemId,
-        priceForIndividuals: form.values.priceForIndividuals,
-        priceForCompanies: form.values.priceForCompanies,
-        productImage: form.values.productImage,
-        unitOfMeasurement: form.values.unitOfMeasurement,
-      };
-
-      console.log("Submitting classification data:", classificationData);
-
-      // TODO: Add classification to Firestore or API
-      // await addClassification(classificationData);
+        unitOfMeasurement:
+          form.values.unitOfMeasurement?.toLowerCase?.() ??
+          form.values.unitOfMeasurement,
+        individualPrice: form.values.priceForIndividuals,
+        companyPrice: form.values.priceForCompanies,
+        imageFile: form.values.productImage,
+      });
 
       // Reset form
       form.resetForm();

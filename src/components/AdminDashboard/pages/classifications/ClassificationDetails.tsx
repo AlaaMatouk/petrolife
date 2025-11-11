@@ -1,21 +1,87 @@
+import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Info } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { LoadingSpinner } from "../../../shared";
+import {
+  fetchAllCategories,
+  fetchCategoryById,
+  fetchSubcategoriesByParentId,
+} from "../../../../services/firestore";
 
-// Mock classification data
-const mockClassificationDetails = {
-  id: "1",
-  arabicName: "وقود",
-  englishName: "Fuels",
-  subClassifications: [
-    { id: "1", name: "ديزل", nameEn: "Diesel" },
-    { id: "2", name: "بنزين 91", nameEn: "Benzene 91" },
-    { id: "3", name: "بنزين 95", nameEn: "Benzene 95" },
-  ],
+const extractLocalizedText = (value: any): string => {
+  if (!value) return "-";
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : "-";
+  }
+
+  if (typeof value === "number") {
+    return value.toString();
+  }
+
+  if (typeof value === "object") {
+    if (typeof value.ar === "string" && value.ar.trim().length) {
+      return value.ar.trim();
+    }
+    if (typeof value.en === "string" && value.en.trim().length) {
+      return value.en.trim();
+    }
+    if (value.name) {
+      return extractLocalizedText(value.name);
+    }
+    if (value.label) {
+      return extractLocalizedText(value.label);
+    }
+  }
+
+  return "-";
+};
+
+const normalizeReferenceId = (value: any): string | null => {
+  if (value === null || value === undefined) return null;
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }
+
+  if (typeof value === "number") {
+    return value.toString();
+  }
+
+  if (typeof value === "object") {
+    if (typeof value.id === "string" && value.id.trim().length) {
+      return value.id.trim();
+    }
+
+    if (typeof value.id === "number") {
+      return value.id.toString();
+    }
+
+    if (typeof value.path === "string" && value.path.trim().length) {
+      const segments = value.path.split("/");
+      return segments[segments.length - 1] || null;
+    }
+
+    if (typeof value._keyPath === "string" && value._keyPath.trim().length) {
+      const segments = value._keyPath.split("/");
+      return segments[segments.length - 1] || null;
+    }
+  }
+
+  return null;
 };
 
 const ClassificationDetails = () => {
   const navigate = useNavigate();
   const { id } = useParams();
+  const location = useLocation();
+  const locationState = (location.state as any) || {};
+  const [category, setCategory] = useState<any | null>(null);
+  const [subcategories, setSubcategories] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Helper function to get value or dash
   const getValueOrDash = (value: any): string => {
@@ -25,12 +91,109 @@ const ClassificationDetails = () => {
     return String(value);
   };
 
-  // Extract classification information
-  const classificationData = {
-    arabicName: getValueOrDash(mockClassificationDetails.arabicName),
-    englishName: getValueOrDash(mockClassificationDetails.englishName),
-    subClassifications: mockClassificationDetails.subClassifications,
-  };
+  useEffect(() => {
+    const loadClassification = async () => {
+      if (!id) {
+        setError("معرف التصنيف غير متوفر.");
+        setIsLoading(false);
+        return;
+      }
+
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        let categoryData =
+          locationState?.category ??
+          (await fetchCategoryById(id));
+
+        if (!categoryData) {
+          setError("لم يتم العثور على بيانات لهذا التصنيف.");
+          setCategory(null);
+          setSubcategories([]);
+          return;
+        }
+
+        setCategory(categoryData);
+
+        let subcategoryDocs: any[] = [];
+        if (Array.isArray(locationState?.subcategories)) {
+          subcategoryDocs = locationState.subcategories;
+        } else {
+          subcategoryDocs = await fetchSubcategoriesByParentId(id);
+
+          if (!subcategoryDocs.length) {
+            const allCategories = await fetchAllCategories();
+            subcategoryDocs = allCategories.filter((doc) => {
+              const normalizedParent = normalizeReferenceId(doc.parentId);
+              return normalizedParent === id;
+            });
+          }
+        }
+
+        setSubcategories(subcategoryDocs);
+      } catch (err) {
+        console.error("Failed to load classification details:", err);
+        setError("فشل في تحميل بيانات التصنيف.");
+        setCategory(null);
+        setSubcategories([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadClassification();
+  }, [id]);
+
+  const classificationData = useMemo(() => {
+    const arabicName =
+      extractLocalizedText(category?.name?.ar ?? category?.name ?? category?.label) ??
+      "-";
+    const englishName =
+      extractLocalizedText(category?.name?.en ?? category?.name) ?? "-";
+
+    const subClassificationList = subcategories.map((sub) => ({
+      id: sub.id ?? "",
+      name:
+        extractLocalizedText(
+          sub?.name?.ar ?? sub?.name ?? sub?.label ?? sub?.categoryName
+        ) ?? "-",
+      nameEn:
+        extractLocalizedText(
+          sub?.name?.en ?? sub?.englishName ?? sub?.label ?? sub?.name
+        ) ?? "-",
+    }));
+
+    return {
+      arabicName: getValueOrDash(arabicName),
+      englishName: getValueOrDash(englishName),
+      subClassifications: subClassificationList,
+    };
+  }, [category, subcategories]);
+
+  if (isLoading) {
+    return (
+      <div className="flex w-full justify-center py-16">
+        <LoadingSpinner message="جاري تحميل بيانات التصنيف..." />
+      </div>
+    );
+  }
+
+  if (error || !category) {
+    return (
+      <div className="flex flex-col items-center justify-center w-full py-20 gap-4">
+        <div className="text-red-600 text-lg [direction:rtl]">
+          {error || "لا توجد بيانات لهذا التصنيف."}
+        </div>
+        <button
+          onClick={() => navigate(-1)}
+          className="px-4 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white"
+        >
+          الرجوع
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col w-full items-start gap-5" dir="rtl">
@@ -43,10 +206,10 @@ const ClassificationDetails = () => {
         <div className="flex items-center justify-between w-full">
           {/* Title on right */}
           <div className="flex items-center justify-end gap-1.5">
+            <Info className="w-5 h-5 text-gray-500" />
             <h1 className="font-subtitle-subtitle-2 text-[length:var(--subtitle-subtitle-2-font-size)] text-color-mode-text-icons-t-sec">
               معلومات التصنيف
             </h1>
-            <Info className="w-5 h-5 text-gray-500" />
           </div>
           {/* Back button on left */}
           <button

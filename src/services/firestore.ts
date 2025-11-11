@@ -2916,6 +2916,154 @@ export const fetchAllCategories = async (): Promise<any[]> => {
 };
 
 /**
+ * Fetch a single category by ID from Firestore
+ * @param categoryId - Category document ID
+ * @returns Promise with the category data or null if not found
+ */
+export const fetchCategoryById = async (
+  categoryId: string
+): Promise<any | null> => {
+  try {
+    if (!categoryId) {
+      console.warn("⚠️ No categoryId provided to fetchCategoryById");
+      return null;
+    }
+
+    const categoryRef = doc(db, "categories", categoryId);
+    const snapshot = await getDoc(categoryRef);
+
+    if (!snapshot.exists()) {
+      console.warn(`⚠️ No category found with ID: ${categoryId}`);
+      return null;
+    }
+
+    return {
+      id: snapshot.id,
+      ...snapshot.data(),
+    };
+  } catch (error) {
+    console.error("❌ Error fetching category by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch subcategories for a given parent category ID
+ * @param parentId - Parent category document ID
+ * @returns Promise with array of subcategory documents
+ */
+export const fetchSubcategoriesByParentId = async (
+  parentId: string
+): Promise<any[]> => {
+  try {
+    if (!parentId) {
+      console.warn("⚠️ No parentId provided to fetchSubcategoriesByParentId");
+      return [];
+    }
+
+    const categoriesCollection = collection(db, "categories");
+    const subcategoriesQuery = query(
+      categoriesCollection,
+      where("parentId", "==", parentId)
+    );
+    const snapshot = await getDocs(subcategoriesQuery);
+
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+  } catch (error) {
+    console.error(
+      `❌ Error fetching subcategories for parentId ${parentId}:`,
+      error
+    );
+    throw error;
+  }
+};
+
+/**
+ * Create a new category document in Firestore
+ * Ensures all standard fields are included and preserves base structure
+ */
+export const createCategory = async ({
+  arabicName,
+  englishName,
+  accountingSystemId,
+  unitOfMeasurement,
+  individualPrice,
+  companyPrice,
+  imageFile,
+  parentCategoryId,
+  categoryType = "essential",
+}: {
+  arabicName: string;
+  englishName: string;
+  accountingSystemId: string;
+  unitOfMeasurement: string;
+  individualPrice: string | number;
+  companyPrice: string | number;
+  imageFile?: File | null;
+  parentCategoryId?: string | null;
+  categoryType?: string;
+}): Promise<{ id: string }> => {
+  try {
+    const currentUser = auth.currentUser;
+
+    const categoriesCollection = collection(db, "categories");
+    const randomRefId = Math.floor(100000000 + Math.random() * 900000000);
+
+    let imageUrl: string | null = null;
+
+    if (imageFile) {
+      const storagePath = `categories/${Date.now()}_${imageFile.name}`;
+      const storageRef = ref(storage, storagePath);
+      await uploadBytes(storageRef, imageFile);
+      imageUrl = await getDownloadURL(storageRef);
+    }
+
+    const hasParent =
+      parentCategoryId !== undefined &&
+      parentCategoryId !== null &&
+      parentCategoryId !== "";
+
+    const payload: Record<string, any> = {
+      categoryTypeEnum: hasParent ? categoryType : "essential",
+      createdDate: serverTimestamp(),
+      createdUserEmail: currentUser?.email ?? null,
+      createdUserId: currentUser?.uid ?? null,
+      id: null,
+      label: englishName || null,
+      majorTypeEnum: unitOfMeasurement || null,
+      name: {
+        ar: arabicName || null,
+        en: englishName || null,
+      },
+      onyxProductId: null,
+      parentId: hasParent
+        ? parentCategoryId
+        : accountingSystemId || null,
+      refId: randomRefId.toString(),
+      individualPrice:
+        individualPrice !== undefined && individualPrice !== null
+          ? Number(individualPrice)
+          : null,
+      companyPrice:
+        companyPrice !== undefined && companyPrice !== null
+          ? Number(companyPrice)
+          : null,
+      image: imageUrl,
+    };
+
+    const docRef = await addDoc(categoriesCollection, payload);
+
+    return { id: docRef.id };
+  } catch (error) {
+    console.error("❌ Error creating category:", error);
+    throw error;
+  }
+};
+
+/**
  * Get a single service by ID from Firestore
  * @param serviceId - Service document ID
  * @returns Promise with the service data
