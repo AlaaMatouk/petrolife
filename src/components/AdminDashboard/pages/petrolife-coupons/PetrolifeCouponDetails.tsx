@@ -259,8 +259,8 @@ const PetrolifeCouponDetails = (): JSX.Element => {
     });
   }, [selectedTimeFilter]);
 
-  const columns = useMemo(
-    () => [
+  const columns = useMemo(() => {
+    const baseColumns = [
       {
         key: "number",
         label: "الرقم",
@@ -331,9 +331,10 @@ const PetrolifeCouponDetails = (): JSX.Element => {
           </button>
         ),
       },
-    ],
-    []
-  );
+    ];
+
+    return [...baseColumns].reverse();
+  }, []);
 
 
   const paginated = useMemo(

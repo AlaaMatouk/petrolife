@@ -1,30 +1,25 @@
-import { useState, useMemo } from "react";
-import { Table, Pagination, ExportButton } from "../../../shared";
-import { Globe, CirclePlus, MoreVertical, Eye, Trash2, MapPin, Building2 } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { Table, Pagination, ExportButton, LoadingSpinner } from "../../../shared";
+import { Globe, CirclePlus, MoreVertical, Eye, Trash2, MapPin, Building2, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
-
-// Mock data for 48 countries
-const mockCountries = Array.from({ length: 48 }).map((_, i) => ({
-  id: i + 1,
-  countryNameAr: "السعودية",
-  countryNameEn: "Saudi Arabia",
-  numberOfCities: 12,
-  numberOfRegions: 17,
-  creator: {
-    name: "أحمد محمد",
-    avatar: undefined,
-  },
-  creationDate: "21 فبراير 2025 - 5:05 ص",
-}));
+import {
+  fetchAllCountries,
+  fetchAllCities,
+  fetchAllAreas,
+  createCity,
+  createArea,
+} from "../../../../services/firestore";
 
 // Action Menu Component for each row
 interface ActionMenuProps {
   item: any;
-  navigate: any;
+  onView: (item: any) => void;
+  onAddCity: (item: any) => void;
+  onAddRegion: (item: any) => void;
 }
 
-const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
+const ActionMenu = ({ item, onView, onAddCity, onAddRegion }: ActionMenuProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [buttonRef, setButtonRef] = useState<HTMLButtonElement | null>(null);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
@@ -45,13 +40,13 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
 
   const handleAction = (action: string) => {
     if (action === "view") {
-      navigate(`/admin-countries/${item.id}`);
+      onView(item);
     } else if (action === "add-city") {
-      navigate(`/admin-countries/${item.id}/add-city`);
+      onAddCity(item);
     } else if (action === "add-region") {
-      navigate(`/admin-countries/${item.id}/add-region`);
+      onAddRegion(item);
     } else if (action === "delete") {
-      console.log("Delete country:", item.id);
+      console.log("Delete country:", item.rowId ?? item.id);
     }
     setIsOpen(false);
   };
@@ -121,6 +116,69 @@ const Countries = () => {
   const navigate = useNavigate();
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [countries, setCountries] = useState<any[]>([]);
+  const [cities, setCities] = useState<any[]>([]);
+  const [areas, setAreas] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isCityModalOpen, setIsCityModalOpen] = useState(false);
+  const [isRegionModalOpen, setIsRegionModalOpen] = useState(false);
+  const [selectedCountry, setSelectedCountry] = useState<any | null>(null);
+  const [cityForm, setCityForm] = useState({
+    cityNameAr: "",
+    cityNameEn: "",
+  });
+  const [regionForm, setRegionForm] = useState({
+    regionNameAr: "",
+    regionNameEn: "",
+    cityId: "",
+  });
+  const [isSubmittingCity, setIsSubmittingCity] = useState(false);
+  const [isSubmittingRegion, setIsSubmittingRegion] = useState(false);
+
+  const refreshCities = async () => {
+    try {
+      const citiesData = await fetchAllCities();
+      setCities(citiesData);
+    } catch (error) {
+      console.error("Failed to refresh cities:", error);
+    }
+  };
+
+  const refreshAreas = async () => {
+    try {
+      const areasData = await fetchAllAreas();
+      setAreas(areasData);
+    } catch (error) {
+      console.error("Failed to refresh areas:", error);
+    }
+  };
+
+  useEffect(() => {
+    const load = async () => {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const [countriesData, citiesData, areasData] = await Promise.all([
+          fetchAllCountries(),
+          fetchAllCities(),
+          fetchAllAreas(),
+        ]);
+
+        setCountries(countriesData);
+        setCities(citiesData);
+        setAreas(areasData);
+      } catch (err) {
+        console.error("Failed to load countries/cities:", err);
+        setError("فشل في تحميل بيانات الدول.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    load();
+  }, []);
 
   const columns = useMemo(
     () => [
@@ -131,37 +189,39 @@ const Countries = () => {
         priority: "high",
         render: (_: any, row: any) => (
           <div className="flex items-center justify-center">
-            <ActionMenu item={row} navigate={navigate} />
+            <ActionMenu
+              item={row}
+              onView={(item) => {
+                const targetId = item.rowId ?? item.id;
+                navigate(`/admin-countries/${targetId}`, {
+                  state: { country: item.raw },
+                });
+              }}
+              onAddCity={(item) => {
+                setSelectedCountry(item);
+                setCityForm({ cityNameAr: "", cityNameEn: "" });
+                setIsCityModalOpen(true);
+              }}
+              onAddRegion={(item) => {
+                setSelectedCountry(item);
+                setRegionForm({ regionNameAr: "", regionNameEn: "", cityId: "" });
+                setIsRegionModalOpen(true);
+              }}
+            />
           </div>
         ),
       },
       {
         key: "creationDate",
         label: "تاريخ الانشاء",
-        width: "min-w-[180px]",
+        width: "min-w-[150px]",
         priority: "high",
       },
       {
         key: "creator",
         label: "المنشئ",
-        width: "min-w-[150px]",
-        priority: "medium",
-        render: (value: { name: string; avatar?: string }) => (
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center text-white font-semibold text-sm">
-              {value.avatar ? (
-                <img
-                  src={value.avatar}
-                  alt={value.name}
-                  className="w-full h-full rounded-full object-cover"
-                />
-              ) : (
-                value.name.charAt(0)
-              )}
-            </div>
-            <span className="font-medium text-gray-900">{value.name}</span>
-          </div>
-        ),
+        width: "min-w-[140px]",
+        priority: "high",
       },
       {
         key: "numberOfRegions",
@@ -188,7 +248,7 @@ const Countries = () => {
         priority: "high",
       },
       {
-        key: "id",
+        key: "displayIndex",
         label: "الرقم",
         width: "min-w-[80px]",
         priority: "high",
@@ -197,18 +257,128 @@ const Countries = () => {
     [navigate]
   );
 
-  const paginatedData = useMemo(
-    () =>
-      mockCountries.slice(
-        (currentPage - 1) * itemsPerPage,
-        currentPage * itemsPerPage
-      ),
-    [currentPage]
-  );
+  const paginatedData = useMemo(() => {
+    return countries
+      .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+      .map((country, index) => {
+        const countryDocId = country?.id ?? country?.docId ?? `temp-${index}`;
+
+        const countryNameAr =
+          (country?.name?.ar && typeof country.name.ar === "string"
+            ? country.name.ar.trim()
+            : "") ||
+          (typeof country?.name === "string" ? country.name.trim() : "") ||
+          "-";
+
+        const countryNameEn =
+          (country?.name?.en && typeof country.name.en === "string"
+            ? country.name.en.trim()
+            : "") ||
+          (typeof country?.label === "string" ? country.label.trim() : "") ||
+          (typeof country?.name === "string" ? country.name.trim() : "") ||
+          "-";
+
+        const citiesCount = cities.filter((city) => {
+          const target =
+            city?.countryId ??
+            city?.country?.id ??
+            (typeof city?.country === "string" ? city.country : null);
+          return target && String(target) === String(countryDocId);
+        }).length;
+
+        const areasCount = areas.filter((area) => {
+          const areaCountryId =
+            area?.city?.country?.id ??
+            area?.city?.countryId ??
+            area?.country?.id ??
+            area?.countryId ??
+            (typeof area?.city?.country === "string"
+              ? area.city.country
+              : undefined);
+
+          return areaCountryId && String(areaCountryId) === String(countryDocId);
+        }).length;
+
+        const creatorId =
+          country?.createdUserEmail ??
+          country?.createdUserId ??
+          country?.createdBy ??
+          "-";
+
+        let formattedDate = "-";
+        const createdDate =
+          country?.createdDate ??
+          country?.createdAt ??
+          country?.timestamp ??
+          country?.dateCreated;
+
+        if (createdDate) {
+          try {
+            const date =
+              typeof createdDate?.toDate === "function"
+                ? createdDate.toDate()
+                : createdDate instanceof Date
+                ? createdDate
+                : typeof createdDate === "number"
+                ? new Date(createdDate)
+                : typeof createdDate === "string"
+                ? new Date(createdDate)
+                : createdDate?.seconds
+                ? new Date(createdDate.seconds * 1000)
+                : null;
+
+            if (date && !Number.isNaN(date.getTime())) {
+              formattedDate = new Intl.DateTimeFormat("ar-SA", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              }).format(date);
+            }
+          } catch (err) {
+            console.warn("Failed to format country date:", createdDate, err);
+          }
+        }
+
+        return {
+          id: countryDocId,
+          displayIndex: index + 1 + (currentPage - 1) * itemsPerPage,
+          rowId: countryDocId,
+          countryNameAr,
+          countryNameEn,
+          numberOfCities: citiesCount,
+          numberOfRegions: areasCount,
+          creator: creatorId || "-",
+          creationDate: formattedDate,
+          raw: country,
+        };
+      });
+  }, [countries, cities, currentPage, itemsPerPage]);
 
   const handleExport = (format: string) => {
     console.log(`Exporting countries as ${format}`);
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex w-full justify-center py-16">
+        <LoadingSpinner message="جاري تحميل بيانات الدول..." />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center w-full py-20 gap-4">
+        <div className="text-red-600 text-lg [direction:rtl]">{error}</div>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-4 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A55AE] text-white"
+        >
+          إعادة المحاولة
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -221,7 +391,7 @@ const Countries = () => {
         <div className="flex items-center justify-end gap-1.5" dir="rtl">
           <Globe className="w-5 h-5 text-gray-500" />
           <h1 className="font-subtitle-subtitle-2 text-[length:var(--subtitle-subtitle-2-font-size)] text-color-mode-text-icons-t-sec">
-            البلدان ({mockCountries.length})
+            البلدان ({countries.length})
           </h1>
         </div>
         {/* Buttons on left */}
@@ -251,9 +421,278 @@ const Countries = () => {
       {/* Pagination */}
       <Pagination
         currentPage={currentPage}
-        totalPages={Math.ceil(mockCountries.length / itemsPerPage) || 1}
+        totalPages={Math.ceil(countries.length / itemsPerPage) || 1}
         onPageChange={setCurrentPage}
       />
+
+      {isCityModalOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 px-4">
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!selectedCountry) {
+                  return;
+                }
+
+                setIsSubmittingCity(true);
+
+                try {
+                  const countryId = selectedCountry.rowId ?? selectedCountry.id;
+                  const countryRaw = selectedCountry.raw ?? {};
+                  const countryNameAr =
+                    countryRaw?.name?.ar ?? selectedCountry.countryNameAr ?? null;
+                  const countryNameEn =
+                    countryRaw?.name?.en ?? selectedCountry.countryNameEn ?? null;
+
+                  await createCity({
+                    countryId,
+                    countryNameAr,
+                    countryNameEn,
+                    cityNameAr: cityForm.cityNameAr.trim(),
+                    cityNameEn: cityForm.cityNameEn.trim(),
+                  });
+
+                  await refreshCities();
+                  setCityForm({ cityNameAr: "", cityNameEn: "" });
+                  setIsCityModalOpen(false);
+                } catch (error) {
+                  console.error("Failed to create city:", error);
+                } finally {
+                  setIsSubmittingCity(false);
+                }
+              }}
+              className="bg-white w-full max-w-[520px] rounded-[24px] shadow-2xl overflow-hidden flex flex-col"
+              dir="rtl"
+            >
+              <header className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <h2 className="text-[18px] font-semibold text-gray-800">
+                  إضافة مدينة جديدة
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setIsCityModalOpen(false)}
+                  className="p-1 rounded-full hover:bg-gray-100 transition-colors"
+                >
+                  <ArrowLeft className="w-4 h-4 text-gray-500" />
+                </button>
+              </header>
+              <div className="px-6 py-6 flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm text-gray-600 text-right">
+                    اسم المدينة بالعربي
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={cityForm.cityNameAr}
+                    onChange={(event) =>
+                      setCityForm((prev) => ({
+                        ...prev,
+                        cityNameAr: event.target.value,
+                      }))
+                    }
+                    className="h-11 rounded-[12px] border border-gray-300 px-3 text-right text-sm focus:outline-none focus:ring-2 focus:ring-[#5A66C1]"
+                    placeholder="المدينة بالعربي هنا"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm text-gray-600 text-right">
+                    اسم المدينة بالانجليزي
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={cityForm.cityNameEn}
+                    onChange={(event) =>
+                      setCityForm((prev) => ({
+                        ...prev,
+                        cityNameEn: event.target.value,
+                      }))
+                    }
+                    className="h-11 rounded-[12px] border border-gray-300 px-3 text-right text-sm focus:outline-none focus:ring-2 focus:ring-[#5A66C1]"
+                    placeholder="المدينة بالانجليزي هنا"
+                  />
+                </div>
+              </div>
+              <footer className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setIsCityModalOpen(false)}
+                  className="px-6 h-10 rounded-[10px] border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  إغلاق
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingCity}
+                  className="px-6 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isSubmittingCity ? "جاري الإضافة..." : "إضافة المدينة"}
+                </button>
+              </footer>
+            </form>
+          </div>,
+          document.body
+        )}
+
+      {isRegionModalOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 px-4">
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!selectedCountry || !regionForm.cityId) {
+                  return;
+                }
+
+                setIsSubmittingRegion(true);
+
+                try {
+                  const countryId = selectedCountry.rowId ?? selectedCountry.id;
+                  const countryRaw = selectedCountry.raw ?? {};
+                  const countryNameAr =
+                    countryRaw?.name?.ar ?? selectedCountry.countryNameAr ?? null;
+                  const countryNameEn =
+                    countryRaw?.name?.en ?? selectedCountry.countryNameEn ?? null;
+
+                  const matchedCity = cities.find((city) => {
+                    const docId = city?.id ?? city?.docId;
+                    return docId && docId === regionForm.cityId;
+                  });
+
+                  const cityNameAr =
+                    matchedCity?.name?.ar ?? matchedCity?.cityNameAr ?? null;
+                  const cityNameEn =
+                    matchedCity?.name?.en ?? matchedCity?.cityNameEn ?? null;
+                  const cityLat = matchedCity?.latlng?.lat ?? 0;
+                  const cityLng = matchedCity?.latlng?.lng ?? 0;
+
+                  await createArea({
+                    countryId,
+                    countryNameAr,
+                    countryNameEn,
+                    cityId: regionForm.cityId,
+                    cityNameAr,
+                    cityNameEn,
+                    cityLatitude: cityLat,
+                    cityLongitude: cityLng,
+                    areaNameAr: regionForm.regionNameAr.trim(),
+                    areaNameEn: regionForm.regionNameEn.trim(),
+                  });
+
+                  await refreshAreas();
+                  setRegionForm({ regionNameAr: "", regionNameEn: "", cityId: "" });
+                  setIsRegionModalOpen(false);
+                } catch (error) {
+                  console.error("Failed to create area:", error);
+                } finally {
+                  setIsSubmittingRegion(false);
+                }
+              }}
+              className="bg-white w-full max-w-[520px] rounded-[24px] shadow-2xl overflow-hidden flex flex-col"
+              dir="rtl"
+            >
+              <header className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <h2 className="text-[18px] font-semibold text-gray-800">
+                  إضافة منطقة جديدة
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setIsRegionModalOpen(false)}
+                  className="p-1 rounded-full hover:bg-gray-100 transition-colors"
+                >
+                  <ArrowLeft className="w-4 h-4 text-gray-500" />
+                </button>
+              </header>
+              <div className="px-6 py-6 flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm text-gray-600 text-right">
+                    اسم المنطقة بالعربي
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={regionForm.regionNameAr}
+                    onChange={(event) =>
+                      setRegionForm((prev) => ({
+                        ...prev,
+                        regionNameAr: event.target.value,
+                      }))
+                    }
+                    className="h-11 rounded-[12px] border border-gray-300 px-3 text-right text-sm focus:outline-none focus:ring-2 focus:ring-[#5A66C1]"
+                    placeholder="المنطقة بالعربي هنا"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm text-gray-600 text-right">
+                    اسم المنطقة بالانجليزي
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={regionForm.regionNameEn}
+                    onChange={(event) =>
+                      setRegionForm((prev) => ({
+                        ...prev,
+                        regionNameEn: event.target.value,
+                      }))
+                    }
+                    className="h-11 rounded-[12px] border border-gray-300 px-3 text-right text-sm focus:outline-none focus:ring-2 focus:ring-[#5A66C1]"
+                    placeholder="المنطقة بالانجليزي هنا"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm text-gray-600 text-right">
+                    المدينة التابع إليها هذه المنطقة
+                  </label>
+                  <select
+                    required
+                    value={regionForm.cityId}
+                    onChange={(event) =>
+                      setRegionForm((prev) => ({
+                        ...prev,
+                        cityId: event.target.value,
+                      }))
+                    }
+                    className="h-11 rounded-[12px] border border-gray-300 px-3 text-right text-sm focus:outline-none focus:ring-2 focus:ring-[#5A66C1]"
+                  >
+                    <option value="" disabled>
+                      اختر المدينة
+                    </option>
+                    {cities.map((city) => (
+                      <option key={city.id ?? city.docId} value={city.id ?? city.docId}>
+                        {city?.name?.ar ??
+                          city?.name?.en ??
+                          city?.label ??
+                          city?.cityNameAr ??
+                          city?.cityNameEn ??
+                          "مدينة غير معروفة"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <footer className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setIsRegionModalOpen(false)}
+                  className="px-6 h-10 rounded-[10px] border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  إغلاق
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingRegion}
+                  className="px-6 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isSubmittingRegion ? "جاري الإضافة..." : "إضافة المنطقة"}
+                </button>
+              </footer>
+            </form>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };
