@@ -2982,6 +2982,233 @@ export const fetchSubcategoriesByParentId = async (
 };
 
 /**
+ * Fetch all countries from Firestore countries collection
+ */
+export const fetchAllCountries = async (): Promise<any[]> => {
+  try {
+    const countriesCollection = collection(db, "countries");
+    const countriesQuery = query(
+      countriesCollection,
+      orderBy("createdDate", "desc")
+    );
+    const snapshot = await getDocs(countriesQuery);
+
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+  } catch (error) {
+    console.error("❌ Error fetching countries:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all cities from Firestore cities collection
+ */
+export const fetchAllCities = async (): Promise<any[]> => {
+  try {
+    const citiesCollection = collection(db, "cities");
+    const snapshot = await getDocs(citiesCollection);
+
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+  } catch (error) {
+    console.error("❌ Error fetching cities:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all areas from Firestore areas collection
+ */
+export const fetchAllAreas = async (): Promise<any[]> => {
+  try {
+    const areasCollection = collection(db, "areas");
+    const snapshot = await getDocs(areasCollection);
+
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+  } catch (error) {
+    console.error("❌ Error fetching areas:", error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new country in Firestore countries collection
+ * Ensures all standard fields are populated and preserves schema compatible with existing docs
+ */
+export const createCountry = async ({
+  arabicName,
+  englishName,
+}: {
+  arabicName: string;
+  englishName: string;
+}): Promise<{ id: string }> => {
+  try {
+    const currentUser = auth.currentUser;
+
+    const countriesCollection = collection(db, "countries");
+
+    const payload: Record<string, any> = {
+      name: {
+        ar: arabicName || null,
+        en: englishName || null,
+      },
+      createdDate: serverTimestamp(),
+      createdUserId: currentUser?.email ?? null,
+    };
+
+    const docRef = await addDoc(countriesCollection, payload);
+
+    return { id: docRef.id };
+  } catch (error) {
+    console.error("❌ Error creating country:", error);
+    throw error;
+  }
+};
+
+export const createCity = async ({
+  countryId,
+  countryNameAr,
+  countryNameEn,
+  cityNameAr,
+  cityNameEn,
+  latitude = 0,
+  longitude = 0,
+}: {
+  countryId: string | null;
+  countryNameAr: string | null;
+  countryNameEn: string | null;
+  cityNameAr: string;
+  cityNameEn: string;
+  latitude?: number;
+  longitude?: number;
+}): Promise<{ id: string }> => {
+  try {
+    const currentUser = auth.currentUser;
+    const citiesCollection = collection(db, "cities");
+
+    const timestamp = serverTimestamp();
+    const creator = currentUser?.email ?? null;
+
+    const countryMap: Record<string, any> = {
+      id: countryId ?? null,
+      name: {
+        ar: countryNameAr ?? null,
+        en: countryNameEn ?? null,
+      },
+      createdDate: timestamp,
+      createdUserId: creator,
+    };
+
+    const payload: Record<string, any> = {
+      country: countryMap,
+      createdDate: timestamp,
+      createdUserId: creator,
+      latlng: {
+        lat: latitude ?? 0,
+        lng: longitude ?? 0,
+      },
+      name: {
+        ar: cityNameAr || null,
+        en: cityNameEn || null,
+      },
+      id: null,
+    };
+
+    const docRef = await addDoc(citiesCollection, payload);
+    await updateDoc(docRef, { id: docRef.id });
+
+    return { id: docRef.id };
+  } catch (error) {
+    console.error("❌ Error creating city:", error);
+    throw error;
+  }
+};
+
+export const createArea = async ({
+  countryId,
+  countryNameAr,
+  countryNameEn,
+  cityId,
+  cityNameAr,
+  cityNameEn,
+  cityLatitude = 0,
+  cityLongitude = 0,
+  areaNameAr,
+  areaNameEn,
+}: {
+  countryId: string | null;
+  countryNameAr: string | null;
+  countryNameEn: string | null;
+  cityId: string | null;
+  cityNameAr: string | null;
+  cityNameEn: string | null;
+  cityLatitude?: number;
+  cityLongitude?: number;
+  areaNameAr: string;
+  areaNameEn: string;
+}): Promise<{ id: string }> => {
+  try {
+    const currentUser = auth.currentUser;
+    const areasCollection = collection(db, "areas");
+
+    const timestamp = serverTimestamp();
+    const creator = currentUser?.email ?? null;
+
+    const countryMap: Record<string, any> = {
+      id: countryId ?? null,
+      name: {
+        ar: countryNameAr ?? null,
+        en: countryNameEn ?? null,
+      },
+      createdDate: timestamp,
+      createdUserId: creator,
+    };
+
+    const cityMap: Record<string, any> = {
+      id: cityId ?? null,
+      name: {
+        ar: cityNameAr ?? null,
+        en: cityNameEn ?? null,
+      },
+      createdDate: timestamp,
+      createdUserId: creator,
+      latlng: {
+        lat: cityLatitude ?? 0,
+        lng: cityLongitude ?? 0,
+      },
+      country: countryMap,
+    };
+
+    const payload: Record<string, any> = {
+      city: cityMap,
+      country: countryMap,
+      createdDate: timestamp,
+      createdUserId: creator,
+      name: {
+        ar: areaNameAr || null,
+        en: areaNameEn || null,
+      },
+      id: null,
+    };
+
+    const docRef = await addDoc(areasCollection, payload);
+    await updateDoc(docRef, { id: docRef.id });
+
+    return { id: docRef.id };
+  } catch (error) {
+    console.error("❌ Error creating area:", error);
+    throw error;
+  }
+};
+/**
  * Create a new category document in Firestore
  * Ensures all standard fields are included and preserves base structure
  */
@@ -3721,7 +3948,6 @@ export const determineUserRoleAndRedirect = async (
     return null;
   }
 };
-
 /**
  * Fetch current company data from Firestore companies collection
  * @returns Promise with the current company data
@@ -5286,7 +5512,6 @@ const getDayObject = (dayAr: string): { ar: string; en: string } => {
     en: dayMap[dayAr] || dayAr,
   };
 };
-
 /**
  * Convert Arabic plate letters to English
  */
@@ -6077,7 +6302,6 @@ export interface AddCompanyData {
   taxCertificateFile?: File | null;
   commercialRegistrationFile?: File | null;
 }
-
 export interface AddServiceProviderData {
   // Basic fields
   name: string;
@@ -7622,7 +7846,6 @@ export const fetchInvoices = async (): Promise<any[]> => {
     throw error;
   }
 };
-
 /**
  * Fetch comprehensive statistics for a specific company
  * @param companyId - The ID of the company to get statistics for
