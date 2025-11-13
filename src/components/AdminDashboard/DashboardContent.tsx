@@ -1,6 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 // import { useOutletContext } from "react-router-dom"; // Uncomment when using search functionality
-import { Table, TimeFilter } from "../../components/shared";
+import {
+  LegendHighlightLineChart,
+  Spinner,
+  Table,
+  TimeFilter,
+} from "../../components/shared";
 import { Fuel, Download } from "lucide-react";
 import MostUsedSection from "./MostUsedSection";
 import StatsCardsSection, {
@@ -25,6 +30,10 @@ import {
   getMostConsumingClients,
   getMostUsedStations,
   getLatestOrders,
+  getEssentialCategorySalesTrends,
+  EssentialCategorySalesTrends,
+  EssentialCategoryTimeseries,
+  EssentialCategoryKey,
 } from "../../services/firestore";
 
 // Context type for outlet (uncomment when using search functionality)
@@ -36,53 +45,149 @@ import {
 // Consumption Section
 const ConsumptionSection = () => {
   const [selectedPeriod, setSelectedPeriod] = useState("اخر 12 شهر");
+  const [activeLegendIndex, setActiveLegendIndex] = useState<number | null>(
+    null
+  );
+  const [salesTrends, setSalesTrends] =
+    useState<EssentialCategorySalesTrends | null>(null);
+  const [isLoadingSales, setIsLoadingSales] = useState<boolean>(true);
+  const [salesError, setSalesError] = useState<string | null>(null);
 
-  const months = [
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-    "Jan",
-  ];
+  const defaultMonthLabels = useMemo(
+    () => [
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+      "Jan",
+    ],
+    []
+  );
 
-  const legendItems = [
-    {
-      text: "بطاريات",
-      color: "var(--core-colors-green-green-6)",
-      width: "w-[46px]",
-    },
-    {
-      text: "إطارات",
-      color: "var(--core-colors-mango-mango-6)",
-      width: "w-10",
-    },
-    {
-      text: "زيوت",
-      color: "var(--text-secondary)",
-      width: "w-7",
-    },
-    {
-      text: "وقـــــــــود",
-      color: "var(--core-colors-red-red-6)",
-      width: "w-[51px]",
-      containerWidth: "w-[50px]",
-      marginLeft: "ml-[-8.00px]",
-    },
-    {
-      text: "غســـــيل",
-      color: "var(--color-mode-text-icons-t-blue)",
-      width: "w-12",
-      containerWidth: "w-[51px]",
-      marginLeft: "ml-[-4.00px]",
-    },
-  ];
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        setIsLoadingSales(true);
+        const result = await getEssentialCategorySalesTrends();
+        if (cancelled) {
+          return;
+        }
+        setSalesTrends(result);
+        setSalesError(null);
+      } catch (error) {
+        console.error("❌ Failed to load essential category sales trends:", error);
+        if (!cancelled) {
+          setSalesTrends(null);
+          setSalesError("تعذر تحميل بيانات المبيعات من قاعدة البيانات.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingSales(false);
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const displayedSeries: EssentialCategoryTimeseries | null = useMemo(() => {
+    if (!salesTrends) return null;
+
+    if (selectedPeriod === "اخر اسبوع") {
+      return salesTrends.last7Days;
+    }
+
+    if (selectedPeriod === "اخر 30 يوم") {
+      return salesTrends.last30Days;
+    }
+
+    if (selectedPeriod === "اخر 6 شهور") {
+      const labels = salesTrends.last12Months.labels.slice(-6);
+      const datasets = salesTrends.last12Months.datasets.map((dataset) => ({
+        ...dataset,
+        data: dataset.data.slice(-6),
+      }));
+      return { labels, datasets };
+    }
+
+    return salesTrends.last12Months;
+  }, [salesTrends, selectedPeriod]);
+
+  const essentialColors: Record<EssentialCategoryKey, string> = useMemo(
+    () => ({
+      batteries: "rgb(0, 200, 80)",
+      wheels: "rgb(231, 101, 0)",
+      oils: "rgb(91, 115, 139)",
+      fuels: "rgb(238, 57, 57)",
+      carCare: "rgb(90, 102, 193)",
+    }),
+    []
+  );
+
+  const chartDatasets = useMemo(() => {
+    if (!displayedSeries) return [];
+
+    return displayedSeries.datasets.map((dataset) => {
+      const color = essentialColors[dataset.key] ?? "rgb(148, 163, 184)";
+
+      return {
+        label: dataset.label,
+        color,
+        data: dataset.data.map((value) =>
+          Number.isFinite(value) ? Number(value) : 0
+        ),
+      };
+    });
+  }, [displayedSeries, essentialColors]);
+
+  useEffect(() => {
+    if (
+      activeLegendIndex !== null &&
+      (chartDatasets.length === 0 ||
+        activeLegendIndex < 0 ||
+        activeLegendIndex >= chartDatasets.length)
+    ) {
+      setActiveLegendIndex(null);
+    }
+  }, [activeLegendIndex, chartDatasets.length]);
+
+  const legendItems = useMemo(
+    () =>
+      chartDatasets.map((dataset, index) => ({
+        text: dataset.label,
+        color: dataset.color,
+        index,
+      })),
+    [chartDatasets]
+  );
+
+  const chartLabels = useMemo(() => {
+    if (displayedSeries?.labels && displayedSeries.labels.length) {
+      return displayedSeries.labels;
+    }
+    return defaultMonthLabels;
+  }, [displayedSeries?.labels, defaultMonthLabels]);
+
+  const hasData = useMemo(
+    () =>
+      chartDatasets.some((dataset) =>
+        dataset.data.some((value) => Math.abs(value) > 0)
+      ),
+    [chartDatasets]
+  );
 
   return (
     <section className="mb-8">
@@ -91,32 +196,39 @@ const ConsumptionSection = () => {
         <div className="flex items-center justify-between mb-6">
           {/* Legend - Left */}
           <div className="flex items-center">
-            <div className="flex items-center gap-4">
-              <div className="inline-flex items-center gap-2">
-                {legendItems.map((item, index) => (
-                  <div
-                    key={index}
-                    className={`${
-                      item.containerWidth
-                        ? `flex ${item.containerWidth} items-center justify-end gap-0.5`
-                        : "inline-flex items-center gap-0.5"
-                    }`}
+            <div className="flex flex-wrap items-center gap-2 md:gap-3">
+              {legendItems.map((item) => {
+                const isActive =
+                  activeLegendIndex === null || activeLegendIndex === item.index;
+
+                return (
+                  <button
+                    key={item.index}
+                    type="button"
+                    onMouseEnter={() => setActiveLegendIndex(item.index)}
+                    onMouseLeave={() => setActiveLegendIndex(null)}
+                    onFocus={() => setActiveLegendIndex(item.index)}
+                    onBlur={() => setActiveLegendIndex(null)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-transparent px-3 py-1 text-xs font-bold transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2"
+                    style={{
+                      color: item.color,
+                      opacity: isActive ? 1 : 0.4,
+                      backgroundColor: isActive
+                        ? "rgba(148, 163, 184, 0.12)"
+                        : "transparent",
+                    }}
+                    title={`تسليط الضوء على ${item.text}`}
                   >
-                    <div
-                      className={`${item.width} h-3.5 ${
-                        item.marginLeft || ""
-                      } font-bold text-xs tracking-[0.40px] leading-[19.2px] whitespace-nowrap [font-family:'Tajawal',Helvetica] [direction:rtl]`}
-                      style={{ color: item.color }}
-                    >
+                    <span className="[font-family:'Tajawal',Helvetica] [direction:rtl]">
                       {item.text}
-                    </div>
-                    <div
-                      className="w-[5px] h-[5px] rounded-[1px]"
+                    </span>
+                    <span
+                      className="h-2 w-2 rounded-sm"
                       style={{ backgroundColor: item.color }}
                     />
-                  </div>
-                ))}
-              </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -142,25 +254,70 @@ const ConsumptionSection = () => {
 
         {/* Second Row - Chart */}
         <div className="w-full">
-          {/* Graph Background */}
-          <div className="relative w-full h-[220px] flex flex-col justify-end">
-            <img
-              className="w-full h-full object-contain"
-              alt="Graph background"
-              src="/img/bgDD.png"
-            />
-
-            {/* Months row */}
-            <div className="absolute bottom-0 left-0 w-full flex justify-between px-2">
-              {months.map((month, index) => (
-                <div
-                  key={index}
-                  className="text-[var(--text-secondary)] text-[0.8rem] md:text-[0.9rem] font-medium text-center"
-                >
-                  {month}
-                </div>
-              ))}
+          {salesError && (
+            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              {salesError}
             </div>
+          )}
+          <div className="relative w-full">
+            {isLoadingSales ? (
+              <div className="flex h-[260px] items-center justify-center">
+                <Spinner size="lg" />
+              </div>
+            ) : hasData ? (
+              <LegendHighlightLineChart
+                labels={chartLabels}
+                datasets={chartDatasets}
+                height={260}
+                showLegend={false}
+                activeDatasetIndex={activeLegendIndex}
+                onActiveDatasetIndexChange={setActiveLegendIndex}
+                chartOptions={{
+                  scales: {
+                    x: {
+                      ticks: {
+                        color: "var(--text-secondary)",
+                        font: {
+                          family: "Tajawal, Helvetica, Arial, sans-serif",
+                          size: 12,
+                        },
+                      },
+                      grid: {
+                        display: false,
+                      },
+                    },
+                    y: {
+                      grid: {
+                        color: "rgba(148, 163, 184, 0.15)",
+                        drawBorder: false,
+                      },
+                      ticks: {
+                        color: "var(--text-secondary)",
+                        font: {
+                          family: "Tajawal, Helvetica, Arial, sans-serif",
+                          size: 12,
+                        },
+                        callback: (value) =>
+                          typeof value === "number"
+                            ? value.toLocaleString("ar-SA", {
+                                maximumFractionDigits: 2,
+                              })
+                            : value?.toString() ?? "",
+                      },
+                    },
+                  },
+                }}
+                tooltipFormatter={(datasetLabel, value) =>
+                  `${datasetLabel}: ${value.toLocaleString("ar-SA", {
+                    maximumFractionDigits: 2,
+                  })}`
+                }
+              />
+            ) : (
+              <div className="flex h-[260px] flex-col items-center justify-center rounded-xl border border-dashed border-[color:var(--border-subtle)] bg-[var(--surface-control)] text-sm text-[var(--text-secondary)]">
+                لا توجد بيانات مبيعات للفترة المحددة.
+              </div>
+            )}
           </div>
         </div>
       </div>
