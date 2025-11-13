@@ -4494,8 +4494,14 @@ const getOrderDate = (order: any): Date | null => {
   return null;
 };
 
-export const getEssentialCategorySalesTrends =
-  async (): Promise<EssentialCategorySalesTrends> => {
+export interface EssentialCategorySalesTrendsInput {
+  categories?: any[];
+  orders?: any[];
+}
+
+export const getEssentialCategorySalesTrends = async (
+  input?: EssentialCategorySalesTrendsInput
+): Promise<EssentialCategorySalesTrends> => {
     const now = new Date();
     const monthRange = generateMonthRange(12, now);
     const dayRange30 = generateDayRange(30, now);
@@ -4515,8 +4521,10 @@ export const getEssentialCategorySalesTrends =
 
     try {
       const [categories, orders] = await Promise.all([
-        fetchAllCategories(),
-        fetchAllOrders(),
+        input?.categories
+          ? Promise.resolve(input.categories)
+          : fetchAllCategories(),
+        input?.orders ? Promise.resolve(input.orders) : fetchAllOrders(),
       ]);
 
       const categoryInfo = new Map<
@@ -4866,6 +4874,110 @@ export const getEssentialCategorySalesTrends =
         last30Days: emptyTimeseries(dayRange30, formatDayLabel),
         last7Days: emptyTimeseries(dayRange7, formatDayLabel),
       };
+    }
+  };
+
+export const getCompanyEssentialCategorySalesTrends =
+  async (): Promise<EssentialCategorySalesTrends> => {
+    const [categories, orders] = await Promise.all([
+      fetchAllCategories(),
+      fetchOrders(),
+    ]);
+
+    return getEssentialCategorySalesTrends({
+      categories,
+      orders,
+    });
+  };
+
+export const getServiceDistributerEssentialCategorySalesTrends =
+  async (): Promise<EssentialCategorySalesTrends> => {
+    try {
+      const currentUser = await waitForAuthState();
+      const email = currentUser?.email?.toLowerCase();
+
+      if (!email) {
+        console.warn(
+          "⚠️ No authenticated service distributer email found. Returning empty trends."
+        );
+        const empty = await getEssentialCategorySalesTrends({
+          categories: [],
+          orders: [],
+        });
+        return empty;
+      }
+
+      const [categories, rawOrders] = await Promise.all([
+        fetchAllCategories(),
+        fetchFuelStationRequests(email),
+      ]);
+
+      const flattenedOrders = rawOrders.map((order) => {
+        const base =
+          order?.originalOrder && typeof order.originalOrder === "object"
+            ? order.originalOrder
+            : null;
+
+        if (!base) {
+          return order;
+        }
+
+        const flattened = {
+          ...base,
+          id:
+            base.id ??
+            order.id ??
+            base.refId ??
+            base.orderNumber ??
+            order.refId ??
+            order.orderNumber,
+          category: base.category ?? order.category,
+          categoryId: base.categoryId ?? order.categoryId,
+          categoryIds:
+            base.categoryIds ??
+            base.categories ??
+            order.categoryIds ??
+            order.categories ??
+            [],
+          selectedOption: base.selectedOption ?? order.selectedOption,
+          service: base.service ?? order.service,
+          serviceType: base.serviceType ?? order.serviceType,
+          productType: base.productType ?? order.productType,
+          totalCost:
+            base.totalCost ??
+            order.totalCost ??
+            order.amount ??
+            base.amount ??
+            order.price,
+          totalPrice: base.totalPrice ?? order.totalPrice,
+          totalLitre: base.totalLitre ?? order.totalLitre,
+          totalLiter: base.totalLiter ?? order.totalLiter,
+          quantity: base.quantity ?? order.quantity,
+          liters: base.liters ?? order.liters,
+          litres: base.litres ?? order.litres,
+          count: base.count ?? order.count,
+          orderDate: base.orderDate ?? order.orderDate,
+          createdDate: base.createdDate ?? order.createdDate,
+          createdAt: base.createdAt ?? order.createdAt,
+          createdTime: base.createdTime ?? order.createdTime,
+        };
+
+        return flattened;
+      });
+
+      return getEssentialCategorySalesTrends({
+        categories,
+        orders: flattenedOrders,
+      });
+    } catch (error) {
+      console.error(
+        "❌ Error calculating service distributer essential category sales trends:",
+        error
+      );
+      return getEssentialCategorySalesTrends({
+        categories: [],
+        orders: [],
+      });
     }
   };
 /**
