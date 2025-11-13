@@ -133,7 +133,11 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
           setIsOpen(!isOpen);
           setTimeout(updateMenuPosition, 0);
         }}
-        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+        className="p-2 rounded-lg transition-colors"
+        style={{
+          backgroundColor: "var(--surface-control)",
+          color: "var(--text-secondary)",
+        }}
         aria-label="إجراءات"
       >
         <MoreVertical className="w-4 h-4 text-gray-600" />
@@ -147,23 +151,29 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
           />
           {createPortal(
             <div
-              className="fixed w-48 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden"
+              className="fixed w-48 rounded-lg shadow-xl z-50 overflow-hidden border bg-[var(--surface-card)]"
               style={{ top: menuPosition.top, left: menuPosition.left }}
             >
-              <div className="py-1">
+              <div className="py-1 divide-y divide-[color:var(--border-subtle)]">
                 <button
                   onClick={() => handleAction("view")}
-                  className="w-full px-4 py-2 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-2 transition-colors"
+                  className="w-full px-4 py-2 text-right text-sm flex items-center justify-end gap-2 transition-colors"
+                  style={{
+                    color: "var(--text-secondary)",
+                  }}
                 >
                   <span>عرض التفاصيل</span>
-                  <Eye className="w-4 h-4 text-gray-500" />
+                  <Eye className="w-4 h-4 text-[var(--text-tertiary)]" />
                 </button>
                 <button
                   onClick={() => handleAction("copy")}
-                  className="w-full px-4 py-2 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-2 transition-colors"
+                  className="w-full px-4 py-2 text-right text-sm flex items-center justify-end gap-2 transition-colors"
+                  style={{
+                    color: "var(--text-secondary)",
+                  }}
                 >
                   <span>نسخ رقم الحساب</span>
-                  <Copy className="w-4 h-4 text-gray-500" />
+                  <Copy className="w-4 h-4 text-[var(--text-tertiary)]" />
                 </button>
               </div>
             </div>,
@@ -206,7 +216,12 @@ const DefaultAccounts = () => {
         priority: "high",
         render: (value: string) => (
           <div
-            className="px-3 py-2 bg-yellow-100 hover:bg-yellow-200 rounded-md cursor-pointer transition-colors text-center font-mono text-sm font-medium"
+            className="px-3 py-2 rounded-md cursor-pointer transition-colors text-center font-mono text-sm font-medium"
+            style={{
+              backgroundColor:
+                "var(--default-account-bg, rgba(254, 249, 195, 1))",
+              color: "var(--default-account-text, #0f172a)",
+            }}
             onClick={() => handleCopyVirtualAccount(value)}
             title="انقر للنسخ"
             dir="ltr"

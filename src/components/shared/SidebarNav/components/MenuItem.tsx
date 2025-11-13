@@ -24,15 +24,18 @@ const MenuItemContent: React.FC<{ item: NavigationItem; isSubItem: boolean; isAc
   isActive 
 }) => {
   return (
-    <div 
-      className="flex items-center justify-end gap-3 w-full py-3 px-4 rounded-lg transition-all duration-200"
-      style={isActive ? { backgroundColor: '#F9F3FF' } : {}}
+    <div
+      className={`flex items-center justify-end gap-3 w-full py-3 px-4 rounded-lg transition-all duration-200 ${
+        isActive ? "bg-[color:var(--nav-tab-active-bg)]" : ""
+      }`}
     >
-      <span className={`flex-1 text-sm font-medium text-right whitespace-nowrap transition-colors ${
-        isActive 
-          ? "text-[var(--form-section-title-color)]" 
-          : "text-[var(--form-readonly-input-text-color)] group-hover:text-purple-700"
-      }`}>
+      <span
+        className={`flex-1 text-sm font-medium text-right whitespace-nowrap transition-colors ${
+          isActive
+            ? "text-[color:var(--nav-tab-active-text)]"
+            : "text-[color:var(--nav-tab-text)]"
+        }`}
+      >
         {item.label}
       </span>
       <img
@@ -52,8 +55,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
 }) => {
   const baseClasses = `w-full rounded-lg transition-all duration-200 ${
     isActive
-      ? "border-2 border-[#5A66C1] shadow-md"
-      : "hover:bg-purple-50 hover:border-2 hover:border-purple-200 border-2 border-transparent"
+      ? "border border-[color:var(--nav-tab-active-bg)] shadow-sm bg-[color:var(--nav-tab-active-bg)]"
+      : "border border-transparent hover:bg-[var(--surface-control-muted)] hover:border-[color:var(--border-medium)]"
   } ${isSubItem ? "ml-4" : ""}`;
 
   if (item.href) {

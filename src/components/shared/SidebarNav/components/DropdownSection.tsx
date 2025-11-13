@@ -37,7 +37,7 @@ export const DropdownSection: React.FC<DropdownSectionProps> = ({
       {/* Dropdown Header */}
       <button
         onClick={onToggle}
-        className="w-full flex items-center justify-end gap-3 py-3 px-4 rounded-lg transition-all duration-200 hover:bg-gray-50"
+        className="w-full flex items-center justify-end gap-3 py-3 px-4 rounded-lg transition-all duration-200 hover:bg-[var(--surface-control-muted)] border border-transparent hover:border-[color:var(--border-medium)]"
         role="button"
         aria-expanded={isOpen}
         aria-label={`Toggle ${title} dropdown`}
@@ -52,7 +52,7 @@ export const DropdownSection: React.FC<DropdownSectionProps> = ({
         </div>
         
         {/* Title */}
-        <span className="flex-1 text-xs font-semibold text-[var(--form-readonly-label-color)] uppercase tracking-wide whitespace-nowrap text-right">
+        <span className="flex-1 text-xs font-semibold text-[var(--form-readonly-label-color)] uppercase tracking-wide whitespace-nowrap text-right transition-colors duration-200">
           {title}
         </span>
         
@@ -72,7 +72,11 @@ export const DropdownSection: React.FC<DropdownSectionProps> = ({
           {items.map((item) => (
             <div
               key={item.id}
-              className="w-full rounded-lg transition-all duration-200 hover:bg-gray-50 border-2 border-transparent"
+              className={`w-full rounded-lg transition-all duration-200 ${
+                item.isActive
+                  ? "border border-[color:var(--nav-tab-active-bg)] bg-[color:var(--nav-tab-active-bg)] shadow-sm"
+                  : "border border-transparent hover:bg-[var(--surface-control-muted)] hover:border-[color:var(--border-medium)]"
+              }`}
             >
               {item.href ? (
                 <Link
@@ -83,7 +87,13 @@ export const DropdownSection: React.FC<DropdownSectionProps> = ({
                   tabIndex={0}
                   aria-label={item.label}
                 >
-                  <span className="flex-1 text-sm font-medium text-right whitespace-nowrap transition-colors text-[var(--form-readonly-input-text-color)]">
+                  <span
+                    className={`flex-1 text-sm font-medium text-right whitespace-nowrap transition-colors ${
+                      item.isActive
+                        ? "text-[color:var(--nav-tab-active-text)]"
+                        : "text-[color:var(--nav-tab-text)]"
+                    }`}
+                  >
                     {item.label}
                   </span>
                   <img
@@ -100,7 +110,13 @@ export const DropdownSection: React.FC<DropdownSectionProps> = ({
                   tabIndex={0}
                   aria-label={item.label}
                 >
-                  <span className="flex-1 text-sm font-medium text-right whitespace-nowrap transition-colors text-[var(--form-readonly-input-text-color)]">
+                  <span
+                    className={`flex-1 text-sm font-medium text-right whitespace-nowrap transition-colors ${
+                      item.isActive
+                        ? "text-[color:var(--nav-tab-active-text)]"
+                        : "text-[color:var(--nav-tab-text)]"
+                    }`}
+                  >
                     {item.label}
                   </span>
                   <img

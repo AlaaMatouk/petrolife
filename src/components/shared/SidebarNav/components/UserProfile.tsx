@@ -12,7 +12,7 @@ interface UserProfileProps {
 
 export const UserProfile: React.FC<UserProfileProps> = ({ userInfo }) => {
   return (
-    <footer className="flex items-center gap-3 p-4 mt-auto border-t border-gray-200">
+    <footer className="flex items-center gap-3 p-4 mt-auto border-t border-[color:var(--border-subtle)] bg-[var(--surface-sidebar)] transition-colors duration-300">
       <img
         className="w-10 h-10 rounded-full object-cover flex-shrink-0"
         alt="User profile picture"

@@ -19,7 +19,7 @@ export const Footer: React.FC<FooterProps> = ({
 }) => {
   return (
     <footer
-      className={`w-full h-12 ${className}`}
+      className={`w-full h-12 bg-[var(--surface-navbar)] text-[var(--text-secondary)] transition-colors duration-300 ${className}`}
       role="contentinfo"
     >
       <div className="flex w-full max-w-[1059px] items-center justify-between relative top-2 left-[60px] px-4 lg:px-8 md:px-4 sm:px-2">

@@ -39,6 +39,7 @@ export const ROUTES = {
 
   // Test
   TEST: "/test",
+  TEST_CHART: "/test-chart",
 
   // Service Distributer Dashboard
   SERVICE_DISTRIBUTER_DASHBOARD: "/service-distributer",

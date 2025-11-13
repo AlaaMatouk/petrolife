@@ -294,13 +294,18 @@ const StatsCardsSection = ({
       {updatedStatsData.map((stat, index) => (
         <div
           key={index}
-          className="relative w-full bg-color-mode-surface-bg-screen rounded-[16px] rounded-bl-[28px] border-[0.2px] border-solid border-[#A9B4BE] p-6 flex flex-col justify-between"
-          style={{ direction: "ltr" }}
+          className="relative w-full rounded-[16px] rounded-bl-[28px] border p-6 flex flex-col justify-between transition-colors duration-300"
+          style={{
+            direction: "ltr",
+            backgroundColor: "var(--surface-card)",
+            borderColor: "var(--border-strong)",
+            boxShadow: "0px 6px 18px rgba(0, 0, 0, 0.25)",
+          }}
         >
           {/* Upper row - title */}
           {!stat.total && !stat.options ? (
             <div className="flex justify-end mb-4">
-              <span className="text-base text-color-mode-text-icons-t-sec">
+              <span className="text-base text-[var(--text-secondary)] transition-colors duration-300">
                 {stat.title}
               </span>
             </div>
@@ -319,15 +324,19 @@ const StatsCardsSection = ({
                           [index]: optionIndex,
                         }))
                       }
-                      className="px-[10px] py-1 rounded-[8px] transition-all duration-200 hover:scale-105"
+                      className="px-[10px] py-1 rounded-[8px] transition-all duration-200 border"
                       style={{
                         backgroundColor: isSelected
-                          ? "#F9F3FF"
-                          : "rgba(245, 246, 247, 0.4)",
-                        color: isSelected ? "#223548" : "#A9B4BE",
+                          ? "var(--nav-tab-active-bg)"
+                          : "var(--surface-control)",
+                        color: isSelected
+                          ? "var(--nav-tab-active-text)"
+                          : "var(--text-secondary)",
                         fontSize: "12px",
-                        fontWeight: "400",
-                        border: "none",
+                        fontWeight: 500,
+                        borderColor: isSelected
+                          ? "transparent"
+                          : "var(--border-subtle)",
                         cursor: "pointer",
                       }}
                     >
@@ -337,20 +346,20 @@ const StatsCardsSection = ({
                 })}
               </div>
               {/* Title with enhanced styling */}
-              <span className="text-base text-color-mode-text-icons-t-sec">
+              <span className="text-base text-[var(--text-secondary)] transition-colors duration-300">
                 {stat.title}
               </span>
             </div>
           ) : (
             <div className="flex justify-between mb-4">
-              <span className="text-base text-color-mode-text-icons-t-sec">
+              <span className="text-base text-[var(--text-secondary)] transition-colors duration-300">
                 {typeof stat.total === "object" &&
                 stat.total !== null &&
                 "name" in stat.total
                   ? `${stat.total.name} ${stat.total.count}`
                   : ""}
               </span>
-              <span className="text-base text-color-mode-text-icons-t-sec">
+              <span className="text-base text-[var(--text-secondary)] transition-colors duration-300">
                 {stat.title}
               </span>
             </div>
@@ -359,8 +368,8 @@ const StatsCardsSection = ({
           {/* Lower row - value and icon */}
           <div className="flex items-center justify-end">
             <div
-              className="w-10 h-10 absolute bottom-[8px] left-[8px] rounded-full flex items-center justify-center"
-              style={{ backgroundColor: "#FFF3F9" }}
+              className="w-10 h-10 absolute bottom-[8px] left-[8px] rounded-full flex items-center justify-center transition-colors duration-300"
+              style={{ backgroundColor: "var(--surface-control-muted)" }}
             >
               {stat.icon}
             </div>
@@ -370,15 +379,15 @@ const StatsCardsSection = ({
                 {stat.categories.map((category, catIndex) => (
                   <div key={catIndex} className="flex items-center gap-4">
                     <div className="flex flex-col items-end">
-                      <span className="text-lg font-bold text-[#5B738B]">
+                      <span className="text-lg font-bold text-[var(--stats-card-number)] transition-colors duration-300">
                         {category.count}
                       </span>
-                      <span className="text-xs text-color-mode-text-icons-t-sec text-right">
+                      <span className="text-xs text-[var(--text-secondary)] text-right transition-colors duration-300">
                         {category.name}
                       </span>
                     </div>
                     {catIndex < stat.categories!.length - 1 && (
-                      <div className="w-px h-8 bg-gray-300"></div>
+                      <div className="w-px h-8 bg-[color:var(--border-subtle)] transition-colors duration-300"></div>
                     )}
                   </div>
                 ))}
@@ -388,7 +397,7 @@ const StatsCardsSection = ({
                 {stat.breakdown.map((fuel, fuelIndex) => (
                   <div key={fuelIndex} className="flex items-center gap-4">
                     <div className="flex flex-col items-end">
-                      <span className="text-lg font-bold text-[#5B738B]">
+                      <span className="text-lg font-bold text-[var(--stats-card-number)] transition-colors duration-300">
                         {fuel.amount}
                       </span>
                       <span className={`${fuel.color} text-xs font-bold`}>
@@ -396,13 +405,24 @@ const StatsCardsSection = ({
                       </span>
                     </div>
                     {fuelIndex < stat.breakdown!.length - 1 && (
-                      <div className="w-px h-8 bg-gray-300"></div>
+                      <div className="w-px h-8 bg-[color:var(--border-subtle)] transition-colors duration-300"></div>
                     )}
                   </div>
                 ))}
               </div>
+            ) : stat.total ? (
+              <div className="flex flex-col items-end">
+                <span className="text-2xl font-bold text-[var(--stats-card-total)] transition-colors duration-300">
+                  {stat.total.count}
+                </span>
+                <span className="text-xs text-[var(--text-secondary)] transition-colors duration-300">
+                  {stat.total.name}
+                </span>
+              </div>
             ) : (
-              <p className="text-xl text-[#5B738B] font-bold">{stat.amount}</p>
+              <p className="text-xl font-bold text-[var(--stats-card-total)] transition-colors duration-300">
+                {stat.amount}
+              </p>
             )}
           </div>
         </div>

@@ -4182,6 +4182,804 @@ export const fetchAllOrders = async (): Promise<any[]> => {
     throw error;
   }
 };
+
+export type EssentialCategoryKey =
+  | "batteries"
+  | "wheels"
+  | "oils"
+  | "fuels"
+  | "carCare";
+
+export interface EssentialCategorySalesDataset {
+  key: EssentialCategoryKey;
+  label: string;
+  data: number[];
+}
+
+export interface EssentialCategoryTimeseries {
+  labels: string[];
+  datasets: EssentialCategorySalesDataset[];
+}
+
+export interface EssentialCategorySalesTrends {
+  last12Months: EssentialCategoryTimeseries;
+  last30Days: EssentialCategoryTimeseries;
+  last7Days: EssentialCategoryTimeseries;
+}
+
+export const ESSENTIAL_CATEGORY_LABELS: Record<EssentialCategoryKey, string> = {
+  batteries: "بطاريات",
+  wheels: "إطارات",
+  oils: "زيوت",
+  fuels: "وقـــــــــود",
+  carCare: "غســـــيل",
+};
+
+const ESSENTIAL_CATEGORY_ORDER: EssentialCategoryKey[] = [
+  "batteries",
+  "wheels",
+  "oils",
+  "fuels",
+  "carCare",
+];
+
+const normalizeIdentifier = (value: any): string | null => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }
+  if (typeof value === "number" && !Number.isNaN(value)) {
+    return value.toString();
+  }
+  if (typeof value === "object") {
+    if (typeof value.id === "string" && value.id.trim().length) return value.id;
+    if (typeof value.id === "number" && !Number.isNaN(value.id))
+      return value.id.toString();
+    if (typeof value._keyPath === "string" && value._keyPath.trim().length)
+      return value._keyPath;
+    if (typeof value.path === "string" && value.path.trim().length)
+      return value.path;
+  }
+  return null;
+};
+
+const ARABIC_DIACRITICS_REGEX =
+  /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/g;
+
+const normalizeTextValue = (value: any): string | null => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "object") return null;
+
+  const stringValue = String(value).trim();
+  if (!stringValue.length) return null;
+
+  const lower = stringValue.toLowerCase();
+  const withoutDiacritics = lower
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(ARABIC_DIACRITICS_REGEX, "")
+    .replace(/أ|إ|آ|ٱ/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه");
+
+  const cleaned = withoutDiacritics
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return cleaned.length ? cleaned : null;
+};
+
+const splitAndAppendFragments = (
+  raw: string,
+  target: Set<string>,
+  minLength: number = 2
+) => {
+  const fragments = raw
+    .split(/[/|,؛؛،\-]+/)
+    .map((fragment) => fragment.trim())
+    .filter((fragment) => fragment.length >= minLength);
+
+  fragments.forEach((fragment) => target.add(fragment));
+};
+
+const collectCategoryNames = (category: any): Set<string> => {
+  const names = new Set<string>();
+  const add = (value: any) => {
+    const normalized = normalizeTextValue(value);
+    if (!normalized) return;
+    names.add(normalized);
+    if (normalized.includes(" ")) {
+      splitAndAppendFragments(normalized, names);
+    }
+  };
+
+  add(category?.name);
+  add(category?.name?.ar);
+  add(category?.name?.en);
+  add(category?.englishName);
+  add(category?.arabicName);
+  add(category?.label);
+  add(category?.title);
+  add(category?.title?.ar);
+  add(category?.title?.en);
+  add(category?.categoryTypeEnum);
+  add(category?.majorTypeEnum);
+  add(category?.displayName);
+  add(category?.displayNameAr);
+  add(category?.displayNameEn);
+  add(category?.shortName);
+  add(category?.slug);
+  add(category?.code);
+  add(category?.type);
+  add(category?.serviceType);
+
+  if (Array.isArray(category?.keywords)) {
+    category.keywords.forEach(add);
+  }
+  if (Array.isArray(category?.tags)) {
+    category.tags.forEach(add);
+  }
+
+  return names;
+};
+
+interface EssentialCategoryMeta {
+  label: string;
+  ids: Set<string>;
+  names: Set<string>;
+  synonyms: Set<string>;
+}
+
+const baseEssentialSynonyms: Record<EssentialCategoryKey, string[]> = {
+  batteries: [
+    "battery",
+    "batteries",
+    "battaries",
+    "بطاريه",
+    "بطارية",
+    "بطاريات",
+    "battery change",
+    "battery replacement",
+  ],
+  wheels: [
+    "wheel",
+    "wheels",
+    "tire",
+    "tires",
+    "tyre",
+    "tyres",
+    "كفر",
+    "كفرات",
+    "اطار",
+    "اطارات",
+    "اطار ات",
+    "إطار",
+    "إطارات",
+    "wheel alignment",
+  ],
+  oils: [
+    "oil",
+    "oils",
+    "engine oil",
+    "motor oil",
+    "lubricant",
+    "lubricants",
+    "زيت",
+    "زيوت",
+    "تغيير زيت",
+  ],
+  fuels: [
+    "fuel",
+    "fuels",
+    "gas",
+    "gasoline",
+    "diesel",
+    "بنزين",
+    "محروقات",
+    "وقود",
+    "تعبئة وقود",
+    "fuel delivery",
+  ],
+  carCare: [
+    "car care",
+    "carcare",
+    "car wash",
+    "wash",
+    "washing",
+    "detailing",
+    "cleaning",
+    "غسيل",
+    "تنظيف",
+    "بوليش",
+  ],
+};
+
+const generateMonthRange = (length: number, reference: Date): Date[] => {
+  const months: Date[] = [];
+  for (let offset = length - 1; offset >= 0; offset--) {
+    months.push(new Date(reference.getFullYear(), reference.getMonth() - offset, 1));
+  }
+  return months;
+};
+
+const generateDayRange = (length: number, reference: Date): Date[] => {
+  const days: Date[] = [];
+  for (let offset = length - 1; offset >= 0; offset--) {
+    const date = new Date(
+      reference.getFullYear(),
+      reference.getMonth(),
+      reference.getDate() - offset
+    );
+    days.push(
+      new Date(date.getFullYear(), date.getMonth(), date.getDate())
+    );
+  }
+  return days;
+};
+
+const formatMonthLabel = (date: Date) =>
+  new Intl.DateTimeFormat("en", { month: "short" }).format(date);
+
+const formatDayLabel = (date: Date) =>
+  new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(date);
+
+const formatMonthKey = (date: Date) =>
+  `${date.getFullYear()}-${date.getMonth()}`;
+
+const formatDayKey = (date: Date) =>
+  `${date.getFullYear()}-${(date.getMonth() + 1)
+    .toString()
+    .padStart(2, "0")}-${date.getDate().toString().padStart(2, "0")}`;
+
+const roundValue = (value: number) =>
+  Math.round((value + Number.EPSILON) * 100) / 100;
+
+const addOrderStringValues = (collector: Set<string>, value: any) => {
+  const normalized = normalizeTextValue(value);
+  if (!normalized) return;
+  collector.add(normalized);
+  if (normalized.includes(" ")) {
+    splitAndAppendFragments(normalized, collector);
+  }
+};
+
+const extractNumericValue = (candidates: any[]): number => {
+  for (const candidate of candidates) {
+    if (candidate === null || candidate === undefined) continue;
+    const parsed = parseFloat(String(candidate).replace(/,/g, ""));
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+  return 0;
+};
+
+const getOrderDate = (order: any): Date | null => {
+  const candidates = [
+    order?.orderDate,
+    order?.createdDate,
+    order?.createdAt,
+    order?.createdTime,
+    order?.date,
+    order?.timestamp,
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (typeof candidate.toDate === "function") {
+      try {
+        const date = candidate.toDate();
+        if (date instanceof Date && !Number.isNaN(date.getTime())) {
+          return date;
+        }
+      } catch (err) {
+        console.warn("⚠️ Failed to convert Firestore timestamp to date:", err);
+      }
+    } else if (candidate instanceof Date) {
+      if (!Number.isNaN(candidate.getTime())) return candidate;
+    } else if (typeof candidate === "number") {
+      const date = new Date(candidate);
+      if (!Number.isNaN(date.getTime())) return date;
+    } else if (typeof candidate === "string") {
+      const date = new Date(candidate);
+      if (!Number.isNaN(date.getTime())) return date;
+    } else if (candidate?.seconds) {
+      const date = new Date(candidate.seconds * 1000);
+      if (!Number.isNaN(date.getTime())) return date;
+    }
+  }
+
+  return null;
+};
+
+export interface EssentialCategorySalesTrendsInput {
+  categories?: any[];
+  orders?: any[];
+}
+
+export const getEssentialCategorySalesTrends = async (
+  input?: EssentialCategorySalesTrendsInput
+): Promise<EssentialCategorySalesTrends> => {
+    const now = new Date();
+    const monthRange = generateMonthRange(12, now);
+    const dayRange30 = generateDayRange(30, now);
+    const dayRange7 = generateDayRange(7, now);
+
+    const emptyTimeseries = (
+      dates: Date[],
+      labelFormatter: (date: Date) => string
+    ): EssentialCategoryTimeseries => ({
+      labels: dates.map(labelFormatter),
+      datasets: ESSENTIAL_CATEGORY_ORDER.map((key) => ({
+        key,
+        label: ESSENTIAL_CATEGORY_LABELS[key],
+        data: new Array(dates.length).fill(0),
+      })),
+    });
+
+    try {
+      const [categories, orders] = await Promise.all([
+        input?.categories
+          ? Promise.resolve(input.categories)
+          : fetchAllCategories(),
+        input?.orders ? Promise.resolve(input.orders) : fetchAllOrders(),
+      ]);
+
+      const categoryInfo = new Map<
+        string,
+        { id: string; parentId: string | null; names: Set<string> }
+      >();
+      const childrenByParent = new Map<string, string[]>();
+
+      categories.forEach((category) => {
+        const id =
+          normalizeIdentifier(category?.id) ??
+          normalizeIdentifier(category?.categoryId) ??
+          normalizeIdentifier(category?.refId);
+        if (!id) return;
+
+        const parentId =
+          normalizeIdentifier(category?.parentId) ??
+          normalizeIdentifier(category?.parentCategoryId) ??
+          normalizeIdentifier(category?.parent?.id) ??
+          normalizeIdentifier(category?.parentCategory?.id) ??
+          normalizeIdentifier(category?.parentRef?.id);
+
+        const names = collectCategoryNames(category);
+
+        categoryInfo.set(id, { id, parentId, names });
+
+        if (parentId) {
+          const existingChildren = childrenByParent.get(parentId) ?? [];
+          existingChildren.push(id);
+          childrenByParent.set(parentId, existingChildren);
+        }
+      });
+
+      const essentialMeta = new Map<EssentialCategoryKey, EssentialCategoryMeta>();
+
+      ESSENTIAL_CATEGORY_ORDER.forEach((key) => {
+        const synonyms = new Set<string>();
+        const names = new Set<string>();
+        const labelNormalized = normalizeTextValue(
+          ESSENTIAL_CATEGORY_LABELS[key]
+        );
+        if (labelNormalized) synonyms.add(labelNormalized);
+        baseEssentialSynonyms[key].forEach((synonym) => {
+          const normalized = normalizeTextValue(synonym);
+          if (normalized) {
+            synonyms.add(normalized);
+            if (normalized.includes(" ")) {
+              splitAndAppendFragments(normalized, synonyms);
+            }
+          }
+        });
+
+        essentialMeta.set(key, {
+          label: ESSENTIAL_CATEGORY_LABELS[key],
+          ids: new Set<string>(),
+          names,
+          synonyms,
+        });
+      });
+
+      const categoryMatchesEssential = (
+        categoryNames: Set<string>,
+        synonyms: Set<string>
+      ): boolean => {
+        for (const name of categoryNames) {
+          if (!name) continue;
+          for (const synonym of synonyms) {
+            if (!synonym) continue;
+            if (name === synonym || name.includes(synonym) || synonym.includes(name)) {
+              return true;
+            }
+          }
+        }
+        return false;
+      };
+
+      categoryInfo.forEach((info) => {
+        ESSENTIAL_CATEGORY_ORDER.forEach((key) => {
+          const meta = essentialMeta.get(key);
+          if (!meta) return;
+          if (categoryMatchesEssential(info.names, meta.synonyms)) {
+            meta.ids.add(info.id);
+          }
+        });
+      });
+
+      ESSENTIAL_CATEGORY_ORDER.forEach((key) => {
+        const meta = essentialMeta.get(key);
+        if (!meta) return;
+        const visited = new Set<string>();
+        const queue = Array.from(meta.ids);
+
+        while (queue.length) {
+          const currentId = queue.shift();
+          if (!currentId || visited.has(currentId)) continue;
+          visited.add(currentId);
+
+          const info = categoryInfo.get(currentId);
+          if (!info) continue;
+
+          info.names.forEach((name) => {
+            meta.names.add(name);
+            meta.synonyms.add(name);
+          });
+
+          const children = childrenByParent.get(currentId) ?? [];
+          children.forEach((childId) => {
+            if (!meta.ids.has(childId)) {
+              meta.ids.add(childId);
+            }
+            queue.push(childId);
+          });
+        }
+      });
+
+      const monthKeyToIndex = new Map<string, number>();
+      monthRange
+        .map(formatMonthKey)
+        .forEach((key, index) => monthKeyToIndex.set(key, index));
+
+      const day30KeyToIndex = new Map<string, number>();
+      dayRange30
+        .map(formatDayKey)
+        .forEach((key, index) => day30KeyToIndex.set(key, index));
+
+      const day7KeyToIndex = new Map<string, number>();
+      dayRange7
+        .map(formatDayKey)
+        .forEach((key, index) => day7KeyToIndex.set(key, index));
+
+      const monthlyTotals = new Map<EssentialCategoryKey, number[]>();
+      const day30Totals = new Map<EssentialCategoryKey, number[]>();
+      const day7Totals = new Map<EssentialCategoryKey, number[]>();
+
+      ESSENTIAL_CATEGORY_ORDER.forEach((key) => {
+        monthlyTotals.set(key, new Array(monthRange.length).fill(0));
+        day30Totals.set(key, new Array(dayRange30.length).fill(0));
+        day7Totals.set(key, new Array(dayRange7.length).fill(0));
+      });
+
+      const determineEssentialCategory = (order: any): EssentialCategoryKey | null => {
+        const idCandidates = new Set<string>();
+        const nameCandidates = new Set<string>();
+
+        const addIdCandidate = (value: any) => {
+          const normalized = normalizeIdentifier(value);
+          if (normalized) idCandidates.add(normalized);
+        };
+
+        const addNameCandidate = (value: any) =>
+          addOrderStringValues(nameCandidates, value);
+
+        addIdCandidate(order?.categoryId);
+        addIdCandidate(order?.category?.id);
+        addIdCandidate(order?.category?.categoryId);
+        addIdCandidate(order?.category?.refId);
+        addIdCandidate(order?.category?.categoryRefId);
+
+        const categoryIdsArray = Array.isArray(order?.categoryIds)
+          ? order.categoryIds
+          : Array.isArray(order?.categories)
+          ? order.categories
+          : [];
+        categoryIdsArray.forEach(addIdCandidate);
+
+        addIdCandidate(order?.selectedOption?.categoryId);
+        addIdCandidate(order?.selectedOption?.category?.id);
+        addIdCandidate(order?.selectedOption?.category?.categoryId);
+        addIdCandidate(order?.selectedOption?.id);
+
+        addIdCandidate(order?.service?.categoryId);
+        addIdCandidate(order?.service?.category?.id);
+        addIdCandidate(order?.service?.category?.categoryId);
+
+        addIdCandidate(order?.product?.categoryId);
+
+        const addObjectNames = (obj: any) => {
+          if (!obj) return;
+          if (typeof obj === "string" || typeof obj === "number") {
+            addNameCandidate(obj);
+            return;
+          }
+          addNameCandidate(obj?.name);
+          addNameCandidate(obj?.name?.ar);
+          addNameCandidate(obj?.name?.en);
+          addNameCandidate(obj?.label);
+          addNameCandidate(obj?.title);
+          addNameCandidate(obj?.title?.ar);
+          addNameCandidate(obj?.title?.en);
+          addNameCandidate(obj?.category);
+          addNameCandidate(obj?.category?.ar);
+          addNameCandidate(obj?.category?.en);
+          addNameCandidate(obj?.type);
+          addNameCandidate(obj?.serviceType);
+        };
+
+        addObjectNames(order?.category);
+        addObjectNames(order?.category?.name);
+        addObjectNames(order?.service);
+        addObjectNames(order?.service?.category);
+        addObjectNames(order?.service?.title);
+        addObjectNames(order?.selectedOption);
+        addObjectNames(order?.selectedOption?.category);
+        addObjectNames(order?.selectedOption?.title);
+        addObjectNames(order?.selectedOption?.name);
+
+        addNameCandidate(order?.categoryName);
+        addNameCandidate(order?.categoryLabel);
+        addNameCandidate(order?.categoryType);
+        addNameCandidate(order?.type);
+        addNameCandidate(order?.serviceType);
+        addNameCandidate(order?.productType);
+        addNameCandidate(order?.fuelType);
+        addNameCandidate(order?.orderType);
+        addNameCandidate(order?.serviceName);
+        addNameCandidate(order?.selectedOption?.label);
+
+        for (const key of ESSENTIAL_CATEGORY_ORDER) {
+          const meta = essentialMeta.get(key);
+          if (!meta) continue;
+
+          const hasIdMatch = Array.from(idCandidates).some((id) =>
+            meta.ids.has(id)
+          );
+          if (hasIdMatch) return key;
+
+          const hasNameMatch = Array.from(nameCandidates).some((name) => {
+            if (!name) return false;
+            if (meta.names.has(name)) return true;
+            for (const synonym of meta.synonyms) {
+              if (!synonym) continue;
+              if (name === synonym || name.includes(synonym) || synonym.includes(name)) {
+                return true;
+              }
+            }
+            return false;
+          });
+
+          if (hasNameMatch) return key;
+        }
+
+        return null;
+      };
+
+      const startOfDay = (date: Date) =>
+        new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+      orders.forEach((order) => {
+        const essentialKey = determineEssentialCategory(order);
+        if (!essentialKey) {
+          return;
+        }
+
+        const orderDate = getOrderDate(order);
+        if (!orderDate) return;
+
+        const normalizedDate = startOfDay(orderDate);
+        const monthKey = formatMonthKey(normalizedDate);
+        const dayKey = formatDayKey(normalizedDate);
+
+        const monthIndex = monthKeyToIndex.get(monthKey);
+        const day30Index = day30KeyToIndex.get(dayKey);
+        const day7Index = day7KeyToIndex.get(dayKey);
+
+        if (
+          monthIndex === undefined &&
+          day30Index === undefined &&
+          day7Index === undefined
+        ) {
+          return;
+        }
+
+        const amount = extractNumericValue([
+          order?.totalCost,
+          order?.totalPrice,
+          order?.price,
+          order?.amount,
+          order?.grandTotal,
+          order?.total,
+          order?.paymentAmount,
+          order?.paidAmount,
+          order?.totalOrderPrice,
+        ]);
+
+        const fallbackQuantity = extractNumericValue([
+          order?.totalLitre,
+          order?.totalLiter,
+          order?.quantity,
+          order?.selectedOption?.quantity,
+          order?.liters,
+          order?.litres,
+          order?.count,
+        ]);
+
+        const value = amount > 0 ? amount : fallbackQuantity;
+        if (value <= 0) return;
+
+        if (monthIndex !== undefined) {
+          const totals = monthlyTotals.get(essentialKey);
+          if (totals) totals[monthIndex] += value;
+        }
+
+        if (day30Index !== undefined) {
+          const totals = day30Totals.get(essentialKey);
+          if (totals) totals[day30Index] += value;
+        }
+
+        if (day7Index !== undefined) {
+          const totals = day7Totals.get(essentialKey);
+          if (totals) totals[day7Index] += value;
+        }
+      });
+
+      const buildDatasets = (
+        totalsMap: Map<EssentialCategoryKey, number[]>
+      ): EssentialCategorySalesDataset[] =>
+        ESSENTIAL_CATEGORY_ORDER.map((key) => {
+          const data = totalsMap.get(key) ?? [];
+          return {
+            key,
+            label: ESSENTIAL_CATEGORY_LABELS[key],
+            data: data.map(roundValue),
+          };
+        });
+
+      return {
+        last12Months: {
+          labels: monthRange.map(formatMonthLabel),
+          datasets: buildDatasets(monthlyTotals),
+        },
+        last30Days: {
+          labels: dayRange30.map(formatDayLabel),
+          datasets: buildDatasets(day30Totals),
+        },
+        last7Days: {
+          labels: dayRange7.map(formatDayLabel),
+          datasets: buildDatasets(day7Totals),
+        },
+      };
+    } catch (error) {
+      console.error(
+        "❌ Error calculating essential category sales trends:",
+        error
+      );
+      return {
+        last12Months: emptyTimeseries(monthRange, formatMonthLabel),
+        last30Days: emptyTimeseries(dayRange30, formatDayLabel),
+        last7Days: emptyTimeseries(dayRange7, formatDayLabel),
+      };
+    }
+  };
+
+export const getCompanyEssentialCategorySalesTrends =
+  async (): Promise<EssentialCategorySalesTrends> => {
+    const [categories, orders] = await Promise.all([
+      fetchAllCategories(),
+      fetchOrders(),
+    ]);
+
+    return getEssentialCategorySalesTrends({
+      categories,
+      orders,
+    });
+  };
+
+export const getServiceDistributerEssentialCategorySalesTrends =
+  async (): Promise<EssentialCategorySalesTrends> => {
+    try {
+      const currentUser = await waitForAuthState();
+      const email = currentUser?.email?.toLowerCase();
+
+      if (!email) {
+        console.warn(
+          "⚠️ No authenticated service distributer email found. Returning empty trends."
+        );
+        const empty = await getEssentialCategorySalesTrends({
+          categories: [],
+          orders: [],
+        });
+        return empty;
+      }
+
+      const [categories, rawOrders] = await Promise.all([
+        fetchAllCategories(),
+        fetchFuelStationRequests(email),
+      ]);
+
+      const flattenedOrders = rawOrders.map((order) => {
+        const base =
+          order?.originalOrder && typeof order.originalOrder === "object"
+            ? order.originalOrder
+            : null;
+
+        if (!base) {
+          return order;
+        }
+
+        const flattened = {
+          ...base,
+          id:
+            base.id ??
+            order.id ??
+            base.refId ??
+            base.orderNumber ??
+            order.refId ??
+            order.orderNumber,
+          category: base.category ?? order.category,
+          categoryId: base.categoryId ?? order.categoryId,
+          categoryIds:
+            base.categoryIds ??
+            base.categories ??
+            order.categoryIds ??
+            order.categories ??
+            [],
+          selectedOption: base.selectedOption ?? order.selectedOption,
+          service: base.service ?? order.service,
+          serviceType: base.serviceType ?? order.serviceType,
+          productType: base.productType ?? order.productType,
+          totalCost:
+            base.totalCost ??
+            order.totalCost ??
+            order.amount ??
+            base.amount ??
+            order.price,
+          totalPrice: base.totalPrice ?? order.totalPrice,
+          totalLitre: base.totalLitre ?? order.totalLitre,
+          totalLiter: base.totalLiter ?? order.totalLiter,
+          quantity: base.quantity ?? order.quantity,
+          liters: base.liters ?? order.liters,
+          litres: base.litres ?? order.litres,
+          count: base.count ?? order.count,
+          orderDate: base.orderDate ?? order.orderDate,
+          createdDate: base.createdDate ?? order.createdDate,
+          createdAt: base.createdAt ?? order.createdAt,
+          createdTime: base.createdTime ?? order.createdTime,
+        };
+
+        return flattened;
+      });
+
+      return getEssentialCategorySalesTrends({
+        categories,
+        orders: flattenedOrders,
+      });
+    } catch (error) {
+      console.error(
+        "❌ Error calculating service distributer essential category sales trends:",
+        error
+      );
+      return getEssentialCategorySalesTrends({
+        categories: [],
+        orders: [],
+      });
+    }
+  };
 /**
  * Calculate total fuel liter usage by type from all orders
  * @returns Promise with fuel usage breakdown

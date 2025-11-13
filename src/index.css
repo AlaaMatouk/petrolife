@@ -17,8 +17,18 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background-color: #f6f9fc;
-  color: #213547;
+  background-color: var(--surface-page);
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+#app {
+  min-height: 100vh;
+  background-color: transparent;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 /* Remove default button styles to let Tailwind handle them */

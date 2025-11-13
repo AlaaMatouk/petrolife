@@ -93,10 +93,10 @@ export const NotificationDropdown: React.FC = () => {
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={handleToggle}
-        className="relative flex items-center justify-center w-10 h-10 bg-gray-100 rounded-md border border-gray-300 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200"
+        className="relative flex items-center justify-center w-10 h-10 rounded-md border bg-[var(--surface-control)] border-[color:var(--border-subtle)] hover:bg-[var(--surface-control-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--ring-primary)] transition-colors duration-200"
         aria-label="Notifications"
       >
-        <Bell className="w-4 h-4 text-gray-600" />
+        <Bell className="w-4 h-4 text-[var(--text-secondary)]" />
         {unreadCount > 0 && (
           <span className="absolute -top-1 -right-1 flex items-center justify-center w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full">
             {unreadCount > 9 ? "9+" : unreadCount}
@@ -106,13 +106,15 @@ export const NotificationDropdown: React.FC = () => {
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute left-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-[500px] overflow-hidden flex flex-col">
+        <div className="absolute left-0 mt-2 w-80 bg-[var(--surface-popover)] rounded-lg shadow-xl border border-[color:var(--border-subtle)] z-50 max-h-[500px] overflow-hidden flex flex-col transition-colors duration-300">
           {/* Header */}
-          <div className="p-4 border-b border-gray-200 bg-gray-50">
+          <div className="p-4 border-b border-[color:var(--border-subtle)] bg-[var(--surface-control-muted)]">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-700">الإشعارات</h3>
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                الإشعارات
+              </h3>
               {notifications.length > 0 && (
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-[var(--text-tertiary)]">
                   {notifications.length} إشعار
                 </span>
               )}
@@ -124,7 +126,9 @@ export const NotificationDropdown: React.FC = () => {
             {loading ? (
               <div className="p-8 text-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
-                <p className="text-sm text-gray-500 mt-2">جاري التحميل...</p>
+                <p className="text-sm text-[var(--text-tertiary)] mt-2">
+                  جاري التحميل...
+                </p>
               </div>
             ) : error ? (
               <div className="p-8 text-center">
@@ -138,25 +142,27 @@ export const NotificationDropdown: React.FC = () => {
               </div>
             ) : notifications.length === 0 ? (
               <div className="p-8 text-center">
-                <Bell className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm text-gray-500">لا توجد إشعارات جديدة</p>
+                <Bell className="w-12 h-12 text-[var(--text-tertiary)]/40 mx-auto mb-2" />
+                <p className="text-sm text-[var(--text-tertiary)]">
+                  لا توجد إشعارات جديدة
+                </p>
               </div>
             ) : (
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-[color:var(--border-subtle)]">
                 {notifications.map((notification) => (
                   <div
                     key={notification.id}
-                    className="p-4 hover:bg-gray-50 transition-colors duration-150 cursor-pointer"
+                    className="p-4 hover:bg-[var(--surface-control-muted)] transition-colors duration-150 cursor-pointer"
                   >
                     {notification.title && (
-                      <h4 className="text-sm font-semibold text-gray-800 mb-1 text-right">
+                      <h4 className="text-sm font-semibold text-[var(--text-primary)] mb-1 text-right transition-colors duration-300">
                         {notification.title}
                       </h4>
                     )}
-                    <p className="text-sm text-gray-700 text-right mb-2 leading-relaxed">
+                    <p className="text-sm text-[var(--text-secondary)] text-right mb-2 leading-relaxed transition-colors duration-300">
                       {notification.body}
                     </p>
-                    <p className="text-xs text-gray-500 text-right">
+                    <p className="text-xs text-[var(--text-tertiary)] text-right transition-colors duration-300">
                       {formatDate(notification.createdDate)}
                     </p>
                   </div>
@@ -167,10 +173,10 @@ export const NotificationDropdown: React.FC = () => {
 
           {/* Footer - Optional refresh button */}
           {notifications.length > 0 && (
-            <div className="p-2 border-t border-gray-200 bg-gray-50">
+            <div className="p-2 border-t border-[color:var(--border-subtle)] bg-[var(--surface-control-muted)]">
               <button
                 onClick={loadNotifications}
-                className="w-full text-xs text-blue-600 hover:text-blue-700 font-medium py-1"
+                className="w-full text-xs text-blue-500 hover:text-blue-400 font-medium py-1 transition-colors duration-200"
               >
                 تحديث
               </button>

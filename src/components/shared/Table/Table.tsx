@@ -51,28 +51,34 @@ export const Table = <T extends Record<string, any>>({
   const hasAnyLabels = columns.some((column) => column.label);
 
   return (
-    <div className={`w-full ${className}`}>
+    <div
+      className={`w-full rounded-[20px] border border-[color:var(--border-subtle)] bg-[var(--surface-card)] shadow-sm transition-colors duration-300 ${className}`}
+    >
       <div className="overflow-x-auto" dir="rtl">
         <table
           className="w-full"
           style={{ borderCollapse: "separate", borderSpacing: 0 }}
         >
           {hasAnyLabels && (
-            <thead className="">
+            <thead>
               <tr>
                 {reversedColumns.map((column) => (
                   <th
                     key={column.key}
-                    className={`px-4 py-3 text-center  bg-gray-50 border-b border-gray-200 font-medium text-gray-700 text-sm whitespace-nowrap ${
+                    className={`px-4 py-3 text-center border-b border-[color:var(--border-subtle)] font-medium text-sm whitespace-nowrap transition-colors duration-300 ${
                       column.width || "w-auto"
                     } ${headerClassName}`}
+                    style={{
+                      backgroundColor: "var(--table-header-bg)",
+                      color: "var(--table-text-color)",
+                    }}
                   >
                     {column.label && (
                       <div className="flex items-center justify-start gap-2">
                         <span>{column.label}</span>
                         {(column.key === "accountStatus" ||
                           column.key === "stationStatus") && (
-                          <SlidersHorizontal className="w-4 h-4 text-gray-400" />
+                          <SlidersHorizontal className="w-4 h-4 text-[var(--text-tertiary)]" />
                         )}
                       </div>
                     )}
@@ -85,12 +91,14 @@ export const Table = <T extends Record<string, any>>({
             {(Array.isArray(data) ? data : []).map((row, rowIndex) => (
               <tr
                 key={rowIndex}
-                className={`hover:bg-gray-50 transition-colors ${rowClassName}`}
+                className={`hover:bg-[color:var(--table-row-hover)] transition-colors ${rowClassName}`}
                 style={{
-                  borderBottom: "1px solid var(--border-light, #e5e7eb)",
+                  borderBottom:
+                    "1px solid var(--border-subtle, rgba(226, 232, 240, 1))",
                   borderBottomWidth: "1px",
                   borderBottomStyle: "solid",
-                  borderBottomColor: "var(--border-light, #e5e7eb)",
+                  borderBottomColor:
+                    "var(--border-subtle, rgba(226, 232, 240, 1))",
                 }}
               >
                 {reversedColumns.map((column) => (
@@ -100,10 +108,12 @@ export const Table = <T extends Record<string, any>>({
                       column.width || "w-auto"
                     } ${cellClassName}`}
                     style={{
-                      borderBottom: "1px solid var(--border-light, #e5e7eb)",
+                      borderBottom:
+                        "1px solid var(--border-subtle, rgba(226, 232, 240, 1))",
+                      color: "var(--table-text-color)",
                     }}
                   >
-                    <div className="flex items-center ">
+                    <div className="flex items-center transition-colors duration-300">
                       {column.render
                         ? column.render(row[column.key], row, rowIndex)
                         : row[column.key]}
