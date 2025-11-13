@@ -56,7 +56,7 @@ export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
         />
       </div>
       {message && (
-        <p className={`text-gray-600 font-medium ${textSizeClasses[size]} [direction:rtl]`}>
+        <p className={`text-[var(--text-secondary)] font-medium ${textSizeClasses[size]} [direction:rtl] transition-colors duration-300`}>
           {message}
         </p>
       )}
@@ -65,7 +65,7 @@ export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
 
   if (fullPage) {
     return (
-      <div className="flex items-center justify-center min-h-screen w-full bg-gray-50">
+      <div className="flex items-center justify-center min-h-screen w-full bg-[var(--surface-page)] transition-colors duration-300">
         {spinnerContent}
       </div>
     );

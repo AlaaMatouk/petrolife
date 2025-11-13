@@ -40,3 +40,15 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
 }
+
+[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #1f2a44;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #2b3a57;
+}

@@ -86,7 +86,7 @@ const ConsumptionSection = () => {
 
   return (
     <section className="mb-8">
-      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+      <div className="bg-[var(--surface-card)] rounded-xl border border-[color:var(--border-subtle)] p-6 shadow-sm transition-colors duration-300">
         {/* First Row - Title and Time Periods on Right, Legend on Left */}
         <div className="flex items-center justify-between mb-6">
           {/* Legend - Left */}
@@ -135,7 +135,7 @@ const ConsumptionSection = () => {
               <h2 className="text-lg font-bold text-[var(--form-section-title-color)]">
                 المبيعات
               </h2>
-              <Fuel className="w-5 h-5 text-gray-500" />
+              <Fuel className="w-5 h-5 text-color-mode-text-icons-t-blue" />
             </div>
           </div>
         </div>
@@ -230,15 +230,21 @@ const MyCarsSection = () => {
     { name: "طلبات تغيير البطاريات", count: 15, total: 200 },
   ];
 
-  const colors = ["#5A66C1", "#EE3939", "#5B738B", "#E76500", "#00C950"];
+  const colors = [
+    "var(--color-mode-text-icons-t-blue)",
+    "#EE3939",
+    "var(--text-secondary)",
+    "#E76500",
+    "#00C950",
+  ];
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+    <div className="bg-[var(--surface-card)] rounded-xl border border-[color:var(--border-strong)] p-6 shadow-lg transition-colors duration-300">
       <div className="flex items-center justify-between mb-8">
-        <div className="text-[16px] font-normal text-[#5B738B] [direction:rtl] text-right">
+        <div className="text-[16px] font-normal text-[var(--text-secondary)] [direction:rtl] text-right transition-colors duration-300">
           اجمالي طلبات التوصيل 200
         </div>
-        <h3 className="text-xl font-bold text-[#5A66C1] [direction:rtl] text-right">
+        <h3 className="text-xl font-bold text-color-mode-text-icons-t-blue [direction:rtl] text-right transition-colors duration-300">
           تقرير طلبات التوصيل
         </h3>
       </div>
@@ -250,16 +256,16 @@ const MyCarsSection = () => {
           return (
             <div key={index} className="space-y-3">
               <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-[#223548] [direction:rtl]">
+                <span className="text-sm font-medium text-[var(--text-primary)] [direction:rtl] transition-colors duration-300">
                   {category.total}/{category.count}
                 </span>
-                <span className="text-sm font-normal text-[#223548] [direction:rtl]">
+                <span className="text-sm font-normal text-[var(--text-secondary)] [direction:rtl] transition-colors duration-300">
                   {category.name}
                 </span>
               </div>
-              <div className="w-full bg-gray-100 rounded-full h-[5px] flex justify-end">
+              <div className="w-full bg-[var(--surface-control-hover)] rounded-full h-[6px] flex justify-end transition-colors duration-300">
                 <div
-                  className="h-[5px] rounded-full transition-all duration-500"
+                  className="h-[6px] rounded-full transition-all duration-500"
                   style={{
                     width: `${percentage}%`,
                     backgroundColor: colors[index],
@@ -297,10 +303,10 @@ const FuelConsumptionByCitiesSection = () => {
   );
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+    <div className="bg-[var(--surface-card)] rounded-xl border border-[color:var(--border-subtle)] p-6 shadow-sm transition-colors duration-300">
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-4">
-          <button className="flex items-center gap-2 px-3 py-2 border border-gray-300 bg-white text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
+          <button className="flex items-center gap-2 px-3 py-2 border border-[color:var(--border-subtle)] bg-[var(--surface-control)] text-[var(--text-secondary)] rounded-lg hover:bg-[var(--surface-control-hover)] transition-colors">
             <Download className="w-4 h-4" />
             <span className="text-sm font-medium [direction:rtl]">تصدير</span>
           </button>
@@ -309,7 +315,7 @@ const FuelConsumptionByCitiesSection = () => {
             onFilterChange={setSelectedFilter}
           />
         </div>
-        <h3 className="text-xl font-bold text-gray-800 [direction:rtl] text-right">
+        <h3 className="text-xl font-bold text-color-mode-text-icons-t-blue [direction:rtl] text-right transition-colors duration-300">
           استهلاك الوقود للمدن
         </h3>
       </div>
@@ -323,7 +329,7 @@ const FuelConsumptionByCitiesSection = () => {
               {/* Bar */}
               <div className="relative w-6 mb-3">
                 <div
-                  className="w-full bg-gray-100 rounded-full"
+                  className="w-full bg-[var(--surface-control)] rounded-full transition-colors duration-300"
                   style={{ height: "240px" }}
                 >
                   <div
@@ -332,13 +338,13 @@ const FuelConsumptionByCitiesSection = () => {
                       height: `${height}%`,
                       position: "absolute",
                       bottom: 0,
-                      backgroundColor: "#5A66C1",
+                      backgroundColor: "var(--color-mode-text-icons-t-blue)",
                     }}
                   ></div>
                 </div>
               </div>
               {/* City Name */}
-              <div className="text-xs text-gray-600 [direction:rtl] text-center font-medium">
+              <div className="text-xs text-[var(--text-secondary)] [direction:rtl] text-center font-medium transition-colors duration-300">
                 {city.name}
               </div>
             </div>
@@ -385,7 +391,7 @@ const LatestOrdersSection = ({
       label: "تاريخ العملية",
       width: "min-w-[150px]",
       render: (_: any, order: any) => (
-        <div className="text-right text-sm text-gray-800 [direction:rtl]">
+        <div className="text-right text-sm text-[var(--text-primary)] [direction:rtl] transition-colors duration-300">
           {order?.date || "N/A"}
         </div>
       ),
@@ -395,7 +401,7 @@ const LatestOrdersSection = ({
       label: "السعر الكلي",
       width: "min-w-[100px]",
       render: (_: any, order: any) => (
-        <div className="text-right text-sm text-gray-800 [direction:rtl]">
+        <div className="text-right text-sm text-[var(--text-primary)] [direction:rtl] transition-colors duration-300">
           {order?.totalCost || "N/A"}
         </div>
       ),
@@ -405,7 +411,7 @@ const LatestOrdersSection = ({
       label: "اجمالي اللترات",
       width: "min-w-[100px]",
       render: (_: any, order: any) => (
-        <div className="text-right text-sm text-gray-800 [direction:rtl]">
+        <div className="text-right text-sm text-[var(--text-primary)] [direction:rtl] transition-colors duration-300">
           {order?.litre || "N/A"}
         </div>
       ),
@@ -415,7 +421,7 @@ const LatestOrdersSection = ({
       label: "الخدمة",
       width: "min-w-[100px]",
       render: (_: any, order: any) => (
-        <div className="text-right text-sm text-gray-800 [direction:rtl]">
+        <div className="text-right text-sm text-[var(--text-primary)] [direction:rtl] transition-colors duration-300">
           {order?.service || "N/A"}
         </div>
       ),
@@ -425,7 +431,7 @@ const LatestOrdersSection = ({
       label: "اسم العميل",
       width: "min-w-[100px]",
       render: (_: any, order: any) => (
-        <div className="text-right text-sm text-gray-800 [direction:rtl]">
+        <div className="text-right text-sm text-[var(--text-primary)] [direction:rtl] transition-colors duration-300">
           {order?.client || "N/A"}
         </div>
       ),
@@ -435,7 +441,7 @@ const LatestOrdersSection = ({
       label: "الرقم المرجعي",
       width: "min-w-[100px]",
       render: (_: any, order: any) => (
-        <div className="text-right text-sm text-gray-800 [direction:rtl]">
+        <div className="text-right text-sm text-[var(--text-primary)] [direction:rtl] transition-colors duration-300">
           {order?.code || "N/A"}
         </div>
       ),
@@ -443,11 +449,13 @@ const LatestOrdersSection = ({
   ];
 
   return (
-    <section className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+    <section className="bg-[var(--surface-card)] rounded-xl border border-[color:var(--border-subtle)] p-6 shadow-sm transition-colors duration-300">
       <div className="flex items-center justify-between mb-6">
         <button
-          className="flex items-center gap-2 px-3 py-2 bg-white text-[#5A66C1] rounded-lg hover:bg-gray-50 transition-colors"
-          style={{ border: "1px solid #5A66C1" }}
+          className="flex items-center gap-2 px-3 py-2 bg-[var(--surface-control)] text-color-mode-text-icons-t-blue rounded-lg hover:bg-[var(--surface-control-hover)] transition-colors"
+          style={{
+            border: "1px solid var(--nav-tab-active-bg)",
+          }}
         >
           <span className="text-sm font-medium [direction:rtl] ">
             عرض المزيد
@@ -458,14 +466,21 @@ const LatestOrdersSection = ({
           <div className="flex gap-3">
             <button
               onClick={() => setSelectedButton(0)}
-              className="px-[10px] py-1 rounded-[8px] transition-all duration-200 hover:scale-105"
+              className="px-[10px] py-1 rounded-[8px] transition-all duration-200 border"
               style={{
                 backgroundColor:
-                  selectedButton === 0 ? "#F9F3FF" : "rgba(245, 246, 247, 0.4)",
-                color: selectedButton === 0 ? "#223548" : "#A9B4BE",
+                  selectedButton === 0
+                    ? "var(--nav-tab-active-bg)"
+                    : "var(--surface-control)",
+                color:
+                  selectedButton === 0
+                    ? "var(--nav-tab-active-text)"
+                    : "var(--text-secondary)",
                 fontSize: "14px",
                 fontWeight: "500",
-                border: "none",
+                borderColor: selectedButton === 0
+                  ? "transparent"
+                  : "var(--border-subtle)",
                 cursor: "pointer",
               }}
             >
@@ -473,21 +488,28 @@ const LatestOrdersSection = ({
             </button>
             <button
               onClick={() => setSelectedButton(1)}
-              className="px-[10px] py-1 rounded-[8px] transition-all duration-200 hover:scale-105"
+              className="px-[10px] py-1 rounded-[8px] transition-all duration-200 border"
               style={{
                 backgroundColor:
-                  selectedButton === 1 ? "#F9F3FF" : "rgba(245, 246, 247, 0.4)",
-                color: selectedButton === 1 ? "#223548" : "#A9B4BE",
+                  selectedButton === 1
+                    ? "var(--nav-tab-active-bg)"
+                    : "var(--surface-control)",
+                color:
+                  selectedButton === 1
+                    ? "var(--nav-tab-active-text)"
+                    : "var(--text-secondary)",
                 fontSize: "14px",
                 fontWeight: "500",
-                border: "none",
+                borderColor: selectedButton === 1
+                  ? "transparent"
+                  : "var(--border-subtle)",
                 cursor: "pointer",
               }}
             >
               الشركات
             </button>
           </div>
-          <h3 className="mt-[-1.00px] font-[800] text-[#5A66C1] text-[18px] leading-[24px] [direction:rtl] relative  whitespace-nowrap ">
+          <h3 className="mt-[-1.00px] font-[800] text-color-mode-text-icons-t-blue text-[18px] leading-[24px] [direction:rtl] relative whitespace-nowrap transition-colors duration-300">
             أحدث الطلبات
           </h3>
         </div>

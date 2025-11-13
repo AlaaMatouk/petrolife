@@ -25,9 +25,46 @@
   --border-light: #e5e7eb;
   --border-medium: #a9b4be;
   --border-dark: #5b738b;
+  --border-subtle: #e2e8f0;
+  --border-strong: #cbd5e1;
   --text-primary: #213547;
   --text-secondary: #5b738b;
   --text-tertiary: #a9b4be;
+  --text-placeholder: #9ca3af;
+  --surface-page: #f6f9fc;
+  --surface-card: #ffffff;
+  --surface-card-muted: #f5f6f7;
+  --surface-elevated: #ffffff;
+  --surface-contrast: #ffffff;
+  --surface-navbar: #ffffff;
+  --surface-sidebar: #ffffff;
+  --surface-table: #ffffff;
+  --surface-popover: #ffffff;
+  --surface-control: #ffffff;
+  --surface-control-muted: #f5f6f7;
+  --surface-control-hover: #f1f5f9;
+  --surface-input: #ffffff;
+  --surface-input-disabled: #f1f5f9;
+  --ring-primary: #5a66c1;
+  --shadow-card: 0px 2.32px 0.77px #0000000f, 0px 2.32px 6.19px #00000026,
+    0px 0px 0px 0.77px #0000000a;
+  --table-header-bg: #f8fafc;
+  --table-row-hover: rgba(15, 23, 42, 0.06);
+  --table-text-color: #213547;
+  --nav-tab-active-bg: #f9f3ff;
+  --nav-tab-active-text: #223548;
+  --header-breadcrumb-color: #5b738b;
+  --header-breadcrumb-active: #5b738b;
+  --time-filter-default-bg: #ffffff;
+  --time-filter-active-bg: #f9f3ff;
+  --time-filter-border: #e2e8f0;
+  --time-filter-default-text: #5b738b;
+  --time-filter-active-text: #223548;
+  --stats-card-number: #5b738b;
+  --stats-card-total: #5b738b;
+  --nav-tab-text: #223548;
+  --default-account-bg: rgba(254, 249, 195, 1);
+  --default-account-text: #0f172a;
   /* Form color variables */
   --form-active-label-color: #5b738b;
   --form-active-input-text-color: #5b738b;
@@ -200,6 +237,104 @@ You can apply the theme on any DOM node, not just the `body`
   --color-mode-special-body-AKA-page: var(--color-shades-plain-dark);
 }
 
+[data-theme="dark"] {
+  --border-light: rgba(71, 85, 105, 0.4);
+  --border-medium: rgba(118, 132, 151, 0.65);
+  --border-dark: rgba(173, 186, 203, 0.7);
+  --border-subtle: #2a3139;
+  --border-strong: #39424d;
+  --text-primary: #e2e8f0;
+  --text-secondary: #c0cad6;
+  --text-tertiary: #738192;
+  --text-placeholder: #4b5563;
+  --nav-tab-active-text: #f5f6f7;
+  --nav-tab-text: #f5f6f7;
+  --default-account-bg: #0f172a;
+  --default-account-text: #f5f6f7;
+  --surface-page: #101519;
+  --surface-card: #12171c;
+  --surface-card-muted: #12171c;
+  --surface-elevated: #12171c;
+  --surface-contrast: #12171c;
+  --surface-navbar: #12171c;
+  --surface-sidebar: #12171c;
+  --surface-table: #131a20;
+  --surface-popover: #1b2430;
+  --surface-control: #131a20;
+  --surface-control-muted: #131a20;
+  --surface-control-hover: #1a232c;
+  --surface-input: #131a20;
+  --surface-input-disabled: #1a232c;
+  --ring-primary: rgba(90, 102, 193, 0.65);
+  --shadow-card: 0px 8px 24px rgba(6, 10, 27, 0.6);
+  --form-active-label-color: #f5f6f7;
+  --form-active-input-text-color: #f5f6f7;
+  --form-active-placeholder-color: #8d9cb0;
+  --form-readonly-label-color: #8d9cb0;
+  --form-readonly-input-text-color: #f5f6f7;
+  --form-section-title-color: #f5f6f7;
+  --form-header-title-color: #f5f6f7;
+  --table-header-bg: #131a20;
+  --table-row-hover: #131a20;
+  --table-text-color: #f5f6f7;
+  --nav-tab-active-bg: #30164b;
+  --nav-tab-active-text: #f5f6f7;
+  --header-breadcrumb-color: #c0cad6;
+  --header-breadcrumb-active: #f5f6f7;
+  --time-filter-default-bg: #101519;
+  --time-filter-active-bg: #1b2430;
+  --time-filter-border: #2f3740;
+  --time-filter-default-text: #b6c2d0;
+  --time-filter-active-text: #f5f6f7;
+  --stats-card-number: #f5f6f7;
+  --stats-card-total: #f5f6f7;
+}
+
+[data-theme="dark"] .bg-white,
+[data-theme="dark"] .bg-basewhite {
+  background-color: var(--surface-card) !important;
+}
+
+[data-theme="dark"] .bg-gray-50,
+[data-theme="dark"] .bg-gray-100,
+[data-theme="dark"] .bg-color-mode-surface-bg-screen {
+  background-color: var(--surface-card-muted) !important;
+}
+
+[data-theme="dark"] .border-gray-200,
+[data-theme="dark"] .border-gray-300,
+[data-theme="dark"] .border-color-mode-text-icons-t-placeholder {
+  border-color: var(--border-subtle) !important;
+}
+[data-theme="dark"] .bg-white,
+[data-theme="dark"] .bg-gray-100,
+[data-theme="dark"] .hover\:bg-gray-100:hover,
+[data-theme="dark"] .hover\:bg-gray-200:hover {
+  background-color: var(--surface-card) !important;
+}
+[data-theme="dark"] .text-gray-700,
+[data-theme="dark"] .text-gray-600,
+[data-theme="dark"] .text-gray-500 {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] .text-gray-700,
+[data-theme="dark"] .text-gray-600,
+[data-theme="dark"] .text-color-mode-text-icons-t-sec {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] .text-gray-500,
+[data-theme="dark"] .text-color-mode-text-icons-t-placeholder {
+  color: var(--text-tertiary) !important;
+}
+
+[data-theme="dark"] .shadow-sm,
+[data-theme="dark"] .shadow-md,
+[data-theme="dark"] .shadow-lg {
+  box-shadow: var(--shadow-card) !important;
+}
+
 [data-color-shades-mode="cool"] {
   --color-shades-plain-dark: var(--color-primitives-cool-black);
   --color-shades-shades-10: var(--color-primitives-blue-grey-10);
@@ -224,16 +359,16 @@ You can apply the theme on any DOM node, not just the `body`
 }
 
 [data-color-mode-mode="dark"] {
-  --color-mode-surface-bg-icon-gray: rgba(19, 26, 32, 1);
-  --color-mode-surface-bg-screen: var(--core-colors-grey-grey-11);
-  --color-mode-surface-primary-blue: var(--core-colors-blue-blue-7);
-  --color-mode-surface-purple-bg: var(--core-colors-purple-purple-11);
-  --color-mode-text-icons-t-blue: var(--core-colors-blue-blue-5);
-  --color-mode-text-icons-t-orange: var(--core-colors-mango-mango-5);
-  --color-mode-text-icons-t-placeholder: var(--core-colors-grey-grey-6);
-  --color-mode-text-icons-t-primary-gray: var(--core-colors-grey-grey-1);
-  --color-mode-text-icons-t-red: var(--core-colors-red-red-5);
-  --color-mode-text-icons-t-sec: var(--core-colors-grey-grey-2);
+  --color-mode-surface-bg-icon-gray: #131a20;
+  --color-mode-surface-bg-screen: #12171c;
+  --color-mode-surface-primary-blue: rgba(90, 102, 193, 0.35);
+  --color-mode-surface-purple-bg: rgba(48, 22, 75, 0.65);
+  --color-mode-text-icons-t-blue: rgba(126, 161, 255, 1);
+  --color-mode-text-icons-t-orange: rgba(255, 187, 120, 1);
+  --color-mode-text-icons-t-placeholder: #8d9cb0;
+  --color-mode-text-icons-t-primary-gray: #f5f6f7;
+  --color-mode-text-icons-t-red: rgba(255, 129, 145, 1);
+  --color-mode-text-icons-t-sec: #c0cad6;
 }
 
 :root {

@@ -19,10 +19,17 @@ export const TimeFilter: React.FC<TimeFilterProps> = ({
       className={`flex justify-between w-full items-center gap-2 relative flex-[0_0_auto] ${className}`}
     >
       <button
-        className="w-[35px] bg-color-mode-surface-bg-icon-gray border-[0.2px] border-solid border-color-mode-surface-bg-screen items-start flex items-center justify-center h-[30px] relative rounded-[5px] hover:bg-opacity-60 transition-all duration-200"
+        className="w-[35px] h-[30px] flex items-center justify-center rounded-[5px] border transition-all duration-200"
+        style={{
+          borderColor: "var(--time-filter-border)",
+          backgroundColor: "var(--time-filter-default-bg)",
+        }}
         aria-label="عرض الخيارات"
       >
-        <Calendar className="w-4 h-4" />
+        <Calendar
+          className="w-4 h-4"
+          style={{ color: "var(--time-filter-default-text)" }}
+        />
       </button>
 
       <div className="flex justify-end w-full gap-2">
@@ -30,11 +37,16 @@ export const TimeFilter: React.FC<TimeFilterProps> = ({
           <button
             key={filter}
             onClick={() => onFilterChange(filter)}
-            className={`flex flex-col  h-[30px] items-center justify-end gap-2.5 p-4 relative rounded-[5px] border border-solid transition-all hover:border-[var(--color-mode-text-icons-t-blue)] focus:outline-none focus:ring-2 focus:ring-[var(--color-mode-text-icons-t-blue)] focus:ring-opacity-50 ${
-              selectedFilter === filter
-                ? "border-[var(--color-mode-text-icons-t-blue)] bg-[var(--color-mode-text-icons-t-blue)]/5"
-                : "border-[0.2px]"
+            className={`flex flex-col h-[30px] items-center justify-end gap-2.5 p-4 relative rounded-[5px] border transition-all focus:outline-none focus:ring-2 focus:ring-[var(--time-filter-active-bg)] focus:ring-opacity-40 ${
+              selectedFilter === filter ? "" : "hover:bg-[var(--surface-control-hover)]"
             }`}
+            style={{
+              borderColor: "var(--time-filter-border)",
+              backgroundColor:
+                selectedFilter === filter
+                  ? "var(--time-filter-active-bg)"
+                  : "var(--time-filter-default-bg)",
+            }}
             aria-pressed={selectedFilter === filter}
             type="button"
           >
@@ -42,9 +54,15 @@ export const TimeFilter: React.FC<TimeFilterProps> = ({
               <span
                 className={`flex items-center justify-center h-4 mt-[-1.00px] text-sm tracking-[0.40px] leading-[19.2px] whitespace-nowrap [font-family:'Tajawal',Helvetica] [direction:rtl] transition-colors ${
                   selectedFilter === filter
-                    ? "font-bold text-[#5A66C1]"
-                    : "font-normal text-[#5B738B]"
+                    ? "font-bold"
+                    : "font-normal"
                 }`}
+                style={{
+                  color:
+                    selectedFilter === filter
+                      ? "var(--time-filter-active-text)"
+                      : "var(--time-filter-default-text)",
+                }}
               >
                 {filter}
               </span>

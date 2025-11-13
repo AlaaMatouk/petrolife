@@ -7,7 +7,7 @@ interface LogoProps {
 
 export const Logo: React.FC<LogoProps> = ({ primary, secondary }) => {
   return (
-    <header className="flex items-center justify-end gap-2 p-4">
+    <header className="flex items-center justify-end gap-2 p-4 border-b border-[color:var(--border-subtle)] transition-colors duration-300">
       <img
         className="h-8 w-auto"
         alt="Company logo part 1"
