@@ -2199,12 +2199,21 @@ export const fetchCarWashOrders = async (): Promise<any[]> => {
  * Fetch car stations and calculate total liters consumed from orders
  * @returns Promise with car stations data enriched with consumption info
  */
-export const fetchCarStationsWithConsumption = async (): Promise<any[]> => {
+export interface CarStationsWithConsumptionOptions {
+  includeAllOrders?: boolean;
+  orders?: any[];
+}
+
+export const fetchCarStationsWithConsumption = async (
+  options?: CarStationsWithConsumptionOptions
+): Promise<any[]> => {
   try {
     const user = auth.currentUser;
-    if (!user) {
-      console.error("No authenticated user");
-      return [];
+    if (!options?.includeAllOrders) {
+      if (!user) {
+        console.error("No authenticated user");
+        return [];
+      }
     }
 
     // Step 1: Fetch all car stations
@@ -2241,9 +2250,18 @@ export const fetchCarStationsWithConsumption = async (): Promise<any[]> => {
       });
     });
 
-    // Step 2: Fetch orders filtered by current user
-    const orders = await fetchOrders();
-    console.log("\n📦 Orders fetched for current user:", orders.length);
+    // Step 2: Fetch orders based on scope
+    let orders: any[] = [];
+    if (options?.orders) {
+      orders = options.orders;
+      console.log("\n📦 Orders provided via options:", orders.length);
+    } else if (options?.includeAllOrders) {
+      orders = await fetchAllOrders();
+      console.log("\n📦 Orders fetched for admin view:", orders.length);
+    } else {
+      orders = await fetchOrders();
+      console.log("\n📦 Orders fetched for current user:", orders.length);
+    }
 
     // Debug: Show first 3 orders
     if (orders.length > 0) {
@@ -2452,7 +2470,12 @@ export const fetchFinancialReportData = async (): Promise<any[]> => {
  * Groups stations by city and sums consumption
  * @returns Promise with array of cities and their fuel consumption
  */
-export const calculateFuelConsumptionByCities = async () => {
+export interface FuelConsumptionByCitiesOptions
+  extends CarStationsWithConsumptionOptions {}
+
+export const calculateFuelConsumptionByCities = async (
+  options?: FuelConsumptionByCitiesOptions
+) => {
   try {
     console.log("\n🏙️ ========================================");
     console.log("📊 CALCULATING FUEL CONSUMPTION BY CITIES");
@@ -2461,7 +2484,7 @@ export const calculateFuelConsumptionByCities = async () => {
 
     // Fetch car stations WITH consumption calculated from orders
     // This function matches orders to stations and calculates totalLitersConsumed
-    const stations = await fetchCarStationsWithConsumption();
+    const stations = await fetchCarStationsWithConsumption(options);
 
     if (!stations || stations.length === 0) {
       console.log("⚠️ No stations found");

@@ -34,6 +34,7 @@ import {
   EssentialCategorySalesTrends,
   EssentialCategoryTimeseries,
   EssentialCategoryKey,
+  calculateFuelConsumptionByCities,
 } from "../../services/firestore";
 
 // Context type for outlet (uncomment when using search functionality)
@@ -440,24 +441,70 @@ const MyCarsSection = () => {
 // Fuel Consumption by Cities Section
 const FuelConsumptionByCitiesSection = () => {
   const [selectedFilter, setSelectedFilter] = useState("اخر 12 شهر");
+  const [citiesTotals, setCitiesTotals] = useState<
+    { name: string; consumption: number; stationCount?: number }[]
+  >([]);
+  const [isLoadingCities, setIsLoadingCities] = useState(true);
+  const [citiesError, setCitiesError] = useState<string | null>(null);
 
-  const citiesData = [
-    { name: "الرياض", consumption: 15 },
-    { name: "جدة", consumption: 70 },
-    { name: "مكة", consumption: 45 },
-    { name: "الرياض", consumption: 60 },
-    { name: "الرياض", consumption: 75 },
-    { name: "الرياض", consumption: 80 },
-    { name: "الرياض", consumption: 65 },
-    { name: "الرياض", consumption: 20 },
-    { name: "الرياض", consumption: 85 },
-    { name: "الرياض", consumption: 90 },
-    { name: "الرياض", consumption: 95 },
-  ];
+  useEffect(() => {
+    let cancelled = false;
 
-  const maxConsumption = Math.max(
-    ...citiesData.map((city) => city.consumption)
-  );
+    const load = async () => {
+      try {
+        setIsLoadingCities(true);
+        const totals = await calculateFuelConsumptionByCities({
+          includeAllOrders: true,
+        });
+        if (cancelled) return;
+        setCitiesTotals(totals);
+        setCitiesError(null);
+      } catch (error) {
+        console.error("❌ Error loading fuel consumption by cities:", error);
+        if (!cancelled) {
+          setCitiesTotals([]);
+          setCitiesError("تعذر تحميل استهلاك الوقود للمدن.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingCities(false);
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const displayedTotals = useMemo(() => {
+    if (!citiesTotals.length) return [];
+
+    const sorted = [...citiesTotals].sort(
+      (a, b) => b.consumption - a.consumption
+    );
+
+    if (selectedFilter === "اخر اسبوع") {
+      return sorted.slice(0, 5);
+    }
+
+    if (selectedFilter === "اخر 30 يوم") {
+      return sorted.slice(0, 8);
+    }
+
+    if (selectedFilter === "اخر 6 شهور") {
+      return sorted.slice(0, 10);
+    }
+
+    return sorted;
+  }, [citiesTotals, selectedFilter]);
+
+  const maxConsumption = useMemo(() => {
+    if (!displayedTotals.length) return 0;
+    return Math.max(...displayedTotals.map((city) => city.consumption));
+  }, [displayedTotals]);
 
   return (
     <div className="bg-[var(--surface-card)] rounded-xl border border-[color:var(--border-subtle)] p-6 shadow-sm transition-colors duration-300">
@@ -477,36 +524,56 @@ const FuelConsumptionByCitiesSection = () => {
         </h3>
       </div>
 
-      {/* Bar Chart */}
-      <div className="h-80 flex items-end justify-between gap-1">
-        {citiesData.map((city, index) => {
-          const height = (city.consumption / maxConsumption) * 100;
-          return (
-            <div key={index} className="flex flex-col items-center flex-1">
-              {/* Bar */}
-              <div className="relative w-6 mb-3">
-                <div
-                  className="w-full bg-[var(--surface-control)] rounded-full transition-colors duration-300"
-                  style={{ height: "240px" }}
-                >
-                  <div
-                    className="w-full rounded-full transition-all duration-700"
-                    style={{
-                      height: `${height}%`,
-                      position: "absolute",
-                      bottom: 0,
-                      backgroundColor: "var(--color-mode-text-icons-t-blue)",
-                    }}
-                  ></div>
+      {citiesError && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {citiesError}
+        </div>
+      )}
+
+      <div className="min-h-[240px]">
+        {isLoadingCities ? (
+          <div className="flex h-[240px] items-center justify-center">
+            <Spinner size="md" />
+          </div>
+        ) : displayedTotals.length === 0 ? (
+          <div className="flex h-[240px] flex-col items-center justify-center rounded-xl border border-dashed border-[color:var(--border-subtle)] bg-[var(--surface-control)] text-sm text-[var(--text-secondary)]">
+            لا توجد بيانات استهلاك للفترة المحددة.
+          </div>
+        ) : (
+          <div className="flex h-80 items-end justify-between gap-4">
+            {displayedTotals.map((city, index) => {
+              const height =
+                maxConsumption > 0
+                  ? Math.min(100, (city.consumption / maxConsumption) * 100)
+                  : 0;
+
+              return (
+                <div key={city.name} className="flex flex-1 flex-col items-center">
+                  <div className="flex h-64 w-full max-w-[36px] items-end rounded-full bg-[var(--surface-control-hover)]">
+                    <div
+                      className="w-full rounded-full transition-all duration-500"
+                      style={{
+                        height: `${Math.max(height, 10)}%`,
+                        backgroundColor: "var(--color-mode-text-icons-t-blue)",
+                      }}
+                    />
+                  </div>
+                  <div className="mt-3 flex flex-col items-center gap-1 text-center">
+                    <span className="text-sm font-semibold text-color-mode-text-icons-t-blue">
+                      {Math.round(city.consumption).toLocaleString("ar-SA")} لتر
+                    </span>
+                    <span className="text-xs font-medium text-[var(--text-primary)] [direction:rtl]">
+                      {city.name}
+                    </span>
+                    <span className="text-[10px] text-[var(--text-secondary)]">
+                      #{index + 1}
+                    </span>
+                  </div>
                 </div>
-              </div>
-              {/* City Name */}
-              <div className="text-xs text-[var(--text-secondary)] [direction:rtl] text-center font-medium transition-colors duration-300">
-                {city.name}
-              </div>
-            </div>
-          );
-        })}
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
