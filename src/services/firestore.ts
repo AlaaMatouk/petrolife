@@ -19,6 +19,11 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { onAuthStateChanged } from "firebase/auth";
 import { db, auth, storage } from "../config/firebase";
+import {
+  DriversSummaryData,
+  SubscriptionGroupSummary,
+  SubscriptionsSummaryData,
+} from "../types/dashboardStats";
 
 /**
  * Normalize car size to standard Arabic format
@@ -5221,6 +5226,297 @@ export const getCompaniesCountByType = async (): Promise<{
       direct: 0,
       viaRepresentatives: 0,
       total: 0,
+    };
+  }
+};
+
+
+/**
+ * Aggregate drivers count for admin dashboard (delivery + company drivers)
+ */
+export const getDriversSummaryForAdmin = async (): Promise<DriversSummaryData> => {
+  try {
+    const [deliverySnapshot, companyDriversSnapshot] = await Promise.all([
+      getDocs(collection(db, "drivers")),
+      getDocs(collection(db, "companies-drivers")),
+    ]);
+
+    const deliveryCount = deliverySnapshot.size;
+    const companyDriversCount = companyDriversSnapshot.size;
+
+    return {
+      delivery: deliveryCount,
+      company: companyDriversCount,
+      total: deliveryCount + companyDriversCount,
+    };
+  } catch (error) {
+    console.error("❌ Error calculating drivers summary:", error);
+    return { delivery: 0, company: 0, total: 0 };
+  }
+};
+
+/**
+ * Aggregate cars count by size for admin dashboard
+ */
+export const getCarsSummaryForAdmin = async (): Promise<{
+  small: number;
+  medium: number;
+  large: number;
+  vip: number;
+  total: number;
+}> => {
+  try {
+    const carsSnapshot = await getDocs(collection(db, "companies-cars"));
+
+    const summary = {
+      small: 0,
+      medium: 0,
+      large: 0,
+      vip: 0,
+      total: 0,
+    };
+
+    carsSnapshot.forEach((doc) => {
+      const data = doc.data();
+      const normalizedSize =
+        normalizeCarSize(
+          data.size ||
+            data.category?.name ||
+            data.category ||
+            data.carSize ||
+            data.carCategory
+        ) || "";
+
+      if (normalizedSize === "صغيرة") summary.small++;
+      else if (normalizedSize === "متوسطة") summary.medium++;
+      else if (normalizedSize === "كبيرة") summary.large++;
+      else if (normalizedSize === "VIP") summary.vip++;
+
+      summary.total++;
+    });
+
+    return summary;
+  } catch (error) {
+    console.error("❌ Error calculating cars summary for admin:", error);
+    return { small: 0, medium: 0, large: 0, vip: 0, total: 0 };
+  }
+};
+
+type SubscriptionTier = "basic" | "classic" | "premium";
+
+const createEmptySubscriptionGroup = (): SubscriptionGroupSummary => ({
+  basic: 0,
+  classic: 0,
+  premium: 0,
+  expired: 0,
+  total: 0,
+});
+
+const toDateSafe = (value: any): Date | null => {
+  if (!value) return null;
+
+  try {
+    if (typeof value.toDate === "function") {
+      return value.toDate();
+    }
+  } catch {
+    // Ignore conversion errors
+  }
+
+  const date = new Date(value);
+  return isNaN(date.getTime()) ? null : date;
+};
+
+const normalizeSubscriptionTier = (
+  rawTitle?: string | null
+): SubscriptionTier | null => {
+  if (!rawTitle) return null;
+  const value = rawTitle.toString().toLowerCase();
+
+  if (
+    value.includes("basic") ||
+    value.includes("باسيك") ||
+    value.includes("بيسك") ||
+    value.includes("الأساسية") ||
+    value.includes("basic plan")
+  ) {
+    return "basic";
+  }
+
+  if (
+    value.includes("classic") ||
+    value.includes("كلاسيك") ||
+    value.includes("ستاندرد") ||
+    value.includes("standard")
+  ) {
+    return "classic";
+  }
+
+  if (
+    value.includes("premium") ||
+    value.includes("بريميوم") ||
+    value.includes("بلس") ||
+    value.includes("plus") ||
+    value.includes("vip")
+  ) {
+    return "premium";
+  }
+
+  return null;
+};
+
+const extractSubscriptionDetails = (
+  record: any
+): { tier: SubscriptionTier | null; expired: boolean } | null => {
+  if (!record) return null;
+
+  const candidate =
+    record.selectedSubscription ||
+    record.subscription ||
+    record.subscriptionPlan ||
+    record.currentSubscription ||
+    record.plan ||
+    record.subscriptionDetails ||
+    record.subscriptionData ||
+    {};
+
+  const titleCandidate =
+    candidate?.title?.ar ??
+    candidate?.title?.en ??
+    candidate?.name?.ar ??
+    candidate?.name?.en ??
+    candidate?.title ??
+    candidate?.name ??
+    record.subscriptionType ??
+    record.subscriptionName ??
+    record.planName ??
+    record.planType ??
+    record.packageName ??
+    record.packageType ??
+    record.subscriptionTier ??
+    null;
+
+  const tier = normalizeSubscriptionTier(titleCandidate);
+
+  const expiryValue =
+    candidate?.subscriptionEndDate ??
+    candidate?.endDate ??
+    candidate?.expiryDate ??
+    candidate?.expireDate ??
+    candidate?.expireAt ??
+    candidate?.expiresAt ??
+    candidate?.validTo ??
+    candidate?.validUntil ??
+    record.subscriptionEndDate ??
+    record.subscriptionExpiry ??
+    record.expiryDate ??
+    record.expirationDate ??
+    null;
+
+  const expiryDate = toDateSafe(expiryValue);
+  const expired = expiryDate ? expiryDate.getTime() < Date.now() : false;
+
+  if (!tier && !expired) {
+    return null;
+  }
+
+  return { tier, expired };
+};
+
+const increaseSubscriptionCounters = (
+  group: SubscriptionGroupSummary,
+  tier: SubscriptionTier | null,
+  expired: boolean
+) => {
+  if (expired) {
+    group.expired++;
+  }
+
+  if (tier === "basic") {
+    group.basic++;
+    group.total++;
+    return;
+  }
+
+  if (tier === "classic") {
+    group.classic++;
+    group.total++;
+    return;
+  }
+
+  if (tier === "premium") {
+    group.premium++;
+    group.total++;
+    return;
+  }
+
+  if (expired) {
+    group.total++;
+  }
+};
+
+/**
+ * Aggregate subscriptions summary for admin (companies vs individuals)
+ */
+export const getSubscriptionsSummaryForAdmin =
+  async (): Promise<SubscriptionsSummaryData> => {
+  try {
+    const [companiesSnapshot, clientsSnapshot, subscriptionsSnapshot] =
+      await Promise.all([
+        getDocs(collection(db, "companies")),
+        getDocs(collection(db, "clients")),
+        getDocs(collection(db, "subscriptions-payment")),
+      ]);
+
+    const summary: SubscriptionsSummaryData = {
+      companies: createEmptySubscriptionGroup(),
+      individuals: createEmptySubscriptionGroup(),
+    };
+
+    companiesSnapshot.forEach((doc) => {
+      const info = extractSubscriptionDetails(doc.data());
+      if (!info) return;
+      increaseSubscriptionCounters(summary.companies, info.tier, info.expired);
+    });
+
+    clientsSnapshot.forEach((doc) => {
+      const info = extractSubscriptionDetails(doc.data());
+      if (!info) return;
+      increaseSubscriptionCounters(summary.individuals, info.tier, info.expired);
+    });
+
+    // Fallback to subscriptions-payment collection if no data was found
+    if (
+      summary.companies.total === 0 ||
+      summary.individuals.total === 0 ||
+      (summary.companies.expired === 0 && summary.individuals.expired === 0)
+    ) {
+      subscriptionsSnapshot.forEach((doc) => {
+        const data = doc.data();
+        const info =
+          extractSubscriptionDetails(data.selectedSubscription || data) ||
+          extractSubscriptionDetails(data);
+        if (!info) return;
+
+        const targetGroup =
+          summary.companies.total === 0 && (data.company || data.companyEmail)
+            ? summary.companies
+            : summary.individuals.total === 0 && (data.client || data.clientEmail)
+            ? summary.individuals
+            : data.company || data.companyEmail
+            ? summary.companies
+            : summary.individuals;
+
+        increaseSubscriptionCounters(targetGroup, info.tier, info.expired);
+      });
+    }
+
+    return summary;
+  } catch (error) {
+    console.error("❌ Error calculating subscriptions summary:", error);
+    return {
+      companies: createEmptySubscriptionGroup(),
+      individuals: createEmptySubscriptionGroup(),
     };
   }
 };

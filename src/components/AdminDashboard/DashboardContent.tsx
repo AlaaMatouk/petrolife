@@ -35,7 +35,23 @@ import {
   EssentialCategoryTimeseries,
   EssentialCategoryKey,
   calculateFuelConsumptionByCities,
+  getDriversSummaryForAdmin,
+  getSubscriptionsSummaryForAdmin,
+  getCarsSummaryForAdmin,
 } from "../../services/firestore";
+import {
+  DriversSummaryData,
+  SubscriptionsSummaryData,
+  SubscriptionGroupSummary,
+} from "../../types/dashboardStats";
+
+const createEmptySubscriptionGroup = (): SubscriptionGroupSummary => ({
+  basic: 0,
+  classic: 0,
+  premium: 0,
+  expired: 0,
+  total: 0,
+});
 
 // Context type for outlet (uncomment when using search functionality)
 // interface OutletContextType {
@@ -784,6 +800,15 @@ export const DashboardContent = (): JSX.Element => {
   });
   const [loadingCarWashData, setLoadingCarWashData] = useState(true);
 
+  // State for shared cars summary
+  const [carsSummary, setCarsSummary] = useState<CarWashData>({
+    small: 0,
+    medium: 0,
+    large: 0,
+    vip: 0,
+  });
+  const [loadingCarsSummary, setLoadingCarsSummary] = useState(true);
+
   // State for users data
   const [usersData, setUsersData] = useState<UsersData>({
     supervisors: 0,
@@ -867,6 +892,23 @@ export const DashboardContent = (): JSX.Element => {
   >([]);
   const [loadingLatestOrders, setLoadingLatestOrders] = useState(true);
 
+  // State for drivers summary
+  const [driversSummary, setDriversSummary] = useState<DriversSummaryData>({
+    delivery: 0,
+    company: 0,
+    total: 0,
+  });
+  const [loadingDriversSummary, setLoadingDriversSummary] = useState(true);
+
+  // State for subscriptions summary
+  const [subscriptionsSummary, setSubscriptionsSummary] =
+    useState<SubscriptionsSummaryData>({
+      companies: createEmptySubscriptionGroup(),
+      individuals: createEmptySubscriptionGroup(),
+    });
+  const [loadingSubscriptionsSummary, setLoadingSubscriptionsSummary] =
+    useState(true);
+
   // Fetch all dashboard data on component mount
   useEffect(() => {
     const fetchData = async () => {
@@ -883,6 +925,9 @@ export const DashboardContent = (): JSX.Element => {
         setLoadingDriversData(true);
         setLoadingStationsData(true);
         setLoadingLatestOrders(true);
+        setLoadingDriversSummary(true);
+        setLoadingSubscriptionsSummary(true);
+        setLoadingCarsSummary(true);
 
         // Fetch all data in parallel
         const [
@@ -898,6 +943,9 @@ export const DashboardContent = (): JSX.Element => {
           consumingClients,
           usedStations,
           latestOrders,
+          driversSummaryData,
+          subscriptionsSummaryData,
+          carsSummaryData,
         ] = await Promise.all([
           getTotalClientsBalance(),
           getTotalFuelUsageByType(),
@@ -911,6 +959,9 @@ export const DashboardContent = (): JSX.Element => {
           getMostConsumingClients(),
           getMostUsedStations(),
           getLatestOrders(),
+          getDriversSummaryForAdmin(),
+          getSubscriptionsSummaryForAdmin(),
+          getCarsSummaryForAdmin(),
         ]);
 
         setTotalClientsBalance(balance);
@@ -925,6 +976,14 @@ export const DashboardContent = (): JSX.Element => {
         setDriversData(consumingClients);
         setStationsData(usedStations);
         setLatestOrdersData(latestOrders);
+        setDriversSummary(driversSummaryData);
+        setSubscriptionsSummary(subscriptionsSummaryData);
+        setCarsSummary({
+          small: carsSummaryData.small,
+          medium: carsSummaryData.medium,
+          large: carsSummaryData.large,
+          vip: carsSummaryData.vip,
+        });
       } catch (error) {
         console.error("Error fetching dashboard data:", error);
         setTotalClientsBalance(0);
@@ -973,6 +1032,21 @@ export const DashboardContent = (): JSX.Element => {
         setDriversData([]);
         setStationsData([]);
         setLatestOrdersData([]);
+        setDriversSummary({
+          delivery: 0,
+          company: 0,
+          total: 0,
+        });
+        setSubscriptionsSummary({
+          companies: createEmptySubscriptionGroup(),
+          individuals: createEmptySubscriptionGroup(),
+        });
+        setCarsSummary({
+          small: 0,
+          medium: 0,
+          large: 0,
+          vip: 0,
+        });
       } finally {
         setLoadingBalance(false);
         setLoadingFuelData(false);
@@ -986,6 +1060,9 @@ export const DashboardContent = (): JSX.Element => {
         setLoadingDriversData(false);
         setLoadingStationsData(false);
         setLoadingLatestOrders(false);
+        setLoadingDriversSummary(false);
+        setLoadingSubscriptionsSummary(false);
+        setLoadingCarsSummary(false);
       }
     };
 
@@ -1006,6 +1083,9 @@ export const DashboardContent = (): JSX.Element => {
         companiesData={companiesCountData}
         tireChangeData={tireChangeData}
         oilChangeData={oilChangeData}
+        driversSummary={driversSummary}
+        subscriptionsSummary={subscriptionsSummary}
+        carsData={carsSummary}
       />
 
       {/* Consumption Section */}
