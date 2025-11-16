@@ -63,8 +63,8 @@ const AddAdvertisement = () => {
         },
         createdUserId,
         type: formData.targeting,
-        status: formData.status === "معروض",
-        createdAt: serverTimestamp(),
+        status: formData.status === "معروض" ? true : false,
+        createdDate: serverTimestamp(),
       });
 
       navigate("/advertisements");
