@@ -2,32 +2,80 @@ import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Input, Select } from "../../../shared/Form";
 import { ArrowLeft, Eye, Edit } from "lucide-react";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { db } from "../../../../config/firebase";
 
 const AdvertisementDetails = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const [isEditMode, setIsEditMode] = useState(false);
   const [formData, setFormData] = useState({
-    title: "وقود بالقرب منك",
-    description: "نصلك في أسرع وقت لتزويدك ب...",
+    title: "",
+    description: "",
     coverImage: null as string | null,
     status: "معروض",
     targeting: "الكل",
   });
 
-  // Fetch advertisement data based on id
+  // Fetch advertisement data based on id from Firestore
   useEffect(() => {
-    // TODO: Fetch advertisement data from API
-    // For now, using mock data
-    console.log("Loading advertisement:", id);
+    const loadAd = async () => {
+      if (!id) return;
+
+      try {
+        const adRef = doc(db, "ads", id);
+        const snap = await getDoc(adRef);
+
+        if (!snap.exists()) {
+          console.warn("Advertisement not found:", id);
+          return;
+        }
+
+        const data = snap.data() || {};
+        const title =
+          typeof data.title === "string"
+            ? data.title
+            : data.title?.ar ?? "";
+        const description =
+          typeof data.description === "string"
+            ? data.description
+            : data.description?.ar ?? "";
+
+        setFormData({
+          title,
+          description,
+          coverImage: data.adImageUrl ?? null,
+          status: data.status === true || data.status === "معروض" ? "معروض" : "غير معروض",
+          targeting: data.type ?? "الكل",
+        });
+      } catch (err) {
+        console.error("Error loading advertisement:", err);
+      }
+    };
+
+    loadAd();
   }, [id]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isEditMode) {
-      console.log("Update advertisement:", formData);
-      // TODO: Handle update
+    if (!isEditMode || !id) return;
+
+    try {
+      const adRef = doc(db, "ads", id);
+      await updateDoc(adRef, {
+        title: {
+          ar: formData.title,
+        },
+        description: {
+          ar: formData.description,
+        },
+        adImageUrl: formData.coverImage,
+        type: formData.targeting,
+        status: formData.status === "معروض",
+      });
       setIsEditMode(false);
+    } catch (err) {
+      console.error("Error updating advertisement:", err);
     }
   };
 

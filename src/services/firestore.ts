@@ -8188,6 +8188,171 @@ export const fetchUserFuelStations = async (): Promise<FuelStation[]> => {
 };
 
 /**
+ * Advertisement type as stored in Firestore "ads" collection
+ */
+export interface Advertisement {
+  id: string; // Firestore document id
+  refid: string; // 8-digit reference id used as الرقم
+  adImageUrl?: string | null; // التصميم
+  title?: { ar?: string | null } | string | null;
+  description?: { ar?: string | null } | string | null;
+  createdUserId?: string | null; // المنشئ (email)
+  creatorDisplayName?: string | null; // المنشئ (display_name from users collection)
+  type?: string | null; // العرض
+  status?: boolean | string | null; // حالة الاعلان
+  [key: string]: any;
+}
+
+/**
+ * Fetch user display_name from users collection by email
+ * @param email - User email to search for
+ * @returns Promise with display_name or null if not found
+ */
+const fetchUserDisplayName = async (email: string | null | undefined): Promise<string | null> => {
+  if (!email) return null;
+  
+  try {
+    const usersRef = collection(db, "users");
+    const q = query(usersRef, where("email", "==", email));
+    const snapshot = await getDocs(q);
+    
+    if (!snapshot.empty) {
+      const userData = snapshot.docs[0].data();
+      // Try different possible field names for display name
+      return userData.display_name || userData.displayName || userData.name || userData.fullName || null;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error(`❌ Error fetching user display_name for email ${email}:`, error);
+    return null;
+  }
+};
+
+/**
+ * Generate an 8-digit numeric reference id
+ */
+export const generateRefId = (): string => {
+  // Simple 8-digit random number as string (00000000 - 99999999)
+  const num = Math.floor(Math.random() * 100000000);
+  return num.toString().padStart(8, "0");
+};
+
+/**
+ * Fetch advertisements from Firestore "ads" collection
+ * - Ensures each document has an 8-digit refid (creates and persists one if missing)
+ * - Normalizes title/description to use Arabic fields when structured as objects
+ */
+export const fetchAdvertisements = async (): Promise<Advertisement[]> => {
+  try {
+    console.log("📢 Fetching advertisements from Firestore (ads)...");
+
+    const adsRef = collection(db, "ads");
+    let snapshot: QuerySnapshot<DocumentData>;
+    
+    // Try to order by createdDate desc, but fallback to simple query if it fails
+    // (e.g., if some documents don't have createdDate field or index is missing)
+    try {
+      const q = query(adsRef, orderBy("createdDate", "desc"));
+      snapshot = await getDocs(q);
+    } catch (orderError) {
+      console.warn("⚠️ Could not order by 'createdDate', fetching without order:", orderError);
+      // Fallback: fetch without ordering
+      snapshot = await getDocs(adsRef);
+    }
+
+    const ads: Advertisement[] = [];
+    const updatePromises: Promise<void>[] = [];
+
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data() || {};
+
+      let refid: string | undefined = data.refid;
+      if (!refid || typeof refid !== "string" || refid.trim() === "") {
+        refid = generateRefId();
+        const adDocRef = doc(db, "ads", docSnap.id);
+        updatePromises.push(
+          updateDoc(adDocRef, {
+            refid,
+          }).catch((error) => {
+            console.error(
+              "❌ Error updating refid for ad document:",
+              docSnap.id,
+              error
+            );
+          }) as Promise<void>
+        );
+      }
+
+      // Normalize title / description to be easy to consume on the UI
+      const rawTitle = data.title;
+      const rawDescription = data.description;
+
+      const normalizedTitle =
+        typeof rawTitle === "string"
+          ? rawTitle
+          : rawTitle && typeof rawTitle === "object"
+          ? rawTitle.ar ?? ""
+          : "";
+
+      const normalizedDescription =
+        typeof rawDescription === "string"
+          ? rawDescription
+          : rawDescription && typeof rawDescription === "object"
+          ? rawDescription.ar ?? ""
+          : "";
+
+      ads.push({
+        ...data,
+        id: docSnap.id,
+        refid,
+        adImageUrl: data.adImageUrl ?? null,
+        title: normalizedTitle, // Override with normalized string
+        description: normalizedDescription, // Override with normalized string
+        createdUserId: data.createdUserId ?? null,
+        type: data.type ?? null,
+        status: data.status ?? null,
+      });
+    });
+
+    if (updatePromises.length > 0) {
+      console.log(
+        `📝 Updating refid for ${updatePromises.length} advertisement(s) missing refid...`
+      );
+      await Promise.all(updatePromises);
+    }
+
+    // Fetch display_name for each createdUserId from users collection
+    console.log("👤 Fetching creator display names from users collection...");
+    const uniqueEmails = [...new Set(ads.map(ad => ad.createdUserId).filter(Boolean))] as string[];
+    const displayNameMap = new Map<string, string | null>();
+    
+    // Fetch display names for all unique emails in parallel
+    const displayNamePromises = uniqueEmails.map(async (email) => {
+      const displayName = await fetchUserDisplayName(email);
+      displayNameMap.set(email, displayName);
+    });
+    
+    await Promise.all(displayNamePromises);
+    
+    // Add creatorDisplayName to each ad
+    ads.forEach((ad) => {
+      if (ad.createdUserId) {
+        ad.creatorDisplayName = displayNameMap.get(ad.createdUserId) || null;
+      }
+    });
+
+    console.log(`✅ Fetched ${ads.length} advertisements from Firestore (ads)`);
+
+    return ads;
+  } catch (error) {
+    console.error("❌ Error fetching advertisements:", error);
+    throw error;
+  }
+};
+
+
+/**
  * Fetch invoices data from Firestore
  * Filtered by current user's company
  * @returns Promise with array of invoice data

@@ -2,6 +2,10 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Input, Select } from "../../../shared/Form";
 import { ArrowLeft, CirclePlus, Upload, Cloud } from "lucide-react";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { db, storage, auth } from "../../../../config/firebase";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { generateRefId } from "../../../../services/firestore";
 
 const AddAdvertisement = () => {
   const navigate = useNavigate();
@@ -12,6 +16,7 @@ const AddAdvertisement = () => {
     status: "معروض",
     targeting: "الكل",
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleFileUpload = () => {
     const input = document.createElement("input");
@@ -24,12 +29,51 @@ const AddAdvertisement = () => {
     input.click();
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Add advertisement:", formData);
-    // TODO: Handle form submission
-    // After successful submission, navigate back
-    // navigate("/advertisements");
+    if (isSubmitting) return;
+
+    try {
+      setIsSubmitting(true);
+
+      const currentUser = auth.currentUser;
+      const createdUserId = currentUser?.email ?? currentUser?.uid ?? "unknown";
+
+      let adImageUrl: string | null = null;
+
+      if (formData.coverImage) {
+        const storageRef = ref(
+          storage,
+          `ads/${Date.now()}-${formData.coverImage.name}`
+        );
+        await uploadBytes(storageRef, formData.coverImage);
+        adImageUrl = await getDownloadURL(storageRef);
+      }
+
+      const refid = generateRefId();
+
+      await addDoc(collection(db, "ads"), {
+        refid,
+        adImageUrl,
+        title: {
+          ar: formData.title,
+        },
+        description: {
+          ar: formData.description,
+        },
+        createdUserId,
+        type: formData.targeting,
+        status: formData.status === "معروض",
+        createdAt: serverTimestamp(),
+      });
+
+      navigate("/advertisements");
+    } catch (err) {
+      console.error("Error adding advertisement:", err);
+      // You may want to show a toast here using existing toast context
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const statusOptions = [
@@ -166,9 +210,10 @@ const AddAdvertisement = () => {
             </button>
             <button
               type="submit"
-              className="px-6 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors"
+              disabled={isSubmitting}
+              className="px-6 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              حفظ الاعلان
+              {isSubmitting ? "جاري الحفظ..." : "حفظ الاعلان"}
             </button>
           </div>
         </form>
