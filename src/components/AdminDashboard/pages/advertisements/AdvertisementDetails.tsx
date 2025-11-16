@@ -1,14 +1,13 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Input, Select } from "../../../shared/Form";
-import { ArrowLeft, Eye, Edit } from "lucide-react";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { Input } from "../../../shared/Form";
+import { ArrowLeft, Eye } from "lucide-react";
+import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../../../config/firebase";
 
 const AdvertisementDetails = () => {
   const navigate = useNavigate();
   const { id } = useParams();
-  const [isEditMode, setIsEditMode] = useState(false);
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -56,42 +55,6 @@ const AdvertisementDetails = () => {
     loadAd();
   }, [id]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isEditMode || !id) return;
-
-    try {
-      const adRef = doc(db, "ads", id);
-      await updateDoc(adRef, {
-        title: {
-          ar: formData.title,
-        },
-        description: {
-          ar: formData.description,
-        },
-        adImageUrl: formData.coverImage,
-        type: formData.targeting,
-        status: formData.status === "معروض",
-      });
-      setIsEditMode(false);
-    } catch (err) {
-      console.error("Error updating advertisement:", err);
-    }
-  };
-
-  const statusOptions = [
-    { value: "معروض", label: "معروض" },
-    { value: "غير معروض", label: "غير معروض" },
-  ];
-
-  const targetingOptions = [
-    { value: "الكل", label: "الكل" },
-    { value: "شركات", label: "شركات" },
-    { value: "أفراد", label: "أفراد" },
-    { value: "مزودو الخدمة", label: "مزودو الخدمة" },
-    { value: "تطبيق السائق", label: "تطبيق السائق" },
-  ];
-
   return (
     <div className="flex flex-col w-full items-start gap-5" dir="rtl">
       {/* Form Card */}
@@ -118,18 +81,16 @@ const AdvertisementDetails = () => {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="w-full flex flex-col gap-6">
+        <div className="w-full flex flex-col gap-6">
           {/* Advertisement Title */}
           <div className="w-full">
             <Input
               label="عنوان الاعلان"
               value={formData.title}
-              onChange={(value) =>
-                setFormData((prev) => ({ ...prev, title: value }))
-              }
+              onChange={() => {}}
               placeholder="العنوان"
-              disabled={!isEditMode}
-              required
+              disabled={true}
+              required={false}
             />
           </div>
 
@@ -141,14 +102,12 @@ const AdvertisementDetails = () => {
               </label>
               <textarea
                 value={formData.description}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, description: e.target.value }))
-                }
-                className="w-full min-h-[100px] pr-4 pl-4 py-2.5 border-[0.5px] border-solid border-color-mode-text-icons-t-placeholder rounded-[var(--corner-radius-small)] focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none disabled:bg-gray-50 disabled:text-gray-500"
+                onChange={() => {}}
+                className="w-full min-h-[100px] pr-4 pl-4 py-2.5 border-[0.5px] border-solid border-color-mode-text-icons-t-placeholder rounded-[var(--corner-radius-small)] resize-none disabled:bg-gray-50 disabled:text-gray-500"
                 placeholder="الوصف"
                 dir="rtl"
-                disabled={!isEditMode}
-                required
+                disabled={true}
+                readOnly
               />
             </div>
           </div>
@@ -179,23 +138,21 @@ const AdvertisementDetails = () => {
 
           {/* Status and Targeting */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full">
-            <Select
+            <Input
               label="التوجيه"
               value={formData.targeting}
-              onChange={(value) =>
-                setFormData((prev) => ({ ...prev, targeting: value }))
-              }
-              options={targetingOptions}
-              disabled={!isEditMode}
+              onChange={() => {}}
+              placeholder="التوجيه"
+              disabled={true}
+              required={false}
             />
-            <Select
+            <Input
               label="حالة الاعلان"
               value={formData.status}
-              onChange={(value) =>
-                setFormData((prev) => ({ ...prev, status: value }))
-              }
-              options={statusOptions}
-              disabled={!isEditMode}
+              onChange={() => {}}
+              placeholder="حالة الاعلان"
+              disabled={true}
+              required={false}
             />
           </div>
 
@@ -208,25 +165,8 @@ const AdvertisementDetails = () => {
             >
               رجوع
             </button>
-            {!isEditMode ? (
-              <button
-                type="button"
-                onClick={() => setIsEditMode(true)}
-                className="px-6 h-10 rounded-[10px] bg-orange-500 hover:bg-orange-600 text-white font-medium transition-colors flex items-center gap-2"
-              >
-                <Edit className="w-4 h-4" />
-                تعديل الاعلان
-              </button>
-            ) : (
-              <button
-                type="submit"
-                className="px-6 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors"
-              >
-                حفظ التغييرات
-              </button>
-            )}
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
