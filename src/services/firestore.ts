@@ -146,7 +146,9 @@ export const fetchCompaniesDrivers = async () => {
 export const fetchDrivers = async () => {
   try {
     const driversRef = collection(db, "drivers");
-    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(driversRef);
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(
+      driversRef
+    );
 
     const driversData: any[] = [];
 
@@ -222,16 +224,13 @@ const mergeSchemaNode = (
     const elementSchema =
       existing && existing.kind === "array" ? existing.element : null;
 
-    const mergedElement = value.reduce<DriverSchemaNode | null>(
-      (acc, item) => {
-        if (item === undefined) {
-          return acc;
-        }
-        const next = mergeSchemaNode(acc ?? undefined, item);
-        return next;
-      },
-      elementSchema ?? null
-    );
+    const mergedElement = value.reduce<DriverSchemaNode | null>((acc, item) => {
+      if (item === undefined) {
+        return acc;
+      }
+      const next = mergeSchemaNode(acc ?? undefined, item);
+      return next;
+    }, elementSchema ?? null);
 
     return {
       kind: "array",
@@ -306,7 +305,9 @@ const ensureCouponSchemaLoaded = async (): Promise<DriverSchemaNode> => {
   if (!couponSchemaPromise) {
     couponSchemaPromise = (async () => {
       const couponsSnapshot = await getDocs(collection(db, "coupons"));
-      const coupons = couponsSnapshot.docs.map((docSnapshot) => docSnapshot.data());
+      const coupons = couponsSnapshot.docs.map((docSnapshot) =>
+        docSnapshot.data()
+      );
       const schema = deriveSchemaFromDocuments(coupons);
       couponSchemaCache = schema;
       return schema;
@@ -316,10 +317,7 @@ const ensureCouponSchemaLoaded = async (): Promise<DriverSchemaNode> => {
   return couponSchemaPromise;
 };
 
-const buildPayloadFromSchema = (
-  schema: DriverSchemaNode,
-  source: any
-): any => {
+const buildPayloadFromSchema = (schema: DriverSchemaNode, source: any): any => {
   if (schema.kind === "value") {
     // Leaf nodes fallback to null whenever the caller does not provide a value.
     return source ?? null;
@@ -369,7 +367,10 @@ const applyTimestampOverrides = (value: any): void => {
   }
 
   Object.entries(value).forEach(([key, nested]) => {
-    if (TIMESTAMP_FIELD_NAMES.has(key) && (nested === null || nested === undefined)) {
+    if (
+      TIMESTAMP_FIELD_NAMES.has(key) &&
+      (nested === null || nested === undefined)
+    ) {
       value[key] = serverTimestamp();
       return;
     }
@@ -437,9 +438,7 @@ export const generateFullCouponPayload = async (
  * This prevents new records from dropping fields (they become null instead),
  * which keeps Firestore data shape consistent for downstream consumers.
  */
-export const createNewDriver = async (
-  formData: Record<string, any>
-) => {
+export const createNewDriver = async (formData: Record<string, any>) => {
   const payload = await generateFullDriverPayload(formData);
 
   applyTimestampOverrides(payload);
@@ -453,31 +452,25 @@ export const createNewDriver = async (
   };
 };
 
-export const createCouponWithSchema = async (
-  formData: Record<string, any>
-) => {
+export const createCouponWithSchema = async (formData: Record<string, any>) => {
   const payload = await generateFullCouponPayload(formData);
 
-  if (
-    payload.createdDate === null ||
-    payload.createdDate === undefined
-  ) {
+  if (payload.createdDate === null || payload.createdDate === undefined) {
     payload.createdDate = serverTimestamp();
   }
 
   const currentUser = auth.currentUser;
-  const currentUserIdentifier =
-    currentUser?.uid ?? currentUser?.email ?? null;
+  const currentUserIdentifier = currentUser?.uid ?? currentUser?.email ?? null;
 
-  payload.createdUserId = currentUserIdentifier ?? payload.createdUserId ?? null;
+  payload.createdUserId =
+    currentUserIdentifier ?? payload.createdUserId ?? null;
 
   if (payload.percentage === undefined) {
     payload.percentage = formData.percentage ?? null;
   }
 
   if (payload.precentage === undefined) {
-    payload.precentage =
-      formData.precentage ?? payload.percentage ?? null;
+    payload.precentage = formData.precentage ?? payload.percentage ?? null;
   } else if (payload.precentage === null && payload.percentage != null) {
     payload.precentage = payload.percentage;
   }
@@ -2806,6 +2799,54 @@ export const fetchProducts = async (): Promise<any[]> => {
   }
 };
 
+/**
+ * Fetch all subscriptions from Firestore
+ * @returns Promise with subscriptions data
+ */
+export const fetchSubscriptions = async (): Promise<any[]> => {
+  try {
+    console.log("📋 Fetching subscriptions from Firestore...");
+    const subscriptionsCollection = collection(db, "subscriptions");
+
+    let subscriptionsSnapshot;
+    try {
+      // Try with orderBy first
+      const q = query(subscriptionsCollection, orderBy("createdDate", "desc"));
+      subscriptionsSnapshot = await getDocs(q);
+    } catch (orderByError) {
+      // If orderBy fails (no index or field doesn't exist), fetch without ordering
+      console.warn(
+        "⚠️ Could not order by createdDate, fetching without order:",
+        orderByError
+      );
+      subscriptionsSnapshot = await getDocs(subscriptionsCollection);
+    }
+
+    const subscriptions = subscriptionsSnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    console.log(
+      `✅ Fetched ${subscriptions.length} subscriptions from Firestore`
+    );
+    if (subscriptions.length > 0) {
+      console.log(
+        "📄 Sample subscription data:",
+        JSON.stringify(subscriptions[0], null, 2)
+      );
+      console.log(
+        "📄 All subscriptions periodName values:",
+        subscriptions.map((s: any) => ({ id: s.id, periodName: s.periodName }))
+      );
+    }
+    return subscriptions;
+  } catch (error) {
+    console.error("Error fetching subscriptions:", error);
+    return [];
+  }
+};
+
 export const createProductWithSchema = async (
   formFields: Record<string, any>,
   imageFile?: File | string | null
@@ -3294,9 +3335,7 @@ export const createCategory = async ({
         en: englishName || null,
       },
       onyxProductId: null,
-      parentId: hasParent
-        ? parentCategoryId
-        : accountingSystemId || null,
+      parentId: hasParent ? parentCategoryId : accountingSystemId || null,
       refId: randomRefId.toString(),
       individualPrice:
         individualPrice !== undefined && individualPrice !== null
@@ -4427,7 +4466,9 @@ const baseEssentialSynonyms: Record<EssentialCategoryKey, string[]> = {
 const generateMonthRange = (length: number, reference: Date): Date[] => {
   const months: Date[] = [];
   for (let offset = length - 1; offset >= 0; offset--) {
-    months.push(new Date(reference.getFullYear(), reference.getMonth() - offset, 1));
+    months.push(
+      new Date(reference.getFullYear(), reference.getMonth() - offset, 1)
+    );
   }
   return months;
 };
@@ -4440,9 +4481,7 @@ const generateDayRange = (length: number, reference: Date): Date[] => {
       reference.getMonth(),
       reference.getDate() - offset
     );
-    days.push(
-      new Date(date.getFullYear(), date.getMonth(), date.getDate())
-    );
+    days.push(new Date(date.getFullYear(), date.getMonth(), date.getDate()));
   }
   return days;
 };
@@ -4451,7 +4490,9 @@ const formatMonthLabel = (date: Date) =>
   new Intl.DateTimeFormat("en", { month: "short" }).format(date);
 
 const formatDayLabel = (date: Date) =>
-  new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(date);
+  new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(
+    date
+  );
 
 const formatMonthKey = (date: Date) =>
   `${date.getFullYear()}-${date.getMonth()}`;
@@ -4530,380 +4571,393 @@ export interface EssentialCategorySalesTrendsInput {
 export const getEssentialCategorySalesTrends = async (
   input?: EssentialCategorySalesTrendsInput
 ): Promise<EssentialCategorySalesTrends> => {
-    const now = new Date();
-    const monthRange = generateMonthRange(12, now);
-    const dayRange30 = generateDayRange(30, now);
-    const dayRange7 = generateDayRange(7, now);
+  const now = new Date();
+  const monthRange = generateMonthRange(12, now);
+  const dayRange30 = generateDayRange(30, now);
+  const dayRange7 = generateDayRange(7, now);
 
-    const emptyTimeseries = (
-      dates: Date[],
-      labelFormatter: (date: Date) => string
-    ): EssentialCategoryTimeseries => ({
-      labels: dates.map(labelFormatter),
-      datasets: ESSENTIAL_CATEGORY_ORDER.map((key) => ({
-        key,
-        label: ESSENTIAL_CATEGORY_LABELS[key],
-        data: new Array(dates.length).fill(0),
-      })),
+  const emptyTimeseries = (
+    dates: Date[],
+    labelFormatter: (date: Date) => string
+  ): EssentialCategoryTimeseries => ({
+    labels: dates.map(labelFormatter),
+    datasets: ESSENTIAL_CATEGORY_ORDER.map((key) => ({
+      key,
+      label: ESSENTIAL_CATEGORY_LABELS[key],
+      data: new Array(dates.length).fill(0),
+    })),
+  });
+
+  try {
+    const [categories, orders] = await Promise.all([
+      input?.categories
+        ? Promise.resolve(input.categories)
+        : fetchAllCategories(),
+      input?.orders ? Promise.resolve(input.orders) : fetchAllOrders(),
+    ]);
+
+    const categoryInfo = new Map<
+      string,
+      { id: string; parentId: string | null; names: Set<string> }
+    >();
+    const childrenByParent = new Map<string, string[]>();
+
+    categories.forEach((category) => {
+      const id =
+        normalizeIdentifier(category?.id) ??
+        normalizeIdentifier(category?.categoryId) ??
+        normalizeIdentifier(category?.refId);
+      if (!id) return;
+
+      const parentId =
+        normalizeIdentifier(category?.parentId) ??
+        normalizeIdentifier(category?.parentCategoryId) ??
+        normalizeIdentifier(category?.parent?.id) ??
+        normalizeIdentifier(category?.parentCategory?.id) ??
+        normalizeIdentifier(category?.parentRef?.id);
+
+      const names = collectCategoryNames(category);
+
+      categoryInfo.set(id, { id, parentId, names });
+
+      if (parentId) {
+        const existingChildren = childrenByParent.get(parentId) ?? [];
+        existingChildren.push(id);
+        childrenByParent.set(parentId, existingChildren);
+      }
     });
 
-    try {
-      const [categories, orders] = await Promise.all([
-        input?.categories
-          ? Promise.resolve(input.categories)
-          : fetchAllCategories(),
-        input?.orders ? Promise.resolve(input.orders) : fetchAllOrders(),
-      ]);
+    const essentialMeta = new Map<
+      EssentialCategoryKey,
+      EssentialCategoryMeta
+    >();
 
-      const categoryInfo = new Map<
-        string,
-        { id: string; parentId: string | null; names: Set<string> }
-      >();
-      const childrenByParent = new Map<string, string[]>();
-
-      categories.forEach((category) => {
-        const id =
-          normalizeIdentifier(category?.id) ??
-          normalizeIdentifier(category?.categoryId) ??
-          normalizeIdentifier(category?.refId);
-        if (!id) return;
-
-        const parentId =
-          normalizeIdentifier(category?.parentId) ??
-          normalizeIdentifier(category?.parentCategoryId) ??
-          normalizeIdentifier(category?.parent?.id) ??
-          normalizeIdentifier(category?.parentCategory?.id) ??
-          normalizeIdentifier(category?.parentRef?.id);
-
-        const names = collectCategoryNames(category);
-
-        categoryInfo.set(id, { id, parentId, names });
-
-        if (parentId) {
-          const existingChildren = childrenByParent.get(parentId) ?? [];
-          existingChildren.push(id);
-          childrenByParent.set(parentId, existingChildren);
-        }
-      });
-
-      const essentialMeta = new Map<EssentialCategoryKey, EssentialCategoryMeta>();
-
-      ESSENTIAL_CATEGORY_ORDER.forEach((key) => {
-        const synonyms = new Set<string>();
-        const names = new Set<string>();
-        const labelNormalized = normalizeTextValue(
-          ESSENTIAL_CATEGORY_LABELS[key]
-        );
-        if (labelNormalized) synonyms.add(labelNormalized);
-        baseEssentialSynonyms[key].forEach((synonym) => {
-          const normalized = normalizeTextValue(synonym);
-          if (normalized) {
-            synonyms.add(normalized);
-            if (normalized.includes(" ")) {
-              splitAndAppendFragments(normalized, synonyms);
-            }
-          }
-        });
-
-        essentialMeta.set(key, {
-          label: ESSENTIAL_CATEGORY_LABELS[key],
-          ids: new Set<string>(),
-          names,
-          synonyms,
-        });
-      });
-
-      const categoryMatchesEssential = (
-        categoryNames: Set<string>,
-        synonyms: Set<string>
-      ): boolean => {
-        for (const name of categoryNames) {
-          if (!name) continue;
-          for (const synonym of synonyms) {
-            if (!synonym) continue;
-            if (name === synonym || name.includes(synonym) || synonym.includes(name)) {
-              return true;
-            }
+    ESSENTIAL_CATEGORY_ORDER.forEach((key) => {
+      const synonyms = new Set<string>();
+      const names = new Set<string>();
+      const labelNormalized = normalizeTextValue(
+        ESSENTIAL_CATEGORY_LABELS[key]
+      );
+      if (labelNormalized) synonyms.add(labelNormalized);
+      baseEssentialSynonyms[key].forEach((synonym) => {
+        const normalized = normalizeTextValue(synonym);
+        if (normalized) {
+          synonyms.add(normalized);
+          if (normalized.includes(" ")) {
+            splitAndAppendFragments(normalized, synonyms);
           }
         }
-        return false;
-      };
-
-      categoryInfo.forEach((info) => {
-        ESSENTIAL_CATEGORY_ORDER.forEach((key) => {
-          const meta = essentialMeta.get(key);
-          if (!meta) return;
-          if (categoryMatchesEssential(info.names, meta.synonyms)) {
-            meta.ids.add(info.id);
-          }
-        });
       });
 
+      essentialMeta.set(key, {
+        label: ESSENTIAL_CATEGORY_LABELS[key],
+        ids: new Set<string>(),
+        names,
+        synonyms,
+      });
+    });
+
+    const categoryMatchesEssential = (
+      categoryNames: Set<string>,
+      synonyms: Set<string>
+    ): boolean => {
+      for (const name of categoryNames) {
+        if (!name) continue;
+        for (const synonym of synonyms) {
+          if (!synonym) continue;
+          if (
+            name === synonym ||
+            name.includes(synonym) ||
+            synonym.includes(name)
+          ) {
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    categoryInfo.forEach((info) => {
       ESSENTIAL_CATEGORY_ORDER.forEach((key) => {
         const meta = essentialMeta.get(key);
         if (!meta) return;
-        const visited = new Set<string>();
-        const queue = Array.from(meta.ids);
-
-        while (queue.length) {
-          const currentId = queue.shift();
-          if (!currentId || visited.has(currentId)) continue;
-          visited.add(currentId);
-
-          const info = categoryInfo.get(currentId);
-          if (!info) continue;
-
-          info.names.forEach((name) => {
-            meta.names.add(name);
-            meta.synonyms.add(name);
-          });
-
-          const children = childrenByParent.get(currentId) ?? [];
-          children.forEach((childId) => {
-            if (!meta.ids.has(childId)) {
-              meta.ids.add(childId);
-            }
-            queue.push(childId);
-          });
+        if (categoryMatchesEssential(info.names, meta.synonyms)) {
+          meta.ids.add(info.id);
         }
       });
+    });
 
-      const monthKeyToIndex = new Map<string, number>();
-      monthRange
-        .map(formatMonthKey)
-        .forEach((key, index) => monthKeyToIndex.set(key, index));
+    ESSENTIAL_CATEGORY_ORDER.forEach((key) => {
+      const meta = essentialMeta.get(key);
+      if (!meta) return;
+      const visited = new Set<string>();
+      const queue = Array.from(meta.ids);
 
-      const day30KeyToIndex = new Map<string, number>();
-      dayRange30
-        .map(formatDayKey)
-        .forEach((key, index) => day30KeyToIndex.set(key, index));
+      while (queue.length) {
+        const currentId = queue.shift();
+        if (!currentId || visited.has(currentId)) continue;
+        visited.add(currentId);
 
-      const day7KeyToIndex = new Map<string, number>();
-      dayRange7
-        .map(formatDayKey)
-        .forEach((key, index) => day7KeyToIndex.set(key, index));
+        const info = categoryInfo.get(currentId);
+        if (!info) continue;
 
-      const monthlyTotals = new Map<EssentialCategoryKey, number[]>();
-      const day30Totals = new Map<EssentialCategoryKey, number[]>();
-      const day7Totals = new Map<EssentialCategoryKey, number[]>();
-
-      ESSENTIAL_CATEGORY_ORDER.forEach((key) => {
-        monthlyTotals.set(key, new Array(monthRange.length).fill(0));
-        day30Totals.set(key, new Array(dayRange30.length).fill(0));
-        day7Totals.set(key, new Array(dayRange7.length).fill(0));
-      });
-
-      const determineEssentialCategory = (order: any): EssentialCategoryKey | null => {
-        const idCandidates = new Set<string>();
-        const nameCandidates = new Set<string>();
-
-        const addIdCandidate = (value: any) => {
-          const normalized = normalizeIdentifier(value);
-          if (normalized) idCandidates.add(normalized);
-        };
-
-        const addNameCandidate = (value: any) =>
-          addOrderStringValues(nameCandidates, value);
-
-        addIdCandidate(order?.categoryId);
-        addIdCandidate(order?.category?.id);
-        addIdCandidate(order?.category?.categoryId);
-        addIdCandidate(order?.category?.refId);
-        addIdCandidate(order?.category?.categoryRefId);
-
-        const categoryIdsArray = Array.isArray(order?.categoryIds)
-          ? order.categoryIds
-          : Array.isArray(order?.categories)
-          ? order.categories
-          : [];
-        categoryIdsArray.forEach(addIdCandidate);
-
-        addIdCandidate(order?.selectedOption?.categoryId);
-        addIdCandidate(order?.selectedOption?.category?.id);
-        addIdCandidate(order?.selectedOption?.category?.categoryId);
-        addIdCandidate(order?.selectedOption?.id);
-
-        addIdCandidate(order?.service?.categoryId);
-        addIdCandidate(order?.service?.category?.id);
-        addIdCandidate(order?.service?.category?.categoryId);
-
-        addIdCandidate(order?.product?.categoryId);
-
-        const addObjectNames = (obj: any) => {
-          if (!obj) return;
-          if (typeof obj === "string" || typeof obj === "number") {
-            addNameCandidate(obj);
-            return;
-          }
-          addNameCandidate(obj?.name);
-          addNameCandidate(obj?.name?.ar);
-          addNameCandidate(obj?.name?.en);
-          addNameCandidate(obj?.label);
-          addNameCandidate(obj?.title);
-          addNameCandidate(obj?.title?.ar);
-          addNameCandidate(obj?.title?.en);
-          addNameCandidate(obj?.category);
-          addNameCandidate(obj?.category?.ar);
-          addNameCandidate(obj?.category?.en);
-          addNameCandidate(obj?.type);
-          addNameCandidate(obj?.serviceType);
-        };
-
-        addObjectNames(order?.category);
-        addObjectNames(order?.category?.name);
-        addObjectNames(order?.service);
-        addObjectNames(order?.service?.category);
-        addObjectNames(order?.service?.title);
-        addObjectNames(order?.selectedOption);
-        addObjectNames(order?.selectedOption?.category);
-        addObjectNames(order?.selectedOption?.title);
-        addObjectNames(order?.selectedOption?.name);
-
-        addNameCandidate(order?.categoryName);
-        addNameCandidate(order?.categoryLabel);
-        addNameCandidate(order?.categoryType);
-        addNameCandidate(order?.type);
-        addNameCandidate(order?.serviceType);
-        addNameCandidate(order?.productType);
-        addNameCandidate(order?.fuelType);
-        addNameCandidate(order?.orderType);
-        addNameCandidate(order?.serviceName);
-        addNameCandidate(order?.selectedOption?.label);
-
-        for (const key of ESSENTIAL_CATEGORY_ORDER) {
-          const meta = essentialMeta.get(key);
-          if (!meta) continue;
-
-          const hasIdMatch = Array.from(idCandidates).some((id) =>
-            meta.ids.has(id)
-          );
-          if (hasIdMatch) return key;
-
-          const hasNameMatch = Array.from(nameCandidates).some((name) => {
-            if (!name) return false;
-            if (meta.names.has(name)) return true;
-            for (const synonym of meta.synonyms) {
-              if (!synonym) continue;
-              if (name === synonym || name.includes(synonym) || synonym.includes(name)) {
-                return true;
-              }
-            }
-            return false;
-          });
-
-          if (hasNameMatch) return key;
-        }
-
-        return null;
-      };
-
-      const startOfDay = (date: Date) =>
-        new Date(date.getFullYear(), date.getMonth(), date.getDate());
-
-      orders.forEach((order) => {
-        const essentialKey = determineEssentialCategory(order);
-        if (!essentialKey) {
-          return;
-        }
-
-        const orderDate = getOrderDate(order);
-        if (!orderDate) return;
-
-        const normalizedDate = startOfDay(orderDate);
-        const monthKey = formatMonthKey(normalizedDate);
-        const dayKey = formatDayKey(normalizedDate);
-
-        const monthIndex = monthKeyToIndex.get(monthKey);
-        const day30Index = day30KeyToIndex.get(dayKey);
-        const day7Index = day7KeyToIndex.get(dayKey);
-
-        if (
-          monthIndex === undefined &&
-          day30Index === undefined &&
-          day7Index === undefined
-        ) {
-          return;
-        }
-
-        const amount = extractNumericValue([
-          order?.totalCost,
-          order?.totalPrice,
-          order?.price,
-          order?.amount,
-          order?.grandTotal,
-          order?.total,
-          order?.paymentAmount,
-          order?.paidAmount,
-          order?.totalOrderPrice,
-        ]);
-
-        const fallbackQuantity = extractNumericValue([
-          order?.totalLitre,
-          order?.totalLiter,
-          order?.quantity,
-          order?.selectedOption?.quantity,
-          order?.liters,
-          order?.litres,
-          order?.count,
-        ]);
-
-        const value = amount > 0 ? amount : fallbackQuantity;
-        if (value <= 0) return;
-
-        if (monthIndex !== undefined) {
-          const totals = monthlyTotals.get(essentialKey);
-          if (totals) totals[monthIndex] += value;
-        }
-
-        if (day30Index !== undefined) {
-          const totals = day30Totals.get(essentialKey);
-          if (totals) totals[day30Index] += value;
-        }
-
-        if (day7Index !== undefined) {
-          const totals = day7Totals.get(essentialKey);
-          if (totals) totals[day7Index] += value;
-        }
-      });
-
-      const buildDatasets = (
-        totalsMap: Map<EssentialCategoryKey, number[]>
-      ): EssentialCategorySalesDataset[] =>
-        ESSENTIAL_CATEGORY_ORDER.map((key) => {
-          const data = totalsMap.get(key) ?? [];
-          return {
-            key,
-            label: ESSENTIAL_CATEGORY_LABELS[key],
-            data: data.map(roundValue),
-          };
+        info.names.forEach((name) => {
+          meta.names.add(name);
+          meta.synonyms.add(name);
         });
 
-      return {
-        last12Months: {
-          labels: monthRange.map(formatMonthLabel),
-          datasets: buildDatasets(monthlyTotals),
-        },
-        last30Days: {
-          labels: dayRange30.map(formatDayLabel),
-          datasets: buildDatasets(day30Totals),
-        },
-        last7Days: {
-          labels: dayRange7.map(formatDayLabel),
-          datasets: buildDatasets(day7Totals),
-        },
+        const children = childrenByParent.get(currentId) ?? [];
+        children.forEach((childId) => {
+          if (!meta.ids.has(childId)) {
+            meta.ids.add(childId);
+          }
+          queue.push(childId);
+        });
+      }
+    });
+
+    const monthKeyToIndex = new Map<string, number>();
+    monthRange
+      .map(formatMonthKey)
+      .forEach((key, index) => monthKeyToIndex.set(key, index));
+
+    const day30KeyToIndex = new Map<string, number>();
+    dayRange30
+      .map(formatDayKey)
+      .forEach((key, index) => day30KeyToIndex.set(key, index));
+
+    const day7KeyToIndex = new Map<string, number>();
+    dayRange7
+      .map(formatDayKey)
+      .forEach((key, index) => day7KeyToIndex.set(key, index));
+
+    const monthlyTotals = new Map<EssentialCategoryKey, number[]>();
+    const day30Totals = new Map<EssentialCategoryKey, number[]>();
+    const day7Totals = new Map<EssentialCategoryKey, number[]>();
+
+    ESSENTIAL_CATEGORY_ORDER.forEach((key) => {
+      monthlyTotals.set(key, new Array(monthRange.length).fill(0));
+      day30Totals.set(key, new Array(dayRange30.length).fill(0));
+      day7Totals.set(key, new Array(dayRange7.length).fill(0));
+    });
+
+    const determineEssentialCategory = (
+      order: any
+    ): EssentialCategoryKey | null => {
+      const idCandidates = new Set<string>();
+      const nameCandidates = new Set<string>();
+
+      const addIdCandidate = (value: any) => {
+        const normalized = normalizeIdentifier(value);
+        if (normalized) idCandidates.add(normalized);
       };
-    } catch (error) {
-      console.error(
-        "❌ Error calculating essential category sales trends:",
-        error
-      );
-      return {
-        last12Months: emptyTimeseries(monthRange, formatMonthLabel),
-        last30Days: emptyTimeseries(dayRange30, formatDayLabel),
-        last7Days: emptyTimeseries(dayRange7, formatDayLabel),
+
+      const addNameCandidate = (value: any) =>
+        addOrderStringValues(nameCandidates, value);
+
+      addIdCandidate(order?.categoryId);
+      addIdCandidate(order?.category?.id);
+      addIdCandidate(order?.category?.categoryId);
+      addIdCandidate(order?.category?.refId);
+      addIdCandidate(order?.category?.categoryRefId);
+
+      const categoryIdsArray = Array.isArray(order?.categoryIds)
+        ? order.categoryIds
+        : Array.isArray(order?.categories)
+        ? order.categories
+        : [];
+      categoryIdsArray.forEach(addIdCandidate);
+
+      addIdCandidate(order?.selectedOption?.categoryId);
+      addIdCandidate(order?.selectedOption?.category?.id);
+      addIdCandidate(order?.selectedOption?.category?.categoryId);
+      addIdCandidate(order?.selectedOption?.id);
+
+      addIdCandidate(order?.service?.categoryId);
+      addIdCandidate(order?.service?.category?.id);
+      addIdCandidate(order?.service?.category?.categoryId);
+
+      addIdCandidate(order?.product?.categoryId);
+
+      const addObjectNames = (obj: any) => {
+        if (!obj) return;
+        if (typeof obj === "string" || typeof obj === "number") {
+          addNameCandidate(obj);
+          return;
+        }
+        addNameCandidate(obj?.name);
+        addNameCandidate(obj?.name?.ar);
+        addNameCandidate(obj?.name?.en);
+        addNameCandidate(obj?.label);
+        addNameCandidate(obj?.title);
+        addNameCandidate(obj?.title?.ar);
+        addNameCandidate(obj?.title?.en);
+        addNameCandidate(obj?.category);
+        addNameCandidate(obj?.category?.ar);
+        addNameCandidate(obj?.category?.en);
+        addNameCandidate(obj?.type);
+        addNameCandidate(obj?.serviceType);
       };
-    }
-  };
+
+      addObjectNames(order?.category);
+      addObjectNames(order?.category?.name);
+      addObjectNames(order?.service);
+      addObjectNames(order?.service?.category);
+      addObjectNames(order?.service?.title);
+      addObjectNames(order?.selectedOption);
+      addObjectNames(order?.selectedOption?.category);
+      addObjectNames(order?.selectedOption?.title);
+      addObjectNames(order?.selectedOption?.name);
+
+      addNameCandidate(order?.categoryName);
+      addNameCandidate(order?.categoryLabel);
+      addNameCandidate(order?.categoryType);
+      addNameCandidate(order?.type);
+      addNameCandidate(order?.serviceType);
+      addNameCandidate(order?.productType);
+      addNameCandidate(order?.fuelType);
+      addNameCandidate(order?.orderType);
+      addNameCandidate(order?.serviceName);
+      addNameCandidate(order?.selectedOption?.label);
+
+      for (const key of ESSENTIAL_CATEGORY_ORDER) {
+        const meta = essentialMeta.get(key);
+        if (!meta) continue;
+
+        const hasIdMatch = Array.from(idCandidates).some((id) =>
+          meta.ids.has(id)
+        );
+        if (hasIdMatch) return key;
+
+        const hasNameMatch = Array.from(nameCandidates).some((name) => {
+          if (!name) return false;
+          if (meta.names.has(name)) return true;
+          for (const synonym of meta.synonyms) {
+            if (!synonym) continue;
+            if (
+              name === synonym ||
+              name.includes(synonym) ||
+              synonym.includes(name)
+            ) {
+              return true;
+            }
+          }
+          return false;
+        });
+
+        if (hasNameMatch) return key;
+      }
+
+      return null;
+    };
+
+    const startOfDay = (date: Date) =>
+      new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+    orders.forEach((order) => {
+      const essentialKey = determineEssentialCategory(order);
+      if (!essentialKey) {
+        return;
+      }
+
+      const orderDate = getOrderDate(order);
+      if (!orderDate) return;
+
+      const normalizedDate = startOfDay(orderDate);
+      const monthKey = formatMonthKey(normalizedDate);
+      const dayKey = formatDayKey(normalizedDate);
+
+      const monthIndex = monthKeyToIndex.get(monthKey);
+      const day30Index = day30KeyToIndex.get(dayKey);
+      const day7Index = day7KeyToIndex.get(dayKey);
+
+      if (
+        monthIndex === undefined &&
+        day30Index === undefined &&
+        day7Index === undefined
+      ) {
+        return;
+      }
+
+      const amount = extractNumericValue([
+        order?.totalCost,
+        order?.totalPrice,
+        order?.price,
+        order?.amount,
+        order?.grandTotal,
+        order?.total,
+        order?.paymentAmount,
+        order?.paidAmount,
+        order?.totalOrderPrice,
+      ]);
+
+      const fallbackQuantity = extractNumericValue([
+        order?.totalLitre,
+        order?.totalLiter,
+        order?.quantity,
+        order?.selectedOption?.quantity,
+        order?.liters,
+        order?.litres,
+        order?.count,
+      ]);
+
+      const value = amount > 0 ? amount : fallbackQuantity;
+      if (value <= 0) return;
+
+      if (monthIndex !== undefined) {
+        const totals = monthlyTotals.get(essentialKey);
+        if (totals) totals[monthIndex] += value;
+      }
+
+      if (day30Index !== undefined) {
+        const totals = day30Totals.get(essentialKey);
+        if (totals) totals[day30Index] += value;
+      }
+
+      if (day7Index !== undefined) {
+        const totals = day7Totals.get(essentialKey);
+        if (totals) totals[day7Index] += value;
+      }
+    });
+
+    const buildDatasets = (
+      totalsMap: Map<EssentialCategoryKey, number[]>
+    ): EssentialCategorySalesDataset[] =>
+      ESSENTIAL_CATEGORY_ORDER.map((key) => {
+        const data = totalsMap.get(key) ?? [];
+        return {
+          key,
+          label: ESSENTIAL_CATEGORY_LABELS[key],
+          data: data.map(roundValue),
+        };
+      });
+
+    return {
+      last12Months: {
+        labels: monthRange.map(formatMonthLabel),
+        datasets: buildDatasets(monthlyTotals),
+      },
+      last30Days: {
+        labels: dayRange30.map(formatDayLabel),
+        datasets: buildDatasets(day30Totals),
+      },
+      last7Days: {
+        labels: dayRange7.map(formatDayLabel),
+        datasets: buildDatasets(day7Totals),
+      },
+    };
+  } catch (error) {
+    console.error(
+      "❌ Error calculating essential category sales trends:",
+      error
+    );
+    return {
+      last12Months: emptyTimeseries(monthRange, formatMonthLabel),
+      last30Days: emptyTimeseries(dayRange30, formatDayLabel),
+      last7Days: emptyTimeseries(dayRange7, formatDayLabel),
+    };
+  }
+};
 
 export const getCompanyEssentialCategorySalesTrends =
   async (): Promise<EssentialCategorySalesTrends> => {
@@ -5230,30 +5284,30 @@ export const getCompaniesCountByType = async (): Promise<{
   }
 };
 
-
 /**
  * Aggregate drivers count for admin dashboard (delivery + company drivers)
  */
-export const getDriversSummaryForAdmin = async (): Promise<DriversSummaryData> => {
-  try {
-    const [deliverySnapshot, companyDriversSnapshot] = await Promise.all([
-      getDocs(collection(db, "drivers")),
-      getDocs(collection(db, "companies-drivers")),
-    ]);
+export const getDriversSummaryForAdmin =
+  async (): Promise<DriversSummaryData> => {
+    try {
+      const [deliverySnapshot, companyDriversSnapshot] = await Promise.all([
+        getDocs(collection(db, "drivers")),
+        getDocs(collection(db, "companies-drivers")),
+      ]);
 
-    const deliveryCount = deliverySnapshot.size;
-    const companyDriversCount = companyDriversSnapshot.size;
+      const deliveryCount = deliverySnapshot.size;
+      const companyDriversCount = companyDriversSnapshot.size;
 
-    return {
-      delivery: deliveryCount,
-      company: companyDriversCount,
-      total: deliveryCount + companyDriversCount,
-    };
-  } catch (error) {
-    console.error("❌ Error calculating drivers summary:", error);
-    return { delivery: 0, company: 0, total: 0 };
-  }
-};
+      return {
+        delivery: deliveryCount,
+        company: companyDriversCount,
+        total: deliveryCount + companyDriversCount,
+      };
+    } catch (error) {
+      console.error("❌ Error calculating drivers summary:", error);
+      return { delivery: 0, company: 0, total: 0 };
+    }
+  };
 
 /**
  * Aggregate cars count by size for admin dashboard
@@ -5460,66 +5514,75 @@ const increaseSubscriptionCounters = (
  */
 export const getSubscriptionsSummaryForAdmin =
   async (): Promise<SubscriptionsSummaryData> => {
-  try {
-    const [companiesSnapshot, clientsSnapshot, subscriptionsSnapshot] =
-      await Promise.all([
-        getDocs(collection(db, "companies")),
-        getDocs(collection(db, "clients")),
-        getDocs(collection(db, "subscriptions-payment")),
-      ]);
+    try {
+      const [companiesSnapshot, clientsSnapshot, subscriptionsSnapshot] =
+        await Promise.all([
+          getDocs(collection(db, "companies")),
+          getDocs(collection(db, "clients")),
+          getDocs(collection(db, "subscriptions-payment")),
+        ]);
 
-    const summary: SubscriptionsSummaryData = {
-      companies: createEmptySubscriptionGroup(),
-      individuals: createEmptySubscriptionGroup(),
-    };
+      const summary: SubscriptionsSummaryData = {
+        companies: createEmptySubscriptionGroup(),
+        individuals: createEmptySubscriptionGroup(),
+      };
 
-    companiesSnapshot.forEach((doc) => {
-      const info = extractSubscriptionDetails(doc.data());
-      if (!info) return;
-      increaseSubscriptionCounters(summary.companies, info.tier, info.expired);
-    });
-
-    clientsSnapshot.forEach((doc) => {
-      const info = extractSubscriptionDetails(doc.data());
-      if (!info) return;
-      increaseSubscriptionCounters(summary.individuals, info.tier, info.expired);
-    });
-
-    // Fallback to subscriptions-payment collection if no data was found
-    if (
-      summary.companies.total === 0 ||
-      summary.individuals.total === 0 ||
-      (summary.companies.expired === 0 && summary.individuals.expired === 0)
-    ) {
-      subscriptionsSnapshot.forEach((doc) => {
-        const data = doc.data();
-        const info =
-          extractSubscriptionDetails(data.selectedSubscription || data) ||
-          extractSubscriptionDetails(data);
+      companiesSnapshot.forEach((doc) => {
+        const info = extractSubscriptionDetails(doc.data());
         if (!info) return;
-
-        const targetGroup =
-          summary.companies.total === 0 && (data.company || data.companyEmail)
-            ? summary.companies
-            : summary.individuals.total === 0 && (data.client || data.clientEmail)
-            ? summary.individuals
-            : data.company || data.companyEmail
-            ? summary.companies
-            : summary.individuals;
-
-        increaseSubscriptionCounters(targetGroup, info.tier, info.expired);
+        increaseSubscriptionCounters(
+          summary.companies,
+          info.tier,
+          info.expired
+        );
       });
-    }
 
-    return summary;
-  } catch (error) {
-    console.error("❌ Error calculating subscriptions summary:", error);
-    return {
-      companies: createEmptySubscriptionGroup(),
-      individuals: createEmptySubscriptionGroup(),
-    };
-  }
-};
+      clientsSnapshot.forEach((doc) => {
+        const info = extractSubscriptionDetails(doc.data());
+        if (!info) return;
+        increaseSubscriptionCounters(
+          summary.individuals,
+          info.tier,
+          info.expired
+        );
+      });
+
+      // Fallback to subscriptions-payment collection if no data was found
+      if (
+        summary.companies.total === 0 ||
+        summary.individuals.total === 0 ||
+        (summary.companies.expired === 0 && summary.individuals.expired === 0)
+      ) {
+        subscriptionsSnapshot.forEach((doc) => {
+          const data = doc.data();
+          const info =
+            extractSubscriptionDetails(data.selectedSubscription || data) ||
+            extractSubscriptionDetails(data);
+          if (!info) return;
+
+          const targetGroup =
+            summary.companies.total === 0 && (data.company || data.companyEmail)
+              ? summary.companies
+              : summary.individuals.total === 0 &&
+                (data.client || data.clientEmail)
+              ? summary.individuals
+              : data.company || data.companyEmail
+              ? summary.companies
+              : summary.individuals;
+
+          increaseSubscriptionCounters(targetGroup, info.tier, info.expired);
+        });
+      }
+
+      return summary;
+    } catch (error) {
+      console.error("❌ Error calculating subscriptions summary:", error);
+      return {
+        companies: createEmptySubscriptionGroup(),
+        individuals: createEmptySubscriptionGroup(),
+      };
+    }
+  };
 
 /**
  * Fetch supervisors from users collection
@@ -6818,7 +6881,9 @@ export const addCompanyDriver = async (driverData: AddDriverData) => {
 export const fetchVehicles = async () => {
   try {
     const vehiclesRef = collection(db, "vehicles");
-    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(vehiclesRef);
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(
+      vehiclesRef
+    );
 
     const vehiclesData: any[] = [];
 
@@ -6914,17 +6979,14 @@ const buildVehicleSchemaPayload = (
     fuelType: source?.fuelType ?? null,
     id: source?.id ?? null,
     image: source?.image ?? null,
-    isActive:
-      typeof source?.isActive === "boolean" ? source.isActive : true,
+    isActive: typeof source?.isActive === "boolean" ? source.isActive : true,
     licenceAttachment: source?.licenceAttachment ?? null,
     location: source?.location ?? null,
     phoneNumber: source?.phoneNumber ?? null,
     plan: source?.plan ?? null,
     uId: source?.uId ?? null,
     workingStatus:
-      source?.workingStatus !== undefined
-        ? source.workingStatus
-        : "offWorking",
+      source?.workingStatus !== undefined ? source.workingStatus : "offWorking",
   };
 
   if (overrides.chassisNumber !== undefined) {
@@ -7073,7 +7135,8 @@ export const updateVehicleWithSchema = async ({
         : undefined;
 
     const payload = buildVehicleSchemaPayload(existingData, {
-      chassisNumber: chassisNumber !== undefined ? chassisNumber ?? null : undefined,
+      chassisNumber:
+        chassisNumber !== undefined ? chassisNumber ?? null : undefined,
       name: name !== undefined ? name ?? null : undefined,
       plateNumber:
         plateNumber !== undefined
@@ -7161,8 +7224,13 @@ export const fetchDriverByIdentifier = async (
 
     const emailCandidates = Array.from(
       new Set(
-        [identifier, trimmedIdentifier, trimmedIdentifier?.toLowerCase?.()].filter(
-          (value) => value !== null && value !== undefined && String(value).trim() !== ""
+        [
+          identifier,
+          trimmedIdentifier,
+          trimmedIdentifier?.toLowerCase?.(),
+        ].filter(
+          (value) =>
+            value !== null && value !== undefined && String(value).trim() !== ""
         )
       )
     );
@@ -8208,23 +8276,34 @@ export interface Advertisement {
  * @param email - User email to search for
  * @returns Promise with display_name or null if not found
  */
-const fetchUserDisplayName = async (email: string | null | undefined): Promise<string | null> => {
+const fetchUserDisplayName = async (
+  email: string | null | undefined
+): Promise<string | null> => {
   if (!email) return null;
-  
+
   try {
     const usersRef = collection(db, "users");
     const q = query(usersRef, where("email", "==", email));
     const snapshot = await getDocs(q);
-    
+
     if (!snapshot.empty) {
       const userData = snapshot.docs[0].data();
       // Try different possible field names for display name
-      return userData.display_name || userData.displayName || userData.name || userData.fullName || null;
+      return (
+        userData.display_name ||
+        userData.displayName ||
+        userData.name ||
+        userData.fullName ||
+        null
+      );
     }
-    
+
     return null;
   } catch (error) {
-    console.error(`❌ Error fetching user display_name for email ${email}:`, error);
+    console.error(
+      `❌ Error fetching user display_name for email ${email}:`,
+      error
+    );
     return null;
   }
 };
@@ -8249,14 +8328,17 @@ export const fetchAdvertisements = async (): Promise<Advertisement[]> => {
 
     const adsRef = collection(db, "ads");
     let snapshot: QuerySnapshot<DocumentData>;
-    
+
     // Try to order by createdDate desc, but fallback to simple query if it fails
     // (e.g., if some documents don't have createdDate field or index is missing)
     try {
       const q = query(adsRef, orderBy("createdDate", "desc"));
       snapshot = await getDocs(q);
     } catch (orderError) {
-      console.warn("⚠️ Could not order by 'createdDate', fetching without order:", orderError);
+      console.warn(
+        "⚠️ Could not order by 'createdDate', fetching without order:",
+        orderError
+      );
       // Fallback: fetch without ordering
       snapshot = await getDocs(adsRef);
     }
@@ -8324,17 +8406,19 @@ export const fetchAdvertisements = async (): Promise<Advertisement[]> => {
 
     // Fetch display_name for each createdUserId from users collection
     console.log("👤 Fetching creator display names from users collection...");
-    const uniqueEmails = [...new Set(ads.map(ad => ad.createdUserId).filter(Boolean))] as string[];
+    const uniqueEmails = [
+      ...new Set(ads.map((ad) => ad.createdUserId).filter(Boolean)),
+    ] as string[];
     const displayNameMap = new Map<string, string | null>();
-    
+
     // Fetch display names for all unique emails in parallel
     const displayNamePromises = uniqueEmails.map(async (email) => {
       const displayName = await fetchUserDisplayName(email);
       displayNameMap.set(email, displayName);
     });
-    
+
     await Promise.all(displayNamePromises);
-    
+
     // Add creatorDisplayName to each ad
     ads.forEach((ad) => {
       if (ad.createdUserId) {
@@ -8350,7 +8434,6 @@ export const fetchAdvertisements = async (): Promise<Advertisement[]> => {
     throw error;
   }
 };
-
 
 /**
  * Fetch invoices data from Firestore
