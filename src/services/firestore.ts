@@ -2991,6 +2991,60 @@ export const updateSubscription = async (
   }
 };
 
+/**
+ * Create a new subscription in Firestore
+ * @param subscriptionData - The subscription data with proper structure
+ * @returns Promise with the created subscription document ID
+ */
+export const createSubscription = async (subscriptionData: {
+  title: { ar: string; en?: string };
+  description: {
+    ar: string;
+    en?: string;
+    minCarNumber?: number;
+    maxCarNumber?: number;
+  };
+  status: { ar: string; en?: string };
+  price: number;
+  options: Array<{ ar: string; en?: string }>;
+  periodName: { ar: string; en?: string };
+  periodValueInDays: number;
+  logo?: string;
+}): Promise<string> => {
+  try {
+    console.log("📝 Creating new subscription in Firestore:", subscriptionData);
+    const subscriptionsCollection = collection(db, "subscriptions");
+
+    // Prepare subscription document with all required fields
+    const subscriptionDocument: any = {
+      title: subscriptionData.title,
+      description: subscriptionData.description,
+      status: subscriptionData.status,
+      price: subscriptionData.price,
+      options: subscriptionData.options,
+      periodName: subscriptionData.periodName,
+      periodValueInDays: subscriptionData.periodValueInDays,
+      createdDate: serverTimestamp(),
+      createdUserId: auth.currentUser?.uid || auth.currentUser?.email || null,
+    };
+
+    // Add optional fields only if they exist
+    if (subscriptionData.logo) {
+      subscriptionDocument.logo = subscriptionData.logo;
+    }
+
+    const docRef = await addDoc(subscriptionsCollection, subscriptionDocument);
+    console.log(
+      "✅ Subscription created successfully in Firestore with ID:",
+      docRef.id
+    );
+    return docRef.id;
+  } catch (error) {
+    console.error("Error creating subscription:", error);
+    throw error;
+  }
+};
+
 export const createProductWithSchema = async (
   formFields: Record<string, any>,
   imageFile?: File | string | null

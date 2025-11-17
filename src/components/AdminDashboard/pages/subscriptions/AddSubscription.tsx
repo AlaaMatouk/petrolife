@@ -2,15 +2,23 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Input, Select } from "../../../shared/Form";
 import { ArrowLeft, CirclePlus, Plus, Trash2 } from "lucide-react";
+import { createSubscription } from "../../../../services/firestore";
+import { useToast } from "../../../../context/ToastContext";
 
 const AddSubscription = () => {
   const navigate = useNavigate();
+  const { addToast } = useToast();
+  const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
     price: "",
     badge: "",
+    periodName: "monthly", // monthly or annual
+    periodValueInDays: 30, // 30 for monthly, 365 for annual
     features: [""],
+    minCarNumber: "",
+    maxCarNumber: "",
   });
 
   const handleAddFeature = () => {
@@ -34,11 +42,77 @@ const AddSubscription = () => {
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Add subscription:", formData);
-    // TODO: Handle form submission
-    // navigate("/admin-subscriptions");
+
+    try {
+      setIsSaving(true);
+
+      // Validate required fields
+      if (!formData.name.trim()) {
+        addToast("يرجى إدخال اسم الباقة", "error");
+        return;
+      }
+      if (!formData.description.trim()) {
+        addToast("يرجى إدخال وصف الباقة", "error");
+        return;
+      }
+      if (!formData.price || parseFloat(formData.price) <= 0) {
+        addToast("يرجى إدخال سعر صحيح", "error");
+        return;
+      }
+      if (formData.features.length === 0 || formData.features.every(f => !f.trim())) {
+        addToast("يرجى إدخال خاصية واحدة على الأقل", "error");
+        return;
+      }
+
+      // Determine periodName and periodValueInDays based on selection
+      const periodName = formData.periodName === "monthly" 
+        ? { ar: "شهريا", en: "Monthly" }
+        : { ar: "سنويا", en: "Annual" };
+      const periodValueInDays = formData.periodName === "monthly" ? 30 : 365;
+
+      // Prepare subscription data with proper structure
+      const subscriptionData = {
+        title: {
+          ar: formData.name,
+          en: formData.name, // Can be updated later
+        },
+        description: {
+          ar: formData.description,
+          en: formData.description, // Can be updated later
+          ...(formData.minCarNumber && formData.minCarNumber.trim() !== "" 
+            ? { minCarNumber: parseInt(formData.minCarNumber) } 
+            : {}),
+          ...(formData.maxCarNumber && formData.maxCarNumber.trim() !== "" 
+            ? { maxCarNumber: parseInt(formData.maxCarNumber) } 
+            : {}),
+        },
+        status: {
+          ar: formData.badge || "",
+          en: formData.badge || "", // Can be updated later
+        },
+        price: parseFloat(formData.price),
+        options: formData.features
+          .filter((f) => f.trim() !== "")
+          .map((feature) => ({
+            ar: feature,
+            en: feature, // Can be updated later
+          })),
+        periodName: periodName,
+        periodValueInDays: periodValueInDays,
+      };
+
+      await createSubscription(subscriptionData);
+      
+      addToast("تم إضافة الباقة بنجاح", "success");
+      navigate("/admin-subscriptions");
+    } catch (err: any) {
+      console.error("Error creating subscription:", err);
+      addToast("فشل إضافة الباقة: " + (err.message || "خطأ غير معروف"), "error");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const badgeOptions = [
@@ -46,6 +120,12 @@ const AddSubscription = () => {
     { value: "موصى به", label: "موصى به" },
     { value: "الأنسب", label: "الأنسب" },
     { value: "الأرخص", label: "الأرخص" },
+    { value: "مناسب", label: "مناسب" },
+  ];
+
+  const periodOptions = [
+    { value: "monthly", label: "شهري" },
+    { value: "annual", label: "سنوي" },
   ];
 
   return (
@@ -119,18 +199,61 @@ const AddSubscription = () => {
             </div>
           </div>
 
-          {/* Price */}
-          <div className="w-full">
-            <Input
-              label="سعر الباقة/شهر"
-              type="number"
-              value={formData.price}
-              onChange={(value) =>
-                setFormData((prev) => ({ ...prev, price: value }))
-              }
-              placeholder="5"
-              required
-            />
+          {/* Price and Period */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full">
+            <div className="w-full">
+              <Input
+                label="سعر الباقة"
+                type="number"
+                value={formData.price}
+                onChange={(value) =>
+                  setFormData((prev) => ({ ...prev, price: value }))
+                }
+                placeholder="5"
+                required
+              />
+            </div>
+            <div className="w-full">
+              <Select
+                label="نوع الفترة"
+                value={formData.periodName}
+                onChange={(value) => {
+                  setFormData((prev) => ({
+                    ...prev,
+                    periodName: value,
+                    periodValueInDays: value === "monthly" ? 30 : 365,
+                  }));
+                }}
+                options={periodOptions}
+                required
+              />
+            </div>
+          </div>
+
+          {/* Car Numbers */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full">
+            <div className="w-full">
+              <Input
+                label="الحد الأدنى لعدد السيارات"
+                type="number"
+                value={formData.minCarNumber}
+                onChange={(value) =>
+                  setFormData((prev) => ({ ...prev, minCarNumber: value }))
+                }
+                placeholder="1"
+              />
+            </div>
+            <div className="w-full">
+              <Input
+                label="الحد الأقصى لعدد السيارات"
+                type="number"
+                value={formData.maxCarNumber}
+                onChange={(value) =>
+                  setFormData((prev) => ({ ...prev, maxCarNumber: value }))
+                }
+                placeholder="99"
+              />
+            </div>
           </div>
 
           {/* Package Features */}
@@ -181,9 +304,17 @@ const AddSubscription = () => {
             </button>
             <button
               type="submit"
-              className="px-6 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors"
+              disabled={isSaving}
+              className="px-6 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
-              حفظ التغييرات
+              {isSaving ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  جاري الحفظ...
+                </>
+              ) : (
+                "إضافة الباقة"
+              )}
             </button>
           </div>
         </form>
