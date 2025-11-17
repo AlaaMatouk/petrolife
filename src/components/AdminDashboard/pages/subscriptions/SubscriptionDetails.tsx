@@ -2,28 +2,85 @@ import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Input, Select } from "../../../shared/Form";
 import { ArrowLeft, Edit, Plus, Trash2 } from "lucide-react";
+import { fetchSubscriptionById, updateSubscription } from "../../../../services/firestore";
+import { LoadingSpinner } from "../../../shared";
+import { useToast } from "../../../../context/ToastContext";
 
 const SubscriptionDetails = () => {
   const navigate = useNavigate();
   const { id } = useParams();
+  const { addToast } = useToast();
   const [isEditMode, setIsEditMode] = useState(false);
+  const [subscription, setSubscription] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
-    name: "بترولايف بيسيك",
-    description: "أنسب للشركات المتوسطة التي تحتاج تقارير وتنبيهات تساعدها في مراقبة وتقليل مصاريف الوقود.",
-    price: "5",
-    badge: "موصى به",
-    features: [
-      "عدد السيارات من 3 إلى 499",
-      "QR Code",
-      "اكتشاف تلقائي لعدد المركبات",
-    ],
+    name: "",
+    description: "",
+    price: "",
+    badge: "",
+    features: [] as string[],
+    minCarNumber: "",
+    maxCarNumber: "",
   });
 
   // Fetch subscription data based on id
   useEffect(() => {
-    // TODO: Fetch subscription data from API
-    console.log("Loading subscription:", id);
-  }, [id]);
+    const loadSubscription = async () => {
+      if (!id) {
+        setError("معرف الاشتراك غير موجود");
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        setError(null);
+        const data = await fetchSubscriptionById(id);
+        
+        if (!data) {
+          setError("الاشتراك غير موجود");
+          setIsLoading(false);
+          return;
+        }
+
+        setSubscription(data);
+
+        // Build features array from options
+        const features: string[] = [];
+        if (data.options && Array.isArray(data.options)) {
+          data.options.forEach((option: any) => {
+            if (option && typeof option === "object") {
+              const optionValue = option.ar || option.en || "";
+              if (optionValue) features.push(optionValue);
+            } else if (typeof option === "string") {
+              features.push(option);
+            }
+          });
+        }
+
+        // Update form data with real subscription data
+        setFormData({
+          name: data.title?.ar || data.title?.en || data.title || "",
+          description: data.description?.ar || data.description?.en || data.description || "",
+          price: data.price?.toString() || "",
+          badge: data.status?.ar || data.status?.en || data.status || "",
+          features: features,
+          minCarNumber: data.description?.minCarNumber?.toString() || "",
+          maxCarNumber: data.description?.maxCarNumber?.toString() || "",
+        });
+      } catch (err: any) {
+        console.error("Error loading subscription:", err);
+        setError(err.message || "فشل تحميل بيانات الاشتراك");
+        addToast("فشل تحميل بيانات الاشتراك", "error");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadSubscription();
+  }, [id, addToast]);
 
   const handleAddFeature = () => {
     setFormData((prev) => ({
@@ -46,12 +103,56 @@ const SubscriptionDetails = () => {
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isEditMode) {
-      console.log("Update subscription:", formData);
-      // TODO: Handle update
-      setIsEditMode(false);
+    if (!isEditMode || !id) return;
+
+    try {
+      setIsSaving(true);
+
+      // Prepare update data - maintain the structure with .ar fields
+      const updateData: any = {
+        title: { ar: formData.name },
+        description: {
+          ar: formData.description,
+        },
+        status: { ar: formData.badge },
+        price: parseFloat(formData.price) || 0,
+        options: formData.features
+          .filter((f) => f.trim() !== "")
+          .map((feature) => ({ ar: feature, en: feature })),
+      };
+
+      // Add minCarNumber and maxCarNumber only if they have values
+      if (formData.minCarNumber && formData.minCarNumber.trim() !== "") {
+        updateData.description.minCarNumber = parseInt(formData.minCarNumber);
+      }
+      if (formData.maxCarNumber && formData.maxCarNumber.trim() !== "") {
+        updateData.description.maxCarNumber = parseInt(formData.maxCarNumber);
+      }
+
+      // Preserve existing .en values if they exist
+      if (subscription?.title?.en) {
+        updateData.title.en = subscription.title.en;
+      }
+      if (subscription?.description?.en) {
+        updateData.description.en = subscription.description.en;
+      }
+      if (subscription?.status?.en) {
+        updateData.status.en = subscription.status.en;
+      }
+
+      await updateSubscription(id, updateData);
+      
+      addToast("تم تحديث الباقة بنجاح", "success");
+      
+      // Navigate back to admin-subscriptions screen
+      navigate("/admin-subscriptions");
+    } catch (err: any) {
+      console.error("Error updating subscription:", err);
+      addToast("فشل تحديث الباقة: " + (err.message || "خطأ غير معروف"), "error");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -60,7 +161,32 @@ const SubscriptionDetails = () => {
     { value: "موصى به", label: "موصى به" },
     { value: "الأنسب", label: "الأنسب" },
     { value: "الأرخص", label: "الأرخص" },
+    { value: "مناسب", label: "مناسب" },
   ];
+
+  // Loading State
+  if (isLoading) {
+    return (
+      <div className="flex flex-col w-full items-center justify-center py-20" dir="rtl">
+        <LoadingSpinner message="جاري تحميل بيانات الاشتراك..." />
+      </div>
+    );
+  }
+
+  // Error State
+  if (error) {
+    return (
+      <div className="flex flex-col w-full items-center justify-center py-20" dir="rtl">
+        <p className="text-red-600 mb-4">{error}</p>
+        <button
+          onClick={() => navigate(-1)}
+          className="px-4 py-2 rounded-[10px] border-[1.5px] border-solid border-[#5A66C1] text-[#5A66C1] bg-white hover:bg-blue-50 font-medium transition-colors"
+        >
+          رجوع
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col w-full items-start gap-5" dir="rtl">
@@ -136,19 +262,58 @@ const SubscriptionDetails = () => {
             </div>
           </div>
 
-          {/* Price */}
-          <div className="w-full">
-            <Input
-              label="سعر الباقة/شهر"
-              type="number"
-              value={formData.price}
-              onChange={(value) =>
-                setFormData((prev) => ({ ...prev, price: value }))
-              }
-              placeholder="5"
-              disabled={!isEditMode}
-              required
-            />
+          {/* Price and Period */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full">
+            <div className="w-full">
+              <Input
+                label="سعر الباقة"
+                type="number"
+                value={formData.price}
+                onChange={(value) =>
+                  setFormData((prev) => ({ ...prev, price: value }))
+                }
+                placeholder="5"
+                disabled={!isEditMode}
+                required
+              />
+            </div>
+            <div className="w-full">
+              <Input
+                label="نوع الفترة"
+                value={subscription?.periodName?.ar || subscription?.periodName?.en || subscription?.periodName || ""}
+                onChange={() => {}}
+                placeholder="شهري/سنوي"
+                disabled={true}
+              />
+            </div>
+          </div>
+
+          {/* Car Numbers */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full">
+            <div className="w-full">
+              <Input
+                label="الحد الأدنى لعدد السيارات"
+                type="number"
+                value={formData.minCarNumber}
+                onChange={(value) =>
+                  setFormData((prev) => ({ ...prev, minCarNumber: value }))
+                }
+                placeholder="1"
+                disabled={!isEditMode}
+              />
+            </div>
+            <div className="w-full">
+              <Input
+                label="الحد الأقصى لعدد السيارات"
+                type="number"
+                value={formData.maxCarNumber}
+                onChange={(value) =>
+                  setFormData((prev) => ({ ...prev, maxCarNumber: value }))
+                }
+                placeholder="99"
+                disabled={!isEditMode}
+              />
+            </div>
           </div>
 
           {/* Package Features */}
@@ -212,9 +377,17 @@ const SubscriptionDetails = () => {
             ) : (
               <button
                 type="submit"
-                className="px-6 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors"
+                disabled={isSaving}
+                className="px-6 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
-                حفظ التغييرات
+                {isSaving ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    جاري الحفظ...
+                  </>
+                ) : (
+                  "حفظ التغييرات"
+                )}
               </button>
             )}
           </div>

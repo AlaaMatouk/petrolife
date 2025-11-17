@@ -2847,6 +2847,150 @@ export const fetchSubscriptions = async (): Promise<any[]> => {
   }
 };
 
+/**
+ * Fetch a single subscription by ID from Firestore
+ * @param subscriptionId - The subscription document ID
+ * @returns Promise with subscription data or null if not found
+ */
+export const fetchSubscriptionById = async (
+  subscriptionId: string
+): Promise<any | null> => {
+  try {
+    console.log(
+      "📋 Fetching subscription by ID from Firestore:",
+      subscriptionId
+    );
+    const subscriptionsCollection = collection(db, "subscriptions");
+    const subscriptionDoc = doc(subscriptionsCollection, subscriptionId);
+    const subscriptionSnapshot = await getDoc(subscriptionDoc);
+
+    if (!subscriptionSnapshot.exists()) {
+      console.warn(`⚠️ Subscription with ID ${subscriptionId} not found`);
+      return null;
+    }
+
+    const subscriptionData = {
+      id: subscriptionSnapshot.id,
+      ...subscriptionSnapshot.data(),
+    };
+
+    console.log("✅ Fetched subscription from Firestore:", subscriptionData);
+    return subscriptionData;
+  } catch (error) {
+    console.error("Error fetching subscription by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update a subscription in Firestore
+ * @param subscriptionId - The subscription document ID
+ * @param updateData - The data to update (should maintain the structure with .ar and .en fields)
+ * @returns Promise<void>
+ */
+export const updateSubscription = async (
+  subscriptionId: string,
+  updateData: {
+    title?: { ar?: string; en?: string } | string;
+    description?:
+      | {
+          ar?: string;
+          en?: string;
+          minCarNumber?: number;
+          maxCarNumber?: number;
+        }
+      | string;
+    status?: { ar?: string; en?: string } | string;
+    price?: number;
+    options?: Array<{ ar?: string; en?: string } | string>;
+    periodName?: { ar?: string; en?: string } | string;
+    periodValueInDays?: number;
+  }
+): Promise<void> => {
+  try {
+    console.log(
+      "📝 Updating subscription in Firestore:",
+      subscriptionId,
+      updateData
+    );
+    const subscriptionsCollection = collection(db, "subscriptions");
+    const subscriptionDoc = doc(subscriptionsCollection, subscriptionId);
+
+    // Prepare update data - maintain structure if it's an object, otherwise convert
+    const firestoreUpdateData: any = {};
+
+    if (updateData.title !== undefined) {
+      if (typeof updateData.title === "string") {
+        // If title is a string, preserve existing structure or create new
+        firestoreUpdateData.title = { ar: updateData.title };
+      } else {
+        firestoreUpdateData.title = updateData.title;
+      }
+    }
+
+    if (updateData.description !== undefined) {
+      if (typeof updateData.description === "string") {
+        firestoreUpdateData.description = { ar: updateData.description };
+      } else {
+        // Clean description object - remove undefined fields
+        const cleanDescription: any = {};
+        if (updateData.description.ar !== undefined) {
+          cleanDescription.ar = updateData.description.ar;
+        }
+        if (updateData.description.en !== undefined) {
+          cleanDescription.en = updateData.description.en;
+        }
+        if (updateData.description.minCarNumber !== undefined) {
+          cleanDescription.minCarNumber = updateData.description.minCarNumber;
+        }
+        if (updateData.description.maxCarNumber !== undefined) {
+          cleanDescription.maxCarNumber = updateData.description.maxCarNumber;
+        }
+        firestoreUpdateData.description = cleanDescription;
+      }
+    }
+
+    if (updateData.status !== undefined) {
+      if (typeof updateData.status === "string") {
+        firestoreUpdateData.status = { ar: updateData.status };
+      } else {
+        firestoreUpdateData.status = updateData.status;
+      }
+    }
+
+    if (updateData.price !== undefined) {
+      firestoreUpdateData.price = updateData.price;
+    }
+
+    if (updateData.options !== undefined) {
+      firestoreUpdateData.options = updateData.options.map((option) => {
+        if (typeof option === "string") {
+          return { ar: option, en: option };
+        }
+        return option;
+      });
+    }
+
+    if (updateData.periodName !== undefined) {
+      if (typeof updateData.periodName === "string") {
+        firestoreUpdateData.periodName = { ar: updateData.periodName };
+      } else {
+        firestoreUpdateData.periodName = updateData.periodName;
+      }
+    }
+
+    if (updateData.periodValueInDays !== undefined) {
+      firestoreUpdateData.periodValueInDays = updateData.periodValueInDays;
+    }
+
+    await updateDoc(subscriptionDoc, firestoreUpdateData);
+    console.log("✅ Subscription updated successfully in Firestore");
+  } catch (error) {
+    console.error("Error updating subscription:", error);
+    throw error;
+  }
+};
+
 export const createProductWithSchema = async (
   formFields: Record<string, any>,
   imageFile?: File | string | null
