@@ -50,19 +50,35 @@ const AddSubscription = () => {
 
       // Validate required fields
       if (!formData.name.trim()) {
-        addToast("يرجى إدخال اسم الباقة", "error");
+        addToast({
+          title: "خطأ",
+          message: "يرجى إدخال اسم الباقة",
+          type: "error",
+        });
         return;
       }
       if (!formData.description.trim()) {
-        addToast("يرجى إدخال وصف الباقة", "error");
+        addToast({
+          title: "خطأ",
+          message: "يرجى إدخال وصف الباقة",
+          type: "error",
+        });
         return;
       }
       if (!formData.price || parseFloat(formData.price) <= 0) {
-        addToast("يرجى إدخال سعر صحيح", "error");
+        addToast({
+          title: "خطأ",
+          message: "يرجى إدخال سعر صحيح",
+          type: "error",
+        });
         return;
       }
       if (formData.features.length === 0 || formData.features.every(f => !f.trim())) {
-        addToast("يرجى إدخال خاصية واحدة على الأقل", "error");
+        addToast({
+          title: "خطأ",
+          message: "يرجى إدخال خاصية واحدة على الأقل",
+          type: "error",
+        });
         return;
       }
 
@@ -105,11 +121,19 @@ const AddSubscription = () => {
 
       await createSubscription(subscriptionData);
       
-      addToast("تم إضافة الباقة بنجاح", "success");
+      addToast({
+        title: "نجح",
+        message: "تم إضافة الباقة بنجاح",
+        type: "success",
+      });
       navigate("/admin-subscriptions");
     } catch (err: any) {
       console.error("Error creating subscription:", err);
-      addToast("فشل إضافة الباقة: " + (err.message || "خطأ غير معروف"), "error");
+      addToast({
+        title: "خطأ",
+        message: "فشل إضافة الباقة: " + (err.message || "خطأ غير معروف"),
+        type: "error",
+      });
     } finally {
       setIsSaving(false);
     }

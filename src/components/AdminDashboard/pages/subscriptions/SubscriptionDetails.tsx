@@ -73,7 +73,11 @@ const SubscriptionDetails = () => {
       } catch (err: any) {
         console.error("Error loading subscription:", err);
         setError(err.message || "فشل تحميل بيانات الاشتراك");
-        addToast("فشل تحميل بيانات الاشتراك", "error");
+        addToast({
+          title: "خطأ",
+          message: "فشل تحميل بيانات الاشتراك",
+          type: "error",
+        });
       } finally {
         setIsLoading(false);
       }
@@ -144,13 +148,21 @@ const SubscriptionDetails = () => {
 
       await updateSubscription(id, updateData);
       
-      addToast("تم تحديث الباقة بنجاح", "success");
+      addToast({
+        title: "نجح",
+        message: "تم تحديث الباقة بنجاح",
+        type: "success",
+      });
       
       // Navigate back to admin-subscriptions screen
       navigate("/admin-subscriptions");
     } catch (err: any) {
       console.error("Error updating subscription:", err);
-      addToast("فشل تحديث الباقة: " + (err.message || "خطأ غير معروف"), "error");
+      addToast({
+        title: "خطأ",
+        message: "فشل تحديث الباقة: " + (err.message || "خطأ غير معروف"),
+        type: "error",
+      });
     } finally {
       setIsSaving(false);
     }

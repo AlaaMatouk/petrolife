@@ -9,6 +9,7 @@ import {
   doc,
   getDoc,
   updateDoc,
+  deleteDoc,
   arrayUnion,
   where,
   orderBy,
@@ -3041,6 +3042,27 @@ export const createSubscription = async (subscriptionData: {
     return docRef.id;
   } catch (error) {
     console.error("Error creating subscription:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a subscription from Firestore
+ * @param subscriptionId - The subscription document ID to delete
+ * @returns Promise<void>
+ */
+export const deleteSubscription = async (
+  subscriptionId: string
+): Promise<void> => {
+  try {
+    console.log("🗑️ Deleting subscription from Firestore:", subscriptionId);
+    const subscriptionsCollection = collection(db, "subscriptions");
+    const subscriptionDoc = doc(subscriptionsCollection, subscriptionId);
+
+    await deleteDoc(subscriptionDoc);
+    console.log("✅ Subscription deleted successfully from Firestore");
+  } catch (error) {
+    console.error("Error deleting subscription:", error);
     throw error;
   }
 };
