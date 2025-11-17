@@ -11538,3 +11538,103 @@ export const fetchTopStationsByConsumption = async (): Promise<any[]> => {
     throw error;
   }
 };
+
+/**
+ * Interface for communication policies data
+ */
+export interface CommunicationPoliciesData {
+  platformPolicy: string;
+  whatsappLink: string;
+  instagramLink: string;
+  tiktokLink: string;
+  facebookLink: string;
+  xPlatformLink: string;
+  emailLink: string;
+}
+
+/**
+ * Default dummy data for communication policies
+ */
+const defaultCommunicationPoliciesData: CommunicationPoliciesData = {
+  platformPolicy: `نحن نجمع المعلومات لتقديم خدمات ذات مستوى أفضل المستخدمينا جميعًا. نحن نستخدم المعلومات التي نجمعها من جميع خدماتنا (مثل تطبيقاتك ومتصفحاتك وأجهزتك) لتقديم خدماتنا وصيانتها وتحسينها وتطوير خدمات جديدة وقياس الأداء والتواصل معك.
+
+المعلومات التي تجمعها Google
+نستخدم المعلومات التي نجمعها من جميع خدماتنا لتقديم خدماتنا وصيانتها وتحسينها وتطوير خدمات جديدة وقياس الأداء والتواصل معك.
+
+عناصر تنشئها أو تقدمها لنا
+عندما تنشئ حساب Google أو تضيف معلومات إلى حسابك، فإنك تزودنا بمعلومات شخصية تتضمن اسمك وكلمة المرور.
+
+المعلومات التي تجمعها أثناء استخدامك لخدماتنا
+نحن نجمع المعلومات حول الطريقة التي تستخدم بها خدماتنا، مثل نوع المحتوى الذي تبحث عنه أو تعرضه أو تشتريه، والمواقع التي تزورها، والتفاعلات مع المحتوى والخدمات.
+
+تطبيقاتك ومتصفحاتك وأجهزتك
+نحن نجمع معلومات محددة حول تطبيقاتك ومتصفحاتك وأجهزتك التي تستخدمها للوصول إلى خدمات Google، والتي تساعدنا في توفير ميزات مثل تحديثات المنتج تلقائيًا وتقليل معدل الأعطال.`,
+  whatsappLink: "https://wa.me/966500000000",
+  instagramLink: "https://www.instagram.com/petrolife",
+  tiktokLink: "https://www.tiktok.com/@petrolife",
+  facebookLink: "https://www.facebook.com/petrolife",
+  xPlatformLink: "https://www.x.com/petrolife",
+  emailLink: "info@petrolife.com",
+};
+
+/**
+ * Fetch communication policies data from Firestore
+ * Returns default dummy data if document doesn't exist
+ * @returns Promise with communication policies data
+ */
+export const fetchCommunicationPolicies = async (): Promise<CommunicationPoliciesData> => {
+  try {
+    console.log("📋 Fetching communication policies from Firestore...");
+
+    const docRef = doc(db, "communication-policies", "settings");
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      console.log("✅ Communication policies data fetched successfully");
+      return {
+        platformPolicy: data.platformPolicy || defaultCommunicationPoliciesData.platformPolicy,
+        whatsappLink: data.whatsappLink || defaultCommunicationPoliciesData.whatsappLink,
+        instagramLink: data.instagramLink || defaultCommunicationPoliciesData.instagramLink,
+        tiktokLink: data.tiktokLink || defaultCommunicationPoliciesData.tiktokLink,
+        facebookLink: data.facebookLink || defaultCommunicationPoliciesData.facebookLink,
+        xPlatformLink: data.xPlatformLink || defaultCommunicationPoliciesData.xPlatformLink,
+        emailLink: data.emailLink || defaultCommunicationPoliciesData.emailLink,
+      };
+    } else {
+      console.log("⚠️ Communication policies document not found, using default data");
+      // Create document with default data
+      await setDoc(docRef, defaultCommunicationPoliciesData);
+      return defaultCommunicationPoliciesData;
+    }
+  } catch (error) {
+    console.error("❌ Error fetching communication policies:", error);
+    // Return default data on error
+    return defaultCommunicationPoliciesData;
+  }
+};
+
+/**
+ * Save communication policies data to Firestore
+ * @param data - Communication policies data to save
+ * @returns Promise<boolean> - Success status
+ */
+export const saveCommunicationPolicies = async (
+  data: CommunicationPoliciesData
+): Promise<boolean> => {
+  try {
+    console.log("💾 Saving communication policies to Firestore...");
+
+    const docRef = doc(db, "communication-policies", "settings");
+    await setDoc(docRef, {
+      ...data,
+      updatedAt: serverTimestamp(),
+    });
+
+    console.log("✅ Communication policies saved successfully");
+    return true;
+  } catch (error) {
+    console.error("❌ Error saving communication policies:", error);
+    throw error;
+  }
+};
