@@ -1,4 +1,9 @@
 import { useState } from "react";
+import {
+  DriversSummaryData,
+  SubscriptionsSummaryData,
+  SubscriptionGroupSummary,
+} from "../../types/dashboardStats";
 
 // Type definitions for the stats data structure
 export interface StatCategory {
@@ -24,6 +29,8 @@ export interface StatData {
   breakdown?: StatBreakdown[];
   total?: StatTotal;
   options?: string[];
+  optionCategories?: Record<string, StatCategory[]>;
+  optionTotals?: Record<string, StatTotal>;
   amount?: string;
   type?: string;
 }
@@ -78,6 +85,8 @@ export interface StatsCardsSectionProps {
   driversData?: { active: number; inactive: number; total: number };
   carsData?: CarWashData; // Reuse CarWashData interface for cars
   ordersData?: { completed: number; canceled: number; total: number };
+  driversSummary?: DriversSummaryData;
+  subscriptionsSummary?: SubscriptionsSummaryData;
 }
 
 const StatsCardsSection = ({
@@ -96,6 +105,8 @@ const StatsCardsSection = ({
   driversData,
   carsData,
   ordersData,
+  driversSummary,
+  subscriptionsSummary,
 }: StatsCardsSectionProps) => {
   const [selectedOptions, setSelectedOptions] = useState<{
     [key: number]: number;
@@ -190,6 +201,52 @@ const StatsCardsSection = ({
       };
     }
 
+    // Update drivers summary data (delivery vs company)
+    if (stat.title === "السائقين" && driversSummary) {
+      return {
+        ...stat,
+        categories: [
+          { name: "سائقونا بتوصيل الوقود", count: driversSummary.delivery },
+          { name: "سائقي الشركات", count: driversSummary.company },
+        ],
+        total: { name: "الاجمالي", count: driversSummary.total },
+      };
+    }
+
+    // Update subscriptions summary data
+    if (stat.title === "الاشتراكات" && subscriptionsSummary) {
+      const buildSubscriptionCategories = (group: SubscriptionGroupSummary) => [
+        { name: "Premium", count: group.premium },
+        { name: "Classic", count: group.classic },
+        { name: "Basic", count: group.basic },
+      ];
+
+      return {
+        ...stat,
+        categories: buildSubscriptionCategories(subscriptionsSummary.individuals),
+        optionCategories: {
+          الأفراد: buildSubscriptionCategories(subscriptionsSummary.individuals),
+          الشركات: buildSubscriptionCategories(subscriptionsSummary.companies),
+        },
+        optionTotals: {
+          الأفراد: {
+            name: "الاشتراكات المنتهية",
+            count: subscriptionsSummary.individuals.expired,
+          },
+          الشركات: {
+            name: "الاشتراكات المنتهية",
+            count: subscriptionsSummary.companies.expired,
+          },
+        },
+        total: {
+          name: "الاشتراكات المنتهية",
+          count:
+            subscriptionsSummary.individuals.expired +
+            subscriptionsSummary.companies.expired,
+        },
+      };
+    }
+
     // Update companies data
     if (stat.title === "الشركات" && companiesData) {
       return {
@@ -229,7 +286,12 @@ const StatsCardsSection = ({
     }
 
     // Update cars data
-    if (stat.title === "السيارات" && carsData) {
+    if (
+      (stat.title === "السيارات" ||
+        stat.title === "السيارات المشتركة" ||
+        stat.title === "اجمالي السيارات") &&
+      carsData
+    ) {
       return {
         ...stat,
         categories: [
@@ -291,142 +353,169 @@ const StatsCardsSection = ({
       className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8 ${style}`}
       style={{ direction: "rtl" }}
     >
-      {updatedStatsData.map((stat, index) => (
-        <div
-          key={index}
-          className="relative w-full rounded-[16px] rounded-bl-[28px] border p-6 flex flex-col justify-between transition-colors duration-300"
-          style={{
-            direction: "ltr",
-            backgroundColor: "var(--surface-card)",
-            borderColor: "var(--border-strong)",
-            boxShadow: "0px 6px 18px rgba(0, 0, 0, 0.25)",
-          }}
-        >
-          {/* Upper row - title */}
-          {!stat.total && !stat.options ? (
-            <div className="flex justify-end mb-4">
-              <span className="text-base text-[var(--text-secondary)] transition-colors duration-300">
-                {stat.title}
-              </span>
-            </div>
-          ) : stat.options ? (
-            <div className="flex justify-between mb-4">
-              {/* Options buttons */}
-              <div className="flex gap-2">
-                {stat.options.map((option, optionIndex) => {
-                  const isSelected = selectedOptions[index] === optionIndex;
-                  return (
-                    <button
-                      key={optionIndex}
-                      onClick={() =>
-                        setSelectedOptions((prev) => ({
-                          ...prev,
-                          [index]: optionIndex,
-                        }))
-                      }
-                      className="px-[10px] py-1 rounded-[8px] transition-all duration-200 border"
-                      style={{
-                        backgroundColor: isSelected
-                          ? "var(--nav-tab-active-bg)"
-                          : "var(--surface-control)",
-                        color: isSelected
-                          ? "var(--nav-tab-active-text)"
-                          : "var(--text-secondary)",
-                        fontSize: "12px",
-                        fontWeight: 500,
-                        borderColor: isSelected
-                          ? "transparent"
-                          : "var(--border-subtle)",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {option}
-                    </button>
-                  );
-                })}
-              </div>
-              {/* Title with enhanced styling */}
-              <span className="text-base text-[var(--text-secondary)] transition-colors duration-300">
-                {stat.title}
-              </span>
-            </div>
-          ) : (
-            <div className="flex justify-between mb-4">
-              <span className="text-base text-[var(--text-secondary)] transition-colors duration-300">
-                {typeof stat.total === "object" &&
-                stat.total !== null &&
-                "name" in stat.total
-                  ? `${stat.total.name} ${stat.total.count}`
-                  : ""}
-              </span>
-              <span className="text-base text-[var(--text-secondary)] transition-colors duration-300">
-                {stat.title}
-              </span>
-            </div>
-          )}
+      {updatedStatsData.map((stat, index) => {
+        const selectedOptionIndex =
+          stat.options && stat.options.length > 0
+            ? selectedOptions[index] ?? 0
+            : null;
+        const selectedOption =
+          selectedOptionIndex !== null && stat.options
+            ? stat.options[selectedOptionIndex] ?? stat.options[0]
+            : null;
+        const categoriesToRender =
+          selectedOption && stat.optionCategories
+            ? stat.optionCategories[selectedOption] ?? []
+            : stat.categories ?? [];
+        const totalToRender =
+          selectedOption && stat.optionTotals
+            ? stat.optionTotals[selectedOption]
+            : stat.total;
 
-          {/* Lower row - value and icon */}
-          <div className="flex items-center justify-end">
-            <div
-              className="w-10 h-10 absolute bottom-[8px] left-[8px] rounded-full flex items-center justify-center transition-colors duration-300"
-              style={{ backgroundColor: "var(--surface-control-muted)" }}
-            >
-              {stat.icon}
-            </div>
-
-            {stat.categories && stat.categories.length > 0 ? (
-              <div className="flex items-center  gap-[10px]">
-                {stat.categories.map((category, catIndex) => (
-                  <div key={catIndex} className="flex items-center gap-4">
-                    <div className="flex flex-col items-end">
-                      <span className="text-lg font-bold text-[var(--stats-card-number)] transition-colors duration-300">
-                        {category.count}
-                      </span>
-                      <span className="text-xs text-[var(--text-secondary)] text-right transition-colors duration-300">
-                        {category.name}
-                      </span>
-                    </div>
-                    {catIndex < stat.categories!.length - 1 && (
-                      <div className="w-px h-8 bg-[color:var(--border-subtle)] transition-colors duration-300"></div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : stat.breakdown && stat.breakdown.length > 0 ? (
-              <div className="flex items-center gap-4">
-                {stat.breakdown.map((fuel, fuelIndex) => (
-                  <div key={fuelIndex} className="flex items-center gap-4">
-                    <div className="flex flex-col items-end">
-                      <span className="text-lg font-bold text-[var(--stats-card-number)] transition-colors duration-300">
-                        {fuel.amount}
-                      </span>
-                      <span className={`${fuel.color} text-xs font-bold`}>
-                        {fuel.type}
-                      </span>
-                    </div>
-                    {fuelIndex < stat.breakdown!.length - 1 && (
-                      <div className="w-px h-8 bg-[color:var(--border-subtle)] transition-colors duration-300"></div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : stat.total ? (
-              <div className="flex flex-col items-end">
-                <span className="text-2xl font-bold text-[var(--stats-card-total)] transition-colors duration-300">
-                  {stat.total.count}
+        return (
+          <div
+            key={index}
+            className="relative w-full rounded-[16px] rounded-bl-[28px] border p-6 flex flex-col justify-between transition-colors duration-300"
+            style={{
+              direction: "ltr",
+              backgroundColor: "var(--surface-card)",
+              borderColor: "var(--border-strong)",
+              boxShadow: "0px 6px 18px rgba(0, 0, 0, 0.25)",
+            }}
+          >
+            {/* Upper row - title */}
+            {!totalToRender && !stat.options ? (
+              <div className="flex justify-end mb-4">
+                <span className="text-base text-[var(--text-secondary)] transition-colors duration-300">
+                  {stat.title}
                 </span>
-                <span className="text-xs text-[var(--text-secondary)] transition-colors duration-300">
-                  {stat.total.name}
-                </span>
+              </div>
+            ) : stat.options ? (
+              <div className="flex justify-between items-start mb-4 gap-4">
+                {/* Options buttons */}
+                <div className="flex gap-2 flex-wrap">
+                  {stat.options.map((option, optionIndex) => {
+                    const isSelected =
+                      (selectedOptions[index] ?? 0) === optionIndex;
+                    return (
+                      <button
+                        key={optionIndex}
+                        onClick={() =>
+                          setSelectedOptions((prev) => ({
+                            ...prev,
+                            [index]: optionIndex,
+                          }))
+                        }
+                        className="px-[10px] py-1 rounded-[8px] transition-all duration-200 border"
+                        style={{
+                          backgroundColor: isSelected
+                            ? "var(--nav-tab-active-bg)"
+                            : "var(--surface-control)",
+                          color: isSelected
+                            ? "var(--nav-tab-active-text)"
+                            : "var(--text-secondary)",
+                          fontSize: "12px",
+                          fontWeight: 500,
+                          borderColor: isSelected
+                            ? "transparent"
+                            : "var(--border-subtle)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {option}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Title and optional total */}
+                <div className="flex flex-col items-end gap-1">
+                  <span className="text-base text-[var(--text-secondary)] transition-colors duration-300">
+                    {stat.title}
+                  </span>
+                  {totalToRender && (
+                    <span className="text-sm text-[var(--text-secondary)] transition-colors duration-300">
+                      {`${totalToRender.name} ${totalToRender.count}`}
+                    </span>
+                  )}
+                </div>
               </div>
             ) : (
-              <p className="text-xl font-bold text-[var(--stats-card-total)] transition-colors duration-300">
-                {stat.amount}
-              </p>
+              <div className="flex justify-between mb-4">
+                <span className="text-base text-[var(--text-secondary)] transition-colors duration-300">
+                  {typeof totalToRender === "object" &&
+                  totalToRender !== null &&
+                  "name" in totalToRender
+                    ? `${totalToRender.name} ${totalToRender.count}`
+                    : ""}
+                </span>
+                <span className="text-base text-[var(--text-secondary)] transition-colors duration-300">
+                  {stat.title}
+                </span>
+              </div>
             )}
+
+            {/* Lower row - value and icon */}
+            <div className="flex items-center justify-end">
+              <div
+                className="w-10 h-10 absolute bottom-[8px] left-[8px] rounded-full flex items-center justify-center transition-colors duration-300"
+                style={{ backgroundColor: "var(--surface-control-muted)" }}
+              >
+                {stat.icon}
+              </div>
+
+              {categoriesToRender.length > 0 ? (
+                <div className="flex items-center gap-[10px]">
+                  {categoriesToRender.map((category, catIndex) => (
+                    <div key={catIndex} className="flex items-center gap-4">
+                      <div className="flex flex-col items-end">
+                        <span className="text-lg font-bold text-[var(--stats-card-number)] transition-colors duration-300">
+                          {category.count}
+                        </span>
+                        <span className="text-xs text-[var(--text-secondary)] text-right transition-colors duration-300">
+                          {category.name}
+                        </span>
+                      </div>
+                      {catIndex < categoriesToRender.length - 1 && (
+                        <div className="w-px h-8 bg-[color:var(--border-subtle)] transition-colors duration-300"></div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : stat.breakdown && stat.breakdown.length > 0 ? (
+                <div className="flex items-center gap-4">
+                  {stat.breakdown.map((fuel, fuelIndex) => (
+                    <div key={fuelIndex} className="flex items-center gap-4">
+                      <div className="flex flex-col items-end">
+                        <span className="text-lg font-bold text-[var(--stats-card-number)] transition-colors duration-300">
+                          {fuel.amount}
+                        </span>
+                        <span className={`${fuel.color} text-xs font-bold`}>
+                          {fuel.type}
+                        </span>
+                      </div>
+                      {fuelIndex < stat.breakdown!.length - 1 && (
+                        <div className="w-px h-8 bg-[color:var(--border-subtle)] transition-colors duration-300"></div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : totalToRender ? (
+                <div className="flex flex-col items-end">
+                  <span className="text-2xl font-bold text-[var(--stats-card-total)] transition-colors duration-300">
+                    {totalToRender.count}
+                  </span>
+                  <span className="text-xs text-[var(--text-secondary)] transition-colors duration-300">
+                    {totalToRender.name}
+                  </span>
+                </div>
+              ) : (
+                <p className="text-xl font-bold text-[var(--stats-card-total)] transition-colors duration-300">
+                  {stat.amount}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </section>
   );
 };

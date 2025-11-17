@@ -4,22 +4,10 @@ import { Megaphone, MoreVertical, Eye, Trash2, CirclePlus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { StatusToggle } from "../../../shared";
-
-// Mock data for advertisements
-const mockAdvertisements = Array.from({ length: 10 }).map((_, i) => ({
-  id: i + 1,
-  number: i + 1,
-  design: `/img/design-${i + 1}.jpg`, // Placeholder for design image
-  title: i === 1 ? "تغيير البطارية" : "وقود بالقرب منك",
-  description: "نصلك في أسرع وقت لتزويدك ب...",
-  creator: {
-    name: "أحمد محمد",
-    avatar: undefined,
-  },
-  display: i % 4 === 0 ? "شركات" : i % 4 === 1 ? "أفراد" : i % 4 === 2 ? "مزودو الخدمة" : "تطبيق السائق",
-  status: i < 7, // First 7 are active, rest are inactive
-  creationDate: "21 فبراير 2025 - 5:05 ص",
-}));
+import {
+  fetchAdvertisements,
+  Advertisement,
+} from "../../../../services/firestore";
 
 // Action Menu Component for each row
 interface ActionMenuProps {
@@ -120,7 +108,31 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
 const Advertisements = () => {
   const navigate = useNavigate();
   const [currentPage, setCurrentPage] = useState(1);
+  const [ads, setAds] = useState<Advertisement[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
   const itemsPerPage = 10;
+
+  useEffect(() => {
+    const loadAds = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        console.log("🔄 Loading advertisements...");
+        const data = await fetchAdvertisements();
+        console.log("📊 Fetched advertisements:", data);
+        console.log("📊 Number of ads:", data.length);
+        setAds(data);
+      } catch (err) {
+        console.error("❌ Error loading advertisements:", err);
+        setError("حدث خطأ أثناء تحميل الإعلانات");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadAds();
+  }, []);
 
   const columns = useMemo(
     () => [
@@ -140,9 +152,9 @@ const Advertisements = () => {
         label: "حالة الاعلان",
         width: "min-w-[150px]",
         priority: "high",
-        render: (value: boolean) => (
+        render: (value: boolean | string | null) => (
           <StatusToggle
-            isActive={value}
+            isActive={value === true || value === "معروض"}
             onToggle={() => {
               console.log("Toggle status for advertisement");
             }}
@@ -151,10 +163,18 @@ const Advertisements = () => {
         ),
       },
       {
-        key: "display",
+        key: "type",
         label: "العرض",
         width: "min-w-[150px]",
         priority: "high",
+        render: (value: any) => {
+          // Safely extract string from object or use string directly
+          if (typeof value === "string") return value;
+          if (value && typeof value === "object") {
+            return value.ar || value.en || "";
+          }
+          return value || "";
+        },
       },
       {
         key: "creator",
@@ -183,15 +203,31 @@ const Advertisements = () => {
         label: "الوصف",
         width: "min-w-[200px]",
         priority: "medium",
+        render: (value: any) => {
+          // Safely extract string from object or use string directly
+          if (typeof value === "string") return value;
+          if (value && typeof value === "object") {
+            return value.ar || value.en || "";
+          }
+          return value || "";
+        },
       },
       {
         key: "title",
         label: "العنوان",
         width: "min-w-[150px]",
         priority: "high",
+        render: (value: any) => {
+          // Safely extract string from object or use string directly
+          if (typeof value === "string") return value;
+          if (value && typeof value === "object") {
+            return value.ar || value.en || "";
+          }
+          return value || "";
+        },
       },
       {
-        key: "design",
+        key: "adImageUrl",
         label: "التصميم",
         width: "min-w-[100px]",
         priority: "high",
@@ -217,7 +253,7 @@ const Advertisements = () => {
         ),
       },
       {
-        key: "number",
+        key: "refid",
         label: "الرقم",
         width: "min-w-[80px]",
         priority: "high",
@@ -226,14 +262,39 @@ const Advertisements = () => {
     [navigate]
   );
 
-  const paginatedData = useMemo(
-    () =>
-      mockAdvertisements.slice(
-        (currentPage - 1) * itemsPerPage,
-        currentPage * itemsPerPage
-      ),
-    [currentPage]
-  );
+  const paginatedData = useMemo(() => {
+    const mapped = ads.map((ad) => {
+      // Ensure title and description are strings, not objects
+      const safeTitle =
+        typeof ad.title === "string"
+          ? ad.title
+          : ad.title && typeof ad.title === "object"
+          ? ad.title.ar || ad.title.en || ""
+          : "";
+      const safeDescription =
+        typeof ad.description === "string"
+          ? ad.description
+          : ad.description && typeof ad.description === "object"
+          ? ad.description.ar || ad.description.en || ""
+          : "";
+
+      return {
+        ...ad,
+        title: safeTitle,
+        description: safeDescription,
+        creator: {
+          name: ad.creatorDisplayName || ad.createdUserId || "غير معروف",
+          avatar: undefined,
+        },
+      };
+    });
+    const paginated = mapped.slice(
+      (currentPage - 1) * itemsPerPage,
+      currentPage * itemsPerPage
+    );
+    console.log("📋 Paginated data:", paginated);
+    return paginated;
+  }, [ads, currentPage]);
 
   const handleExport = (format: string) => {
     console.log(`Exporting advertisements as ${format}`);
@@ -250,7 +311,7 @@ const Advertisements = () => {
         <div className="flex items-center justify-end gap-1.5" dir="rtl">
           <Megaphone className="w-5 h-5 text-gray-500" />
           <h1 className="font-subtitle-subtitle-2 text-[length:var(--subtitle-subtitle-2-font-size)] text-color-mode-text-icons-t-sec">
-            الإعلانات ({mockAdvertisements.length})
+            الإعلانات ({ads.length})
           </h1>
         </div>
         {/* Buttons on left */}
@@ -274,13 +335,21 @@ const Advertisements = () => {
 
       {/* Table Section */}
       <div className="w-full overflow-x-auto">
-        <Table columns={columns} data={paginatedData} />
+        {isLoading ? (
+          <div className="w-full py-10 text-center text-gray-500">
+            جاري تحميل الإعلانات...
+          </div>
+        ) : error ? (
+          <div className="w-full py-10 text-center text-red-500">{error}</div>
+        ) : (
+          <Table columns={columns} data={paginatedData} />
+        )}
       </div>
 
       {/* Pagination */}
       <Pagination
         currentPage={currentPage}
-        totalPages={Math.ceil(mockAdvertisements.length / itemsPerPage) || 1}
+        totalPages={Math.ceil(ads.length / itemsPerPage) || 1}
         onPageChange={setCurrentPage}
       />
     </div>

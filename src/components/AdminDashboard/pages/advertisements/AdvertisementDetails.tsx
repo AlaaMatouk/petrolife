@@ -1,48 +1,59 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Input, Select } from "../../../shared/Form";
-import { ArrowLeft, Eye, Edit } from "lucide-react";
+import { Input } from "../../../shared/Form";
+import { ArrowLeft, Eye } from "lucide-react";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../../../../config/firebase";
 
 const AdvertisementDetails = () => {
   const navigate = useNavigate();
   const { id } = useParams();
-  const [isEditMode, setIsEditMode] = useState(false);
   const [formData, setFormData] = useState({
-    title: "وقود بالقرب منك",
-    description: "نصلك في أسرع وقت لتزويدك ب...",
+    title: "",
+    description: "",
     coverImage: null as string | null,
     status: "معروض",
     targeting: "الكل",
   });
 
-  // Fetch advertisement data based on id
+  // Fetch advertisement data based on id from Firestore
   useEffect(() => {
-    // TODO: Fetch advertisement data from API
-    // For now, using mock data
-    console.log("Loading advertisement:", id);
+    const loadAd = async () => {
+      if (!id) return;
+
+      try {
+        const adRef = doc(db, "ads", id);
+        const snap = await getDoc(adRef);
+
+        if (!snap.exists()) {
+          console.warn("Advertisement not found:", id);
+          return;
+        }
+
+        const data = snap.data() || {};
+        const title =
+          typeof data.title === "string"
+            ? data.title
+            : data.title?.ar ?? "";
+        const description =
+          typeof data.description === "string"
+            ? data.description
+            : data.description?.ar ?? "";
+
+        setFormData({
+          title,
+          description,
+          coverImage: data.adImageUrl ?? null,
+          status: data.status === true || data.status === "معروض" ? "معروض" : "غير معروض",
+          targeting: data.type ?? "الكل",
+        });
+      } catch (err) {
+        console.error("Error loading advertisement:", err);
+      }
+    };
+
+    loadAd();
   }, [id]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isEditMode) {
-      console.log("Update advertisement:", formData);
-      // TODO: Handle update
-      setIsEditMode(false);
-    }
-  };
-
-  const statusOptions = [
-    { value: "معروض", label: "معروض" },
-    { value: "غير معروض", label: "غير معروض" },
-  ];
-
-  const targetingOptions = [
-    { value: "الكل", label: "الكل" },
-    { value: "شركات", label: "شركات" },
-    { value: "أفراد", label: "أفراد" },
-    { value: "مزودو الخدمة", label: "مزودو الخدمة" },
-    { value: "تطبيق السائق", label: "تطبيق السائق" },
-  ];
 
   return (
     <div className="flex flex-col w-full items-start gap-5" dir="rtl">
@@ -70,18 +81,16 @@ const AdvertisementDetails = () => {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="w-full flex flex-col gap-6">
+        <div className="w-full flex flex-col gap-6">
           {/* Advertisement Title */}
           <div className="w-full">
             <Input
               label="عنوان الاعلان"
               value={formData.title}
-              onChange={(value) =>
-                setFormData((prev) => ({ ...prev, title: value }))
-              }
+              onChange={() => {}}
               placeholder="العنوان"
-              disabled={!isEditMode}
-              required
+              disabled={true}
+              required={false}
             />
           </div>
 
@@ -93,14 +102,12 @@ const AdvertisementDetails = () => {
               </label>
               <textarea
                 value={formData.description}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, description: e.target.value }))
-                }
-                className="w-full min-h-[100px] pr-4 pl-4 py-2.5 border-[0.5px] border-solid border-color-mode-text-icons-t-placeholder rounded-[var(--corner-radius-small)] focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none disabled:bg-gray-50 disabled:text-gray-500"
+                onChange={() => {}}
+                className="w-full min-h-[100px] pr-4 pl-4 py-2.5 border-[0.5px] border-solid border-color-mode-text-icons-t-placeholder rounded-[var(--corner-radius-small)] resize-none disabled:bg-gray-50 disabled:text-gray-500"
                 placeholder="الوصف"
                 dir="rtl"
-                disabled={!isEditMode}
-                required
+                disabled={true}
+                readOnly
               />
             </div>
           </div>
@@ -131,23 +138,21 @@ const AdvertisementDetails = () => {
 
           {/* Status and Targeting */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full">
-            <Select
+            <Input
               label="التوجيه"
               value={formData.targeting}
-              onChange={(value) =>
-                setFormData((prev) => ({ ...prev, targeting: value }))
-              }
-              options={targetingOptions}
-              disabled={!isEditMode}
+              onChange={() => {}}
+              placeholder="التوجيه"
+              disabled={true}
+              required={false}
             />
-            <Select
+            <Input
               label="حالة الاعلان"
               value={formData.status}
-              onChange={(value) =>
-                setFormData((prev) => ({ ...prev, status: value }))
-              }
-              options={statusOptions}
-              disabled={!isEditMode}
+              onChange={() => {}}
+              placeholder="حالة الاعلان"
+              disabled={true}
+              required={false}
             />
           </div>
 
@@ -160,25 +165,8 @@ const AdvertisementDetails = () => {
             >
               رجوع
             </button>
-            {!isEditMode ? (
-              <button
-                type="button"
-                onClick={() => setIsEditMode(true)}
-                className="px-6 h-10 rounded-[10px] bg-orange-500 hover:bg-orange-600 text-white font-medium transition-colors flex items-center gap-2"
-              >
-                <Edit className="w-4 h-4" />
-                تعديل الاعلان
-              </button>
-            ) : (
-              <button
-                type="submit"
-                className="px-6 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors"
-              >
-                حفظ التغييرات
-              </button>
-            )}
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
