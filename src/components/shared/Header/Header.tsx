@@ -34,6 +34,7 @@ export interface HeaderProps {
   extraContent?: ReactNode;
   className?: string;
   admin?: boolean;
+  serviceDistributer?: boolean;
 }
 
 const SearchBar: React.FC<SearchBarProps> = ({
@@ -232,6 +233,8 @@ export const Header: React.FC<HeaderProps> = ({
   extraContent,
   className = "",
   admin = false,
+  serviceDistributer = false,
+  
 }) => {
   const { theme, setTheme } = useUI();
   const isDark = theme === "dark";
@@ -252,14 +255,14 @@ export const Header: React.FC<HeaderProps> = ({
           role="navigation"
           aria-label="Main navigation"
         >
-          {/* Profile Dropdown - First on the left */}
-          <ProfileDropdown />
+          {/* Profile Dropdown - First on the left (hidden for service distributer) */}
+          {!serviceDistributer && <ProfileDropdown />}
 
           {/* Notification Dropdown - Hide for admin */}
           {!admin && <NotificationDropdown />}
 
-          {/* Cart Dropdown - Hide for admin */}
-          {!admin && <CartDropdown />}
+          {/* Cart Dropdown - Hide for admin or service distributer */}
+          {!admin && !serviceDistributer && <CartDropdown />}
 
           <button
             onClick={handleThemeToggle}

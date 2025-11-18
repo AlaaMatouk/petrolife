@@ -1,8 +1,6 @@
 import { DataTableSection } from "../../components/sections/DataTableSection";
-import { serviceDistributerNavigationMenuData, userInfo } from "../../constants/data";
-import { LayoutSimple } from "../../components/shared/Layout/LayoutSimple";
 import { Fuel } from "lucide-react";
-import { fetchUserFuelStations } from "../../services/firestore";
+import { fetchUserFuelStations, deleteStation } from "../../services/firestore";
 import { useAuth } from "../../hooks/useGlobalState";
 
 // Station interface
@@ -175,39 +173,36 @@ export const Stations = (): JSX.Element => {
     // TODO: Implement actual status toggle API call with Firestore
   };
 
+  // Handle delete station
+  const handleDeleteStation = async (stationId: string | number) => {
+    try {
+      const success = await deleteStation(String(stationId));
+      if (!success) {
+        throw new Error("فشل في حذف المحطة");
+      }
+    } catch (error: any) {
+      console.error("Error deleting station:", error);
+      throw error; // Re-throw to let DataTableSection handle the error display
+    }
+  };
+
   return (
-    <LayoutSimple
-      headerProps={{
-        title: "المحطات",
-        titleIconSrc: <Fuel className="w-5 h-5 text-gray-500" />,
-        showSearch: true,
-        searchProps: {
-          onSearch: (query) => console.log("Search:", query),
-        },
-      }}
-      sidebarProps={{
-        sections: serviceDistributerNavigationMenuData.sections,
-        topItems: serviceDistributerNavigationMenuData.topItems,
-        bottomItems: serviceDistributerNavigationMenuData.bottomItems,
-        userInfo: userInfo,
-      }}
-    >
-      <div className="flex flex-col w-full items-start gap-5">
-        <DataTableSection
-          title="المحطات"
-          entityName="المحطة"
-          entityNamePlural="المحطات"
-          icon={Fuel}
-          columns={stationColumns}
-          fetchData={fetchStationsData}
-          onToggleStatus={handleToggleStatus}
-          addNewRoute="/service-distributer-stations/add"
-          viewDetailsRoute={(id) => `/service-distributer-station/${id}`}
-          errorMessage="فشل في تحميل بيانات المحطات."
-          itemsPerPage={5}
-        />
-      </div>
-    </LayoutSimple>
+    <div className="flex flex-col w-full items-start gap-5">
+      <DataTableSection
+        title="المحطات"
+        entityName="المحطة"
+        entityNamePlural="المحطات"
+        icon={Fuel}
+        columns={stationColumns}
+        fetchData={fetchStationsData}
+        onToggleStatus={handleToggleStatus}
+        onDelete={handleDeleteStation}
+        addNewRoute="/service-distributer-stations/add"
+        viewDetailsRoute={(id) => `/service-distributer-station/${id}`}
+        errorMessage="فشل في تحميل بيانات المحطات."
+        itemsPerPage={5}
+      />
+    </div>
   );
 };
 

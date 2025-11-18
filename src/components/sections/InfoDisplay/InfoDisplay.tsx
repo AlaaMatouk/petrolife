@@ -1,4 +1,4 @@
-import { UserRound, ArrowLeft, Upload, User } from "lucide-react";
+import { UserRound, ArrowLeft, Upload, User, Camera, Download } from "lucide-react";
 import React from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -9,9 +9,12 @@ interface InfoDisplayProps {
   fields: Array<{
     key: string;
     label: string;
-    type?: 'text' | 'image' | 'phone' | 'email' | 'address';
+    type?: 'text' | 'image' | 'logo' | 'phone' | 'email' | 'address' | 'empty' | 'document';
     className?: string;
     span?: 1 | 2 | 3 | 4 | 5 | 6; // Grid span property (1-6 columns)
+    onChangeLogo?: () => void; // Callback for logo change button
+    onDownload?: () => void; // Callback for document download
+    onUpdate?: () => void; // Callback for document update
   }>;
   onEdit?: () => void;
   showEditButton?: boolean;
@@ -72,6 +75,43 @@ export const InfoDisplay = ({
 
     const gridSpanClass = getGridSpanClass(field.span);
 
+    if (field.type === 'empty') {
+      // Empty spacer field
+      return <div className={gridSpanClass} />;
+    }
+
+    if (field.type === 'logo') {
+      // Logo field with circular photo and change button
+      const logoUrl = value || '/img/default-logo.png'; // Use placeholder or actual image
+      return (
+        <div className={`flex items-end gap-3 ${gridSpanClass}`} dir="rtl">
+          {/* Change Logo Button */}
+          <button
+            onClick={field.onChangeLogo || (() => console.log('Change logo clicked'))}
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded-lg transition-colors"
+          >
+            <Camera className="w-4 h-4 text-gray-600" />
+            <span className="text-sm font-normal text-gray-700">تغيير اللوجو</span>
+          </button>
+          
+          {/* Circular Photo */}
+          <div className="flex flex-col gap-2">
+            <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-100 border-2 border-gray-200 flex items-center justify-center">
+              {logoUrl && logoUrl !== '/img/default-logo.png' ? (
+                <img 
+                  src={logoUrl} 
+                  alt="Logo" 
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <User className="w-12 h-12 text-gray-400" />
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     if (field.type === 'image') {
       return (
         <div className={`flex items-end gap-2 ${gridSpanClass}`}>
@@ -90,6 +130,59 @@ export const InfoDisplay = ({
               {formatFieldValue(field, value)}
             </div>
           </div>
+        </div>
+      );
+    }
+
+    if (field.type === 'document') {
+      // Document field with image preview, download button, and update button
+      const imageUrl = value || '/img/document-placeholder.jpg'; // Use placeholder or actual image
+      return (
+        <div className={`flex flex-col gap-3 ${gridSpanClass}`} dir="rtl">
+          {/* Field Title */}
+          <label className="text-sm font-normal text-[var(--form-readonly-label-color)] [direction:rtl] text-right">
+            {field.label}
+          </label>
+          
+          {/* Image with dashed border and download button */}
+          <div className="relative w-full">
+            <div className="border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 p-[14px]">
+              <div className="relative w-full aspect-video rounded-lg overflow-hidden">
+                {imageUrl && imageUrl !== '/img/document-placeholder.jpg' ? (
+                  <img 
+                    src={imageUrl} 
+                    alt={field.label} 
+                    className="w-full h-full object-cover rounded-lg"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gray-100 flex items-center justify-center rounded-lg">
+                    <User className="w-16 h-16 text-gray-300" />
+                  </div>
+                )}
+                
+                {/* Download button on bottom-left corner */}
+                <button
+                  onClick={field.onDownload || (() => console.log('Download clicked'))}
+                  className="absolute bottom-[6px] left-[6px] w-8 h-8 bg-white hover:bg-gray-50 border border-gray-200 rounded-md flex items-center justify-center transition-colors shadow-sm"
+                  aria-label="تحميل"
+                >
+                  <Download className="w-4 h-4 text-gray-600" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Update button */}
+          <button
+            onClick={field.onUpdate || (() => console.log('Update clicked'))}
+            className="w-full px-4 py-2.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-lg flex items-center justify-center gap-2 transition-colors"
+            dir="rtl"
+          >
+            <Upload className="w-4 h-4 text-gray-700" />
+            <span className="text-sm font-medium text-gray-700">
+              تحديث {field.label}
+            </span>
+          </button>
         </div>
       );
     }

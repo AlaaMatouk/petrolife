@@ -1,5 +1,3 @@
-import { LayoutSimple } from '../../components/shared/Layout'
-import { serviceDistributerNavigationMenuData, userInfo } from '../../constants/data'
 import { Eye, UserRound } from 'lucide-react'
 import { InfoDisplay } from '../../components/sections/InfoDisplay'
 import { DataTableSection } from '../../components/sections/DataTableSection'
@@ -222,51 +220,34 @@ export const StationsDetails = () => {
   };
 
   return (
-    <LayoutSimple
-      headerProps={{
-        title: `المحطات / ${stationData.name}`,
-        titleIconSrc: <Eye className="w-5 h-5 text-gray-500" />,
-        showSearch: true,
-        searchProps: {
-          onSearch: (query) => console.log("Search:", query),
-        },
-      }}
-      sidebarProps={{
-        sections: serviceDistributerNavigationMenuData.sections,
-        topItems: serviceDistributerNavigationMenuData.topItems,
-        bottomItems: serviceDistributerNavigationMenuData.bottomItems,
-        userInfo: userInfo,       
-      }}
-    >
-      <div className="flex flex-col w-full items-start gap-5">
-        <InfoDisplay
-          data={stationData}
-          title="معلومات المحطة"
-          titleIcon={<Eye className="w-5 h-5 text-gray-500" />}
-          fields={stationFields}
-          onEdit={handleEdit}
-          showEditButton={true}
-          editButtonText="تعديل البيانات"
-          showBackButton={true}
-        />
-        <ConsumptionSection />
-        
-        <DataTableSection<StationWorker>
-          title="عمال المحطة"
-          entityName="عامل المحطة"
-          entityNamePlural="عمال المحطة"
-          icon={UserRound}
-          columns={stationWorkerColumns}
-          fetchData={fetchStationWorkersData}
-          onToggleStatus={handleToggleStatus}
-          addNewRoute="/add-station-worker"
-          viewDetailsRoute={(id) => `/service-distributer-station-worker/${id}`}
-          loadingMessage="جاري تحميل بيانات عمال المحطة..."
-          errorMessage="فشل في تحميل بيانات عمال المحطة. استخدام البيانات التجريبية."
-          itemsPerPage={5}
-          showTimeFilter={false}
-        />
-      </div>
-    </LayoutSimple>
+    <div className="flex flex-col w-full items-start gap-5">
+      <InfoDisplay
+        data={stationData}
+        title="معلومات المحطة"
+        titleIcon={<Eye className="w-5 h-5 text-gray-500" />}
+        fields={stationFields}
+        onEdit={handleEdit}
+        showEditButton={true}
+        editButtonText="تعديل البيانات"
+        showBackButton={true}
+      />
+      <ConsumptionSection />
+      
+      <DataTableSection<StationWorker>
+        title="عمال المحطة"
+        entityName="عامل المحطة"
+        entityNamePlural="عمال المحطة"
+        icon={UserRound}
+        columns={stationWorkerColumns}
+        fetchData={fetchStationWorkersData}
+        onToggleStatus={handleToggleStatus}
+        addNewRoute="/add-station-worker"
+        viewDetailsRoute={(id) => `/service-distributer-station-worker/${id}`}
+        loadingMessage="جاري تحميل بيانات عمال المحطة..."
+        errorMessage="فشل في تحميل بيانات عمال المحطة. استخدام البيانات التجريبية."
+        itemsPerPage={5}
+        showTimeFilter={false}
+      />
+    </div>
   )
 }

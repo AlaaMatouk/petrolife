@@ -89,13 +89,36 @@ const ActionMenu = <
   const navigate = useNavigate();
   const { addToast } = useToast();
 
-  const handleAction = (action: string) => {
+  const handleAction = async (action: string) => {
     console.log(
       `${action} clicked for item:`,
       item.driverCode || item.stationCode
     );
     if (action === "view") {
       navigate(viewDetailsRoute(item.id));
+    } else if (action === "delete" && onDelete) {
+      if (isProcessing) return;
+      
+      setIsProcessing(true);
+      try {
+        await onDelete(item.id);
+        addToast({
+          type: "success",
+          message: `تم حذف ${entityName} بنجاح`,
+          duration: 3000,
+        });
+        // Refresh the page to update the data
+        window.location.reload();
+      } catch (error: any) {
+        console.error("Error deleting item:", error);
+        addToast({
+          type: "error",
+          message: error.message || `فشل في حذف ${entityName}`,
+          duration: 3000,
+        });
+      } finally {
+        setIsProcessing(false);
+      }
     } else if (action === "delete" && onDelete) {
       onDelete(item.id);
       setIsOpen(false);
@@ -306,9 +329,16 @@ const ActionMenu = <
                     </button>
                     <button
                       onClick={() => handleAction("delete")}
-                      className="w-full px-4 py-2 text-right text-sm text-red-600 hover:bg-red-50 flex items-center justify-end gap-2 transition-colors"
+                      disabled={isProcessing || !onDelete}
+                      className={`w-full px-4 py-2 text-right text-sm flex items-center justify-end gap-2 transition-colors ${
+                        isProcessing || !onDelete
+                          ? "text-gray-400 cursor-not-allowed bg-gray-50"
+                          : "text-red-600 hover:bg-red-50"
+                      }`}
                     >
-                      <span>حذف {entityName}</span>
+                      <span>
+                        {isProcessing ? "جاري الحذف..." : `حذف ${entityName}`}
+                      </span>
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </>
@@ -448,7 +478,6 @@ export const DataTableSection = <
   columns,
   fetchData,
   onToggleStatus,
-  onDelete,
   addNewRoute,
   onAddClick,
   customAddButtonRef,
@@ -463,6 +492,7 @@ export const DataTableSection = <
   showMoneyRefundButton = false,
   showFuelDeliveryButton = false,
   showModifyButton = false,
+  onDelete,
 }: DataTableSectionProps<T>): JSX.Element => {
   const navigate = useNavigate();
   const [data, setData] = useState<T[]>([]);

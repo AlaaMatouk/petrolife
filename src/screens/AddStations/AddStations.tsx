@@ -1,9 +1,4 @@
 import { useState, useEffect } from "react";
-import {
-  serviceDistributerNavigationMenuData,
-  userInfo
-} from "../../constants/data";
-import { LayoutSimple } from "../../components/shared/Layout/LayoutSimple";
 import { Fuel, Plus, MapPin, ChevronDown } from "lucide-react";
 import { AddForm, FormField } from "../../components/sections/AddForm";
 import { useNavigate } from "react-router-dom";
@@ -148,22 +143,7 @@ function AddStations() {
   };
 
   return (
-    <LayoutSimple
-      headerProps={{
-        title: "المحطات / إضافة محطة جديدة",
-        titleIconSrc: <Fuel className="w-5 h-5 text-gray-500" />,
-        showSearch: false,
-        searchProps: {
-          onSearch: (query) => console.log("Search:", query)
-        }
-      }}
-      sidebarProps={{
-        sections: serviceDistributerNavigationMenuData.sections,
-        topItems: serviceDistributerNavigationMenuData.topItems,
-        bottomItems: serviceDistributerNavigationMenuData.bottomItems,
-        userInfo: userInfo
-      }}
-    >
+    <>
       {loading ? (
         <div className="flex justify-center items-center h-64">
           <div className="text-gray-500">جاري تحميل الفئات...</div>
@@ -180,7 +160,7 @@ function AddStations() {
           backButtonAction={() => navigate("/service-distributer-stations")}
         />
       )}
-    </LayoutSimple>
+    </>
   );
 }
 

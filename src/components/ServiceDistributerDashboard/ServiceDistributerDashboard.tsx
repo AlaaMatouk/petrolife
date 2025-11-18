@@ -1,9 +1,4 @@
 import { useDataInitialization } from "../../hooks/useDataInitialization";
-import { LayoutSimple } from "../shared/Layout/LayoutSimple";
-import {
-  serviceDistributerNavigationMenuData,
-  userInfo
-} from "../../constants/data";
 import dashboardIcon from "../../assets/imgs/icons/dashboard.svg";
 import { useState, useEffect, useMemo } from "react";
 import { Fuel } from "lucide-react";
@@ -467,26 +462,14 @@ export const ServiceDistributerDashboard = () => {
 
   //   if (!isInitialized) {
   return (
-    <LayoutSimple
-      headerProps={{
-        title: "لوحة التحكم",
-        titleIconSrc: <DashboardIcon className="w-5 h-5 text-gray-500" />,
-        showSearch: false
-      }}
-      sidebarProps={{
-        sections: serviceDistributerNavigationMenuData.sections,
-        topItems: serviceDistributerNavigationMenuData.topItems,
-        bottomItems: serviceDistributerNavigationMenuData.bottomItems,
-        userInfo: userInfo
-      }}
-    >
+    <>
       <BannerSection />
       <SubscriptionAndLocationsSection statsData={statsData} />
       {!loading && (
         <>
           <ServiceDistributerSalesSection />
           <FuelConsumptionByCitiesSection />
-          <StationLocationsMap title="مواقع محطات بترولايف" />
+          <StationLocationsMap title="مواقع محطات بترولايف" filterByUser={true} />
           <DeliverySurveySection />
           <MostUsedSection 
             stationsData={activeStationsData} 
@@ -496,6 +479,6 @@ export const ServiceDistributerDashboard = () => {
           />
         </>
       )}
-    </LayoutSimple>
+    </>
   );
 };

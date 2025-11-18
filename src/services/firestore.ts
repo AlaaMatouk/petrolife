@@ -15,6 +15,7 @@ import {
   orderBy,
   setDoc,
   limit,
+  deleteDoc,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getFunctions, httpsCallable } from "firebase/functions";
@@ -1467,6 +1468,38 @@ export const calculateFuelStatistics = (
   const totalCost = fuelTypes.reduce((sum, fuel) => sum + fuel.totalCost, 0);
 
   return { fuelTypes, totalLitres, totalCost };
+};
+
+/**
+ * Fetch the currently authenticated service distributer (stationscompany) raw document
+ * Matches by auth uid or email. Returns full document data as stored in Firestore.
+ */
+export const fetchCurrentStationsCompany = async (): Promise<any | null> => {
+  try {
+    const currentUser = await waitForAuthState();
+    if (!currentUser) return null;
+
+    const userUid = currentUser.uid;
+    const userEmail = currentUser.email?.toLowerCase() || "";
+
+    // Try match by uId first
+    let qRef = query(collection(db, "stationscompany"), where("uId", "==", userUid));
+    let snapshot = await getDocs(qRef);
+
+    // Fallback: match by email
+    if (snapshot.empty && userEmail) {
+      qRef = query(collection(db, "stationscompany"), where("email", "==", userEmail));
+      snapshot = await getDocs(qRef);
+    }
+
+    if (snapshot.empty) return null;
+
+    const docSnap = snapshot.docs[0];
+    return { id: docSnap.id, ...docSnap.data() };
+  } catch (error) {
+    console.error("❌ Error fetching current stations company:", error);
+    throw error;
+  }
 };
 
 /**
@@ -9998,6 +10031,54 @@ export const fetchFuelCategories = async (): Promise<any[]> => {
     return categories;
   } catch (error) {
     console.error("❌ Error fetching fuel categories:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a fuel station from Firestore carstations collection
+ * @param stationId - The ID of the station document to delete
+ * @returns Promise<boolean> - Returns true if deletion was successful, false otherwise
+ */
+export const deleteStation = async (stationId: string): Promise<boolean> => {
+  try {
+    console.log("🗑️ Deleting station from Firestore...", stationId);
+
+    // Get current user to verify ownership
+    const currentUser = auth.currentUser;
+    if (!currentUser || !currentUser.email) {
+      console.error("⚠️ No authenticated user found");
+      throw new Error("يجب تسجيل الدخول لحذف المحطة");
+    }
+
+    const userEmail = currentUser.email;
+    console.log("👤 Current user email:", userEmail);
+
+    // Get the station document first to verify ownership
+    const stationRef = doc(db, "carstations", stationId);
+    const stationDoc = await getDoc(stationRef);
+
+    if (!stationDoc.exists()) {
+      console.error("❌ Station document not found:", stationId);
+      throw new Error("المحطة غير موجودة");
+    }
+
+    const stationData = stationDoc.data();
+    const createdUserId = stationData.createdUserId;
+
+    // Verify that the current user owns this station
+    if (createdUserId !== userEmail) {
+      console.error("⚠️ User does not have permission to delete this station");
+      throw new Error("ليس لديك صلاحية لحذف هذه المحطة");
+    }
+
+    // Delete the station document
+    await deleteDoc(stationRef);
+
+    console.log("✅ Station deleted successfully:", stationId);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting station:", error);
     throw error;
   }
 };

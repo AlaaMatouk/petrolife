@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MapPin } from "lucide-react";
-import { fetchFuelStations, FuelStation } from '../../../services/firestore';
+import { fetchFuelStations, fetchUserFuelStations, FuelStation } from '../../../services/firestore';
 
 // Fix for default marker icon issue in Leaflet with webpack
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -48,9 +48,10 @@ const AutoFitBounds: React.FC<{ stations: FuelStation[] }> = ({ stations }) => {
 
 export interface StationLocationsMapProps {
   title?: string;
+  filterByUser?: boolean; // If true, only show stations belonging to the current user (service distributer)
 }
 
-function StationLocationsMap({ title = "مواقع محطات بترولايف" }: StationLocationsMapProps) {
+function StationLocationsMap({ title = "مواقع محطات بترولايف", filterByUser = false }: StationLocationsMapProps) {
   const [stations, setStations] = useState<FuelStation[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +62,11 @@ function StationLocationsMap({ title = "مواقع محطات بترولايف" 
       try {
         setLoading(true);
         setError(null);
-        const data = await fetchFuelStations();
+        
+        // Use fetchUserFuelStations if filterByUser is true, otherwise use fetchFuelStations
+        const data = filterByUser 
+          ? await fetchUserFuelStations()
+          : await fetchFuelStations();
         
         // Remove duplicate stations based on coordinates
         const uniqueStations = data.reduce((acc: FuelStation[], current) => {
@@ -86,7 +91,7 @@ function StationLocationsMap({ title = "مواقع محطات بترولايف" 
     };
 
     loadFuelStations();
-  }, []);
+  }, [filterByUser]);
 
   const fuelIcon = createFuelStationIcon();
   

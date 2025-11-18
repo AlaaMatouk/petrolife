@@ -1,5 +1,4 @@
-import { LayoutSimple } from '../../components/shared/Layout/LayoutSimple'
-import { serviceDistributerNavigationMenuData, userInfo, serviceDistributerFinancialReportsData, serviceDistributerFinancialReportsFilterOptions } from '../../constants/data'
+import { serviceDistributerFinancialReportsData, serviceDistributerFinancialReportsFilterOptions } from '../../constants/data'
 import { FileText } from 'lucide-react'
 import { DataTableSection } from '../../components/sections/DataTableSection'
 import { fetchServiceDistributerFinancialReports } from '../../services/firestore'
@@ -98,41 +97,24 @@ function ServiceDistributerFinancialReports() {
   };
 
   return (
-    <LayoutSimple 
-      headerProps={{
-        title: "التقارير المالية",
-        titleIconSrc: <FileText className="w-5 h-5 text-gray-500" />,
-        showSearch: true,
-        searchProps: {
-          onSearch: (query) => console.log("Search:", query),
-        },
-      }}
-      sidebarProps={{
-        sections: serviceDistributerNavigationMenuData.sections,
-        topItems: serviceDistributerNavigationMenuData.topItems,
-        bottomItems: serviceDistributerNavigationMenuData.bottomItems,
-        userInfo: userInfo,
-      }}
-    >
-      <div className="flex flex-col w-full items-start gap-5">
-        <DataTableSection<FinancialReport>
-          title="التقارير المالية"
-          entityName="التقرير المالي"
-          entityNamePlural="التقارير المالية"
-          icon={FileText}
-          columns={financialReportColumns}
-          fetchData={fetchFinancialReportsData}
-          onToggleStatus={handleToggleStatus}
-          addNewRoute="/add-financial-report"
-          viewDetailsRoute={(id) => `/financial-report/${id}`}
-          loadingMessage="جاري تحميل بيانات التقارير المالية..."
-          errorMessage="فشل في تحميل بيانات التقارير المالية. استخدام البيانات التجريبية."
-          itemsPerPage={5}
-          showAddButton={false}
-          filterOptions={serviceDistributerFinancialReportsFilterOptions}
-        />
-      </div>
-    </LayoutSimple>
+    <div className="flex flex-col w-full items-start gap-5">
+      <DataTableSection<FinancialReport>
+        title="التقارير المالية"
+        entityName="التقرير المالي"
+        entityNamePlural="التقارير المالية"
+        icon={FileText}
+        columns={financialReportColumns}
+        fetchData={fetchFinancialReportsData}
+        onToggleStatus={handleToggleStatus}
+        addNewRoute="/add-financial-report"
+        viewDetailsRoute={(id) => `/financial-report/${id}`}
+        loadingMessage="جاري تحميل بيانات التقارير المالية..."
+        errorMessage="فشل في تحميل بيانات التقارير المالية. استخدام البيانات التجريبية."
+        itemsPerPage={5}
+        showAddButton={false}
+        filterOptions={serviceDistributerFinancialReportsFilterOptions}
+      />
+    </div>
   )
 }
 
