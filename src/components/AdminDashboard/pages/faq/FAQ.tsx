@@ -1,80 +1,21 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Pagination, ExportButton } from "../../../shared";
 import { CirclePlus, ChevronDown, ChevronUp, Edit, Trash2, X, HelpCircle, Loader2, AlertCircle } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Input } from "../../../shared/Form";
 import { useForm } from "../../../../hooks/useForm";
+import { fetchFAQQuestions, addFAQQuestion, updateFAQQuestion, deleteFAQQuestion, seedFAQQuestions, FAQQuestion, fetchUserDisplayNameByEmail } from "../../../../services/firestore";
+import { useToast } from "../../../../context/ToastContext";
 
-// Mock data for FAQ
-const generateMockFAQ = () => {
-  const questions = [
-    {
-      id: 1,
-      number: 1,
-      question: "نص السؤال",
-      answer: "اجابة السؤال",
-      category: "الأسئلة الشائعة",
-      creationDate: "21 فبراير 2025 - 5:05 ص",
-    },
-    {
-      id: 2,
-      number: 2,
-      question: "نص السؤال",
-      answer: "اجابة السؤال",
-      category: "الأسئلة الشائعة",
-      creationDate: "20 فبراير 2025 - 3:30 م",
-    },
-    {
-      id: 3,
-      number: 3,
-      question: "نص السؤال",
-      answer: "اجابة السؤال",
-      category: "الشركات",
-      creationDate: "19 فبراير 2025 - 10:15 ص",
-    },
-    {
-      id: 4,
-      number: 4,
-      question: "نص السؤال",
-      answer: "اجابة السؤال",
-      category: "الأفراد",
-      creationDate: "18 فبراير 2025 - 2:20 م",
-    },
-    {
-      id: 5,
-      number: 5,
-      question: "نص السؤال",
-      answer: "اجابة السؤال",
-      category: "مزودو الخدمة",
-      creationDate: "17 فبراير 2025 - 9:00 ص",
-    },
-  ];
-
-  // Generate more mock data
-  for (let i = 6; i <= 25; i++) {
-    const categories = ["الأسئلة الشائعة", "الشركات", "الأفراد", "مزودو الخدمة", "تطبيق السائق"];
-    questions.push({
-      id: i,
-      number: i,
-      question: `نص السؤال`,
-      answer: `اجابة السؤال`,
-      category: categories[Math.floor(Math.random() * categories.length)],
-      creationDate: `${20 - Math.floor(i / 5)} فبراير 2025 - ${Math.floor(Math.random() * 12) + 1}:${String(Math.floor(Math.random() * 60)).padStart(2, "0")} ${Math.random() > 0.5 ? "ص" : "م"}`,
-    });
-  }
-
-  return questions;
-};
-
-const mockFAQ = generateMockFAQ();
-
-// Category filter tabs
-const categories = [
-  { id: "all", name: "الأسئلة الشائعة", count: mockFAQ.length },
-  { id: "companies", name: "الشركات", count: mockFAQ.filter(q => q.category === "الشركات").length },
-  { id: "individuals", name: "الأفراد", count: mockFAQ.filter(q => q.category === "الأفراد").length },
-  { id: "providers", name: "مزودو الخدمة", count: mockFAQ.filter(q => q.category === "مزودو الخدمة").length },
-  { id: "driver", name: "تطبيق السائق", count: mockFAQ.filter(q => q.category === "تطبيق السائق").length },
+// User type options for display (mapping userType to Arabic labels)
+const userTypeOptions = [
+  { value: "all", label: "الأسئلة الشائعة" },
+  { value: "company", label: "الشركات" },
+  { value: "user", label: "الأفراد" },
+  { value: "distributer", label: "مزودو الخدمة" },
+  { value: "driver", label: "تطبيق السائق" },
+  { value: "admin", label: "مدير" },
+  { value: "superAdmin", label: "مدير عام" },
 ];
 
 // Delete Confirmation Modal
@@ -160,6 +101,18 @@ const QuestionModal = ({
     question: initialData?.question || "",
     answer: initialData?.answer || "",
   });
+
+  // Update form values when initialData changes (for edit mode)
+  useEffect(() => {
+    if (isOpen && initialData) {
+      form.setFieldValue("question", initialData.question || "");
+      form.setFieldValue("answer", initialData.answer || "");
+    } else if (isOpen && !isEdit) {
+      // Reset form for add mode
+      form.setFieldValue("question", "");
+      form.setFieldValue("answer", "");
+    }
+  }, [isOpen, initialData, isEdit]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -301,14 +254,47 @@ interface FAQItemProps {
 }
 
 const FAQItem = ({ item, isExpanded, onToggle, onEdit, onDelete }: FAQItemProps) => {
+  const [creatorName, setCreatorName] = useState<string | null>(null);
+
+  // Fetch creator name on mount
+  useEffect(() => {
+    const loadCreatorName = async () => {
+      if (item.createdBy) {
+        const name = await fetchUserDisplayNameByEmail(item.createdBy);
+        setCreatorName(name);
+      }
+    };
+    loadCreatorName();
+  }, [item.createdBy]);
+
+  // Format creation date
+  const formatDate = (timestamp: any) => {
+    if (!timestamp) return "-";
+    try {
+      const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+      return date.toLocaleDateString("ar-SA", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return "-";
+    }
+  };
+
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between p-4">
-        {/* Question Text (Right) */}
-        <div className="flex items-center gap-2 flex-1">
+        {/* Question Text (Right) - Clickable */}
+        <div 
+          className="flex items-center gap-2 flex-1 cursor-pointer hover:opacity-80 transition-opacity"
+          onClick={onToggle}
+        >
           <span className="text-gray-700 font-medium">
-            {item.number}. {item.question}
+            {item.question}
           </span>
         </div>
 
@@ -350,9 +336,16 @@ const FAQItem = ({ item, isExpanded, onToggle, onEdit, onDelete }: FAQItemProps)
       {/* Answer Section (Expandable) */}
       {isExpanded && (
         <div className="px-4 pb-4 pt-2 border-t border-gray-100">
-          <p className="text-gray-700 text-sm leading-relaxed">
+          <p className="text-gray-700 text-sm leading-relaxed mb-2">
             {item.answer}
           </p>
+          <div className="flex items-center gap-4 text-xs text-gray-500 mt-3">
+            <span>نوع المستخدم: {userTypeOptions.find(opt => opt.value === item.userType)?.label || item.userType}</span>
+            {item.createdAt && <span>تاريخ الإنشاء: {formatDate(item.createdAt)}</span>}
+            {item.createdBy && (
+              <span>أنشأ بواسطة: {creatorName || item.createdBy}</span>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -364,66 +357,158 @@ const FAQ = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [editingQuestion, setEditingQuestion] = useState<any>(null);
-  const [deletingQuestion, setDeletingQuestion] = useState<any>(null);
-  const [faqData, setFaqData] = useState(mockFAQ);
-  const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
+  const [editingQuestion, setEditingQuestion] = useState<FAQQuestion | null>(null);
+  const [deletingQuestion, setDeletingQuestion] = useState<FAQQuestion | null>(null);
+  const [faqData, setFaqData] = useState<FAQQuestion[]>([]);
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [activeCategory, setActiveCategory] = useState("all");
+  const [isLoading, setIsLoading] = useState(true);
+  const { addToast } = useToast();
   const itemsPerPage = 10;
 
-  // Filter FAQ by category
+  // Fetch FAQ questions on component mount and seed if empty
+  useEffect(() => {
+    const loadFAQQuestions = async () => {
+      try {
+        setIsLoading(true);
+        let questions = await fetchFAQQuestions();
+        
+        // If no questions exist, seed dummy data
+        if (questions.length === 0) {
+          try {
+            await seedFAQQuestions();
+            // Fetch again after seeding
+            questions = await fetchFAQQuestions();
+            addToast({
+              title: "تم",
+              message: "تم إضافة أسئلة تجريبية بنجاح",
+              type: "success",
+            });
+          } catch (seedError) {
+            console.error("Error seeding FAQ questions:", seedError);
+            // Continue even if seeding fails
+          }
+        }
+        
+        setFaqData(questions);
+      } catch (error) {
+        console.error("Error loading FAQ questions:", error);
+        addToast({
+          title: "خطأ",
+          message: "فشل تحميل الأسئلة الشائعة. يرجى المحاولة مرة أخرى.",
+          type: "error",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadFAQQuestions();
+  }, [addToast]);
+
+  // Calculate category counts dynamically
+  const categories = useMemo(() => {
+    return [
+      { id: "all", name: "الأسئلة الشائعة", count: faqData.length },
+      { id: "companies", name: "الشركات", count: faqData.filter(q => q.userType === "company").length },
+      { id: "individuals", name: "الأفراد", count: faqData.filter(q => q.userType === "user").length },
+      { id: "providers", name: "مزودو الخدمة", count: faqData.filter(q => q.userType === "distributer").length },
+      { id: "driver", name: "تطبيق السائق", count: faqData.filter(q => q.userType === "driver").length },
+    ];
+  }, [faqData]);
+
+  // Filter FAQ by userType
   const filteredFAQ = useMemo(() => {
     if (activeCategory === "all") {
       return faqData;
     }
     const categoryMap: Record<string, string> = {
-      companies: "الشركات",
-      individuals: "الأفراد",
-      providers: "مزودو الخدمة",
-      driver: "تطبيق السائق",
+      companies: "company",
+      individuals: "user",
+      providers: "distributer",
+      driver: "driver",
     };
-    return faqData.filter((q) => q.category === categoryMap[activeCategory]);
+    return faqData.filter((q) => q.userType === categoryMap[activeCategory]);
   }, [faqData, activeCategory]);
 
   const handleAddQuestion = async (data: { question: string; answer: string }) => {
-    const newQuestion = {
-      id: faqData.length + 1,
-      number: faqData.length + 1,
-      question: data.question,
-      answer: data.answer,
-      category: "الأسئلة الشائعة",
-      creationDate: new Date().toLocaleDateString("ar-SA", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-    };
+    try {
+      // userType and createdBy will be automatically set from logged-in user's data
+      const newQuestion = await addFAQQuestion({
+        question: data.question,
+        answer: data.answer,
+      });
 
-    setFaqData([newQuestion, ...faqData]);
-    console.log("Added question:", newQuestion);
+      setFaqData([newQuestion, ...faqData]);
+      addToast({
+        title: "نجح",
+        message: "تم إضافة السؤال بنجاح",
+        type: "success",
+      });
+    } catch (error) {
+      console.error("Error adding question:", error);
+      addToast({
+        title: "خطأ",
+        message: "فشل إضافة السؤال. يرجى المحاولة مرة أخرى.",
+        type: "error",
+      });
+      throw error;
+    }
   };
 
   const handleEditQuestion = async (data: { question: string; answer: string }) => {
-    if (!editingQuestion) return;
+    if (!editingQuestion || !editingQuestion.id) return;
 
-    const updatedData = faqData.map((item) =>
-      item.id === editingQuestion.id
-        ? { ...item, question: data.question, answer: data.answer }
-        : item
-    );
+    try {
+      await updateFAQQuestion(editingQuestion.id, {
+        question: data.question,
+        answer: data.answer,
+      });
 
-    setFaqData(updatedData);
-    setEditingQuestion(null);
-    console.log("Updated question:", editingQuestion.id);
+      const updatedData = faqData.map((item) =>
+        item.id === editingQuestion.id
+          ? { ...item, question: data.question, answer: data.answer }
+          : item
+      );
+
+      setFaqData(updatedData);
+      setEditingQuestion(null);
+      addToast({
+        title: "نجح",
+        message: "تم تحديث السؤال بنجاح",
+        type: "success",
+      });
+    } catch (error) {
+      console.error("Error updating question:", error);
+      addToast({
+        title: "خطأ",
+        message: "فشل تحديث السؤال. يرجى المحاولة مرة أخرى.",
+        type: "error",
+      });
+      throw error;
+    }
   };
 
-  const handleDeleteQuestion = () => {
-    if (!deletingQuestion) return;
-    setFaqData(faqData.filter((q) => q.id !== deletingQuestion.id));
-    setDeletingQuestion(null);
-    console.log("Deleted question:", deletingQuestion.id);
+  const handleDeleteQuestion = async () => {
+    if (!deletingQuestion || !deletingQuestion.id) return;
+
+    try {
+      await deleteFAQQuestion(deletingQuestion.id);
+      setFaqData(faqData.filter((q) => q.id !== deletingQuestion.id));
+      setDeletingQuestion(null);
+      addToast({
+        title: "نجح",
+        message: "تم حذف السؤال بنجاح",
+        type: "success",
+      });
+    } catch (error) {
+      console.error("Error deleting question:", error);
+      addToast({
+        title: "خطأ",
+        message: "فشل حذف السؤال. يرجى المحاولة مرة أخرى.",
+        type: "error",
+      });
+    }
   };
 
   const openEditModal = (item: any) => {
@@ -441,7 +526,7 @@ const FAQ = () => {
     setIsEditModalOpen(false);
   };
 
-  const toggleExpanded = (id: number) => {
+  const toggleExpanded = (id: string) => {
     setExpandedItems((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(id)) {
@@ -515,16 +600,27 @@ const FAQ = () => {
 
       {/* FAQ Items List */}
       <div className="w-full flex flex-col gap-4">
-        {paginatedData.map((item) => (
-          <FAQItem
-            key={item.id}
-            item={item}
-            isExpanded={expandedItems.has(item.id)}
-            onToggle={() => toggleExpanded(item.id)}
-            onEdit={() => openEditModal(item)}
-            onDelete={() => openDeleteModal(item)}
-          />
-        ))}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+            <span className="mr-3 text-gray-600">جاري التحميل...</span>
+          </div>
+        ) : paginatedData.length === 0 ? (
+          <div className="flex items-center justify-center py-12">
+            <span className="text-gray-500">لا توجد أسئلة متاحة</span>
+          </div>
+        ) : (
+          paginatedData.map((item) => (
+            <FAQItem
+              key={item.id}
+              item={item}
+              isExpanded={expandedItems.has(item.id || "")}
+              onToggle={() => toggleExpanded(item.id || "")}
+              onEdit={() => openEditModal(item)}
+              onDelete={() => openDeleteModal(item)}
+            />
+          ))
+        )}
       </div>
 
       {/* Pagination */}

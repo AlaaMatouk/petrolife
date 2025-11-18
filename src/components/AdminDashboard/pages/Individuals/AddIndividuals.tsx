@@ -121,6 +121,33 @@ export const AddIndividuals = () => {
         profilePhotoUrl = await uploadImage(profilePhotoFile);
       }
 
+      // Generate unique 8-digit refid for new client
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 10;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Generate 8-digit number (10000000 to 99999999)
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+
+        // Check if refid already exists
+        const clientsRef = collection(db, "clients");
+        const q = query(clientsRef, where("refid", "==", refid));
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        throw new Error("فشل في إنشاء كود العميل. يرجى المحاولة مرة أخرى.");
+      }
+
       // Create client document
       const clientData = {
         // Basic info
@@ -133,6 +160,9 @@ export const AddIndividuals = () => {
 
         // Auto-generated UID (will be set by document ID)
         uid: "", // This will be updated after document creation
+
+        // Client code (8-digit refid)
+        refid: refid,
 
         // Default values
         isActive: true,

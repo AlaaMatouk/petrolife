@@ -9,6 +9,7 @@ import {
   doc,
   getDoc,
   updateDoc,
+  deleteDoc,
   arrayUnion,
   where,
   orderBy,
@@ -162,6 +163,178 @@ export const fetchDrivers = async () => {
     return driversData;
   } catch (error) {
     console.error("Error fetching drivers data:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add 8-digit refid to existing petrolife drivers that don't have one
+ * @returns Promise with the number of updated drivers
+ */
+export const addRefidToExistingPetrolifeDrivers = async (): Promise<number> => {
+  try {
+    console.log(
+      "🔄 Starting migration: Adding refid to existing petrolife drivers..."
+    );
+    const driversRef = collection(db, "drivers");
+    // Fetch all documents without orderBy to avoid errors if some don't have createdDate
+    const driversSnapshot = await getDocs(driversRef);
+    console.log(`📦 Found ${driversSnapshot.size} drivers`);
+
+    let updatedCount = 0;
+    const driversToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    for (const driverDoc of driversSnapshot.docs) {
+      const driverData = driverDoc.data();
+      if (driverData.refid) {
+        console.log(
+          `⏭️  Driver ${driverDoc.id} already has refid: ${driverData.refid}`
+        );
+        continue;
+      }
+
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+        const driversRefCheck = collection(db, "drivers");
+        const qCheck = query(driversRefCheck, where("refid", "==", refid));
+        const querySnapshot = await getDocs(qCheck);
+        const isInPendingUpdates = driversToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for driver ${driverDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      driversToUpdate.push({
+        docRef: doc(db, "drivers", driverDoc.id),
+        refid: refid,
+      });
+      console.log(`✅ Generated refid ${refid} for driver ${driverDoc.id}`);
+    }
+
+    console.log(`📝 Updating ${driversToUpdate.length} drivers with refid...`);
+    for (const { docRef, refid } of driversToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(`✅ Updated driver ${docRef.id} with refid: ${refid}`);
+      } catch (error) {
+        console.error(`❌ Error updating driver ${docRef.id}:`, error);
+      }
+    }
+    console.log(
+      `✅ Migration completed: ${updatedCount} drivers updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a petrolife driver document by ID (for getting raw data like isActive)
+ * @param driverId - The driver document ID
+ * @returns Promise with driver document data
+ */
+export const fetchPetrolifeDriverById = async (driverId: string) => {
+  try {
+    console.log("Fetching petrolife driver by ID:", driverId);
+
+    // Fetch the specific driver document from Firestore
+    const driverDocRef = doc(db, "drivers", driverId);
+    const driverDoc = await getDoc(driverDocRef);
+
+    if (!driverDoc.exists()) {
+      throw new Error("Driver not found");
+    }
+
+    const driverData = driverDoc.data();
+
+    const driver = {
+      id: driverDoc.id,
+      ...driverData,
+    };
+
+    console.log("Driver data fetched:", driver);
+
+    return driver;
+  } catch (error) {
+    console.error("Error fetching petrolife driver by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update petrolife driver isActive status in Firestore
+ * @param driverId - The driver document ID
+ * @param isActive - The new isActive status
+ * @returns Promise<boolean> - Returns true if update was successful
+ */
+export const updatePetrolifeDriverIsActive = async (
+  driverId: string,
+  isActive: boolean
+): Promise<boolean> => {
+  try {
+    console.log(
+      `📝 Updating petrolife driver isActive status: ${driverId} -> ${isActive}`
+    );
+
+    const driverDocRef = doc(db, "drivers", driverId);
+    await updateDoc(driverDocRef, {
+      isActive: isActive,
+    });
+
+    console.log(`✅ Successfully updated petrolife driver isActive status`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating petrolife driver isActive status:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a petrolife driver from Firestore
+ * @param driverId - The driver document ID
+ * @returns Promise<boolean> - Returns true if deletion was successful
+ */
+export const deletePetrolifeDriver = async (
+  driverId: string
+): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting petrolife driver from Firestore: ${driverId}`);
+
+    // Verify the driver exists before deleting
+    const driverDocRef = doc(db, "drivers", driverId);
+    const driverDoc = await getDoc(driverDocRef);
+
+    if (!driverDoc.exists()) {
+      throw new Error("Driver not found");
+    }
+
+    // Delete the driver document
+    await deleteDoc(driverDocRef);
+    console.log(`✅ Successfully deleted petrolife driver from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting petrolife driver:", error);
     throw error;
   }
 };
@@ -442,6 +615,36 @@ export const createNewDriver = async (formData: Record<string, any>) => {
   const payload = await generateFullDriverPayload(formData);
 
   applyTimestampOverrides(payload);
+
+  // Generate unique 8-digit refid for driver
+  console.log("🔢 Generating unique 8-digit refid for petrolife driver...");
+  let refid: string = "";
+  let isUnique = false;
+  let attempts = 0;
+  const maxAttempts = 10;
+
+  while (!isUnique && attempts < maxAttempts) {
+    const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+    refid = randomCode.toString();
+    const driversRefCheck = collection(db, "drivers");
+    const qCheck = query(driversRefCheck, where("refid", "==", refid));
+    const querySnapshot = await getDocs(qCheck);
+
+    if (querySnapshot.empty) {
+      isUnique = true;
+    } else {
+      attempts++;
+    }
+  }
+
+  if (!isUnique || !refid) {
+    throw new Error("فشل في إنشاء كود السائق. يرجى المحاولة مرة أخرى.");
+  }
+
+  console.log(`✅ Generated unique refid: ${refid}`);
+
+  // Add refid to payload
+  payload.refid = refid;
 
   const driversRef = collection(db, "drivers");
   const docRef = await addDoc(driversRef, payload);
@@ -2800,6 +3003,124 @@ export const fetchProducts = async (): Promise<any[]> => {
 };
 
 /**
+ * Delete a petrolife product from Firestore
+ * @param productId - The product document ID
+ * @returns Promise<boolean> - Returns true if deletion was successful
+ */
+export const deletePetrolifeProduct = async (
+  productId: string
+): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting petrolife product from Firestore: ${productId}`);
+
+    // Verify the product exists before deleting
+    const productDocRef = doc(db, "products", productId);
+    const productDoc = await getDoc(productDocRef);
+
+    if (!productDoc.exists()) {
+      throw new Error("Product not found");
+    }
+
+    // Delete the product document
+    await deleteDoc(productDocRef);
+    console.log(`✅ Successfully deleted petrolife product from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting petrolife product:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add 8-digit refid to existing products that don't have one
+ * @returns Promise with the number of updated products
+ */
+export const addRefidToExistingProducts = async (): Promise<number> => {
+  try {
+    console.log("🔄 Starting migration: Adding refid to existing products...");
+    const productsRef = collection(db, "products");
+    // Try to fetch with orderBy, fallback to without if it fails
+    let productsSnapshot;
+    try {
+      const q = query(productsRef, orderBy("createdDate", "desc"));
+      productsSnapshot = await getDocs(q);
+    } catch (orderByError) {
+      console.warn("⚠️ Could not order by createdDate, fetching without order");
+      productsSnapshot = await getDocs(productsRef);
+    }
+    console.log(`📦 Found ${productsSnapshot.size} products`);
+
+    let updatedCount = 0;
+    const productsToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    for (const productDoc of productsSnapshot.docs) {
+      const productData = productDoc.data();
+      if (productData.refid) {
+        console.log(
+          `⏭️  Product ${productDoc.id} already has refid: ${productData.refid}`
+        );
+        continue;
+      }
+
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+        const productsRefCheck = collection(db, "products");
+        const qCheck = query(productsRefCheck, where("refid", "==", refid));
+        const querySnapshot = await getDocs(qCheck);
+        const isInPendingUpdates = productsToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for product ${productDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      productsToUpdate.push({
+        docRef: doc(db, "products", productDoc.id),
+        refid: refid,
+      });
+      console.log(`✅ Generated refid ${refid} for product ${productDoc.id}`);
+    }
+
+    console.log(
+      `📝 Updating ${productsToUpdate.length} products with refid...`
+    );
+    for (const { docRef, refid } of productsToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(`✅ Updated product ${docRef.id} with refid: ${refid}`);
+      } catch (error) {
+        console.error(`❌ Error updating product ${docRef.id}:`, error);
+      }
+    }
+    console.log(
+      `✅ Migration completed: ${updatedCount} products updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetch all subscriptions from Firestore
  * @returns Promise with subscriptions data
  */
@@ -2991,6 +3312,81 @@ export const updateSubscription = async (
   }
 };
 
+/**
+ * Create a new subscription in Firestore
+ * @param subscriptionData - The subscription data with proper structure
+ * @returns Promise with the created subscription document ID
+ */
+export const createSubscription = async (subscriptionData: {
+  title: { ar: string; en?: string };
+  description: {
+    ar: string;
+    en?: string;
+    minCarNumber?: number;
+    maxCarNumber?: number;
+  };
+  status: { ar: string; en?: string };
+  price: number;
+  options: Array<{ ar: string; en?: string }>;
+  periodName: { ar: string; en?: string };
+  periodValueInDays: number;
+  logo?: string;
+}): Promise<string> => {
+  try {
+    console.log("📝 Creating new subscription in Firestore:", subscriptionData);
+    const subscriptionsCollection = collection(db, "subscriptions");
+
+    // Prepare subscription document with all required fields
+    const subscriptionDocument: any = {
+      title: subscriptionData.title,
+      description: subscriptionData.description,
+      status: subscriptionData.status,
+      price: subscriptionData.price,
+      options: subscriptionData.options,
+      periodName: subscriptionData.periodName,
+      periodValueInDays: subscriptionData.periodValueInDays,
+      createdDate: serverTimestamp(),
+      createdUserId: auth.currentUser?.uid || auth.currentUser?.email || null,
+    };
+
+    // Add optional fields only if they exist
+    if (subscriptionData.logo) {
+      subscriptionDocument.logo = subscriptionData.logo;
+    }
+
+    const docRef = await addDoc(subscriptionsCollection, subscriptionDocument);
+    console.log(
+      "✅ Subscription created successfully in Firestore with ID:",
+      docRef.id
+    );
+    return docRef.id;
+  } catch (error) {
+    console.error("Error creating subscription:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a subscription from Firestore
+ * @param subscriptionId - The subscription document ID to delete
+ * @returns Promise<void>
+ */
+export const deleteSubscription = async (
+  subscriptionId: string
+): Promise<void> => {
+  try {
+    console.log("🗑️ Deleting subscription from Firestore:", subscriptionId);
+    const subscriptionsCollection = collection(db, "subscriptions");
+    const subscriptionDoc = doc(subscriptionsCollection, subscriptionId);
+
+    await deleteDoc(subscriptionDoc);
+    console.log("✅ Subscription deleted successfully from Firestore");
+  } catch (error) {
+    console.error("Error deleting subscription:", error);
+    throw error;
+  }
+};
+
 export const createProductWithSchema = async (
   formFields: Record<string, any>,
   imageFile?: File | string | null
@@ -3038,6 +3434,36 @@ export const createProductWithSchema = async (
     ) {
       combined.createdDate = serverTimestamp();
     }
+
+    // Generate unique 8-digit refid for product
+    console.log("🔢 Generating unique 8-digit refid for product...");
+    let refid: string = "";
+    let isUnique = false;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    while (!isUnique && attempts < maxAttempts) {
+      const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+      refid = randomCode.toString();
+      const productsRefCheck = collection(db, "products");
+      const qCheck = query(productsRefCheck, where("refid", "==", refid));
+      const querySnapshot = await getDocs(qCheck);
+
+      if (querySnapshot.empty) {
+        isUnique = true;
+      } else {
+        attempts++;
+      }
+    }
+
+    if (!isUnique || !refid) {
+      throw new Error("فشل في إنشاء كود المنتج. يرجى المحاولة مرة أخرى.");
+    }
+
+    console.log(`✅ Generated unique refid: ${refid}`);
+
+    // Add refid to combined data
+    combined.refid = refid;
 
     const productDocRef = doc(productsCollection);
     await setDoc(productDocRef, combined);
@@ -3776,7 +4202,7 @@ export const fetchAllAdminWalletRequests = async () => {
       const data = doc.data();
       allRequestsData.push({
         id: doc.id,
-        requestNumber: doc.id, // رقم العملية
+        requestNumber: data.refid || doc.id, // رقم العملية - use refid if available, otherwise fall back to doc.id
         clientName: data.requestedUser?.name || "-", // العميل
         orderType: "-", // نوع الشحن
         oldBalance: data.requestedUser?.balance || "-", // الرصيد القديم
@@ -3793,6 +4219,132 @@ export const fetchAllAdminWalletRequests = async () => {
     return allRequestsData;
   } catch (error) {
     console.error("❌ Error fetching admin wallet requests:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a wallet request from Firestore
+ * @param requestId - The wallet request document ID
+ * @returns Promise with boolean indicating success
+ */
+export const deleteWalletRequest = async (
+  requestId: string
+): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting wallet request from Firestore: ${requestId}`);
+
+    // Verify the wallet request exists before deleting
+    const requestDocRef = doc(db, "companies-wallets-requests", requestId);
+    const requestDoc = await getDoc(requestDocRef);
+
+    if (!requestDoc.exists()) {
+      throw new Error("Wallet request not found");
+    }
+
+    // Delete the wallet request document
+    await deleteDoc(requestDocRef);
+    console.log(`✅ Successfully deleted wallet request from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting wallet request:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add 8-digit refid to existing wallet requests that don't have one
+ * @returns Promise with number of updated requests
+ */
+export const addRefidToExistingWalletRequests = async (): Promise<number> => {
+  try {
+    console.log(
+      "🔄 Starting migration: Adding refid to existing wallet requests..."
+    );
+
+    const requestsRef = collection(db, "companies-wallets-requests");
+    const requestsSnapshot = await getDocs(requestsRef);
+    console.log(`📦 Found ${requestsSnapshot.size} wallet requests`);
+
+    let updatedCount = 0;
+    const requestsToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    // First pass: Identify requests without refid and generate refids
+    for (const requestDoc of requestsSnapshot.docs) {
+      const requestData = requestDoc.data();
+
+      // Skip if request already has refid
+      if (requestData.refid) {
+        console.log(
+          `⏭️  Wallet request ${requestDoc.id} already has refid: ${requestData.refid}`
+        );
+        continue;
+      }
+
+      // Generate unique 8-digit refid
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Generate 8-digit number (10000000 to 99999999)
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+
+        // Check if refid already exists in Firestore or in our pending updates
+        const requestsRefCheck = collection(db, "companies-wallets-requests");
+        const qCheck = query(requestsRefCheck, where("refid", "==", refid));
+        const querySnapshot = await getDocs(qCheck);
+
+        // Also check if this refid is already in our pending updates
+        const isInPendingUpdates = requestsToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for wallet request ${requestDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      requestsToUpdate.push({
+        docRef: doc(db, "companies-wallets-requests", requestDoc.id),
+        refid: refid,
+      });
+      console.log(
+        `✅ Generated refid ${refid} for wallet request ${requestDoc.id}`
+      );
+    }
+
+    console.log(
+      `📝 Updating ${requestsToUpdate.length} wallet requests with refid...`
+    );
+    for (const { docRef, refid } of requestsToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(
+          `✅ Updated wallet request ${docRef.id} with refid: ${refid}`
+        );
+      } catch (error) {
+        console.error(`❌ Error updating wallet request ${docRef.id}:`, error);
+      }
+    }
+    console.log(
+      `✅ Migration completed: ${updatedCount} wallet requests updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
     throw error;
   }
 };
@@ -5751,7 +6303,7 @@ export const fetchSupervisorsFromUsers = async (): Promise<any[]> => {
       if (data.isAdmin === true || data.isSuperAdmin === true) {
         supervisors.push({
           id: doc.id,
-          supervisorCode: data.uid || data.id || doc.id || "-",
+          supervisorCode: data.refid || data.uid || data.id || doc.id || "-",
           supervisorName: data.name || data.fullName || data.displayName || "-",
           phone: data.phoneNumber || data.phone || "-",
           email: data.email || "-",
@@ -5868,7 +6420,8 @@ export const fetchAllCompaniesWithCounts = async (): Promise<any[]> => {
 
       companies.push({
         id: companyDoc.id,
-        companyCode: companyData.id || companyDoc.id || "-",
+        companyCode:
+          companyData.refid || companyData.id || companyDoc.id || "-",
         companyName: companyData.name || companyData.brandName || "-",
         phone: companyData.phoneNumber || companyData.phone || "-",
         email: companyData.email || "-",
@@ -7045,6 +7598,35 @@ export const fetchVehicles = async () => {
   }
 };
 
+/**
+ * Delete a petrolife car/vehicle from Firestore
+ * @param vehicleId - The vehicle document ID
+ * @returns Promise<boolean> - Returns true if deletion was successful
+ */
+export const deletePetrolifeCar = async (
+  vehicleId: string
+): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting petrolife car from Firestore: ${vehicleId}`);
+
+    // Verify the vehicle exists before deleting
+    const vehicleDocRef = doc(db, "vehicles", vehicleId);
+    const vehicleDoc = await getDoc(vehicleDocRef);
+
+    if (!vehicleDoc.exists()) {
+      throw new Error("Vehicle not found");
+    }
+
+    // Delete the vehicle document
+    await deleteDoc(vehicleDocRef);
+    console.log(`✅ Successfully deleted petrolife car from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting petrolife car:", error);
+    throw error;
+  }
+};
+
 export interface CreateVehicleOptions {
   chassisNumber: string | null;
   plateNumber: string | null;
@@ -7232,6 +7814,344 @@ export const createVehicleWithSchema = async ({
     };
   } catch (error) {
     console.error("Error creating vehicle document:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all car-types from Firestore
+ * @returns Promise with array of car-type documents
+ */
+export const fetchCarTypes = async (): Promise<any[]> => {
+  try {
+    const carTypesRef = collection(db, "car-types");
+    const q = query(carTypesRef, orderBy("createdDate", "desc"));
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
+
+    const carTypesData: any[] = [];
+
+    querySnapshot.forEach((doc) => {
+      carTypesData.push({
+        docId: doc.id,
+        id: doc.id,
+        ...doc.data(),
+      });
+    });
+
+    return carTypesData;
+  } catch (error) {
+    console.error("Error fetching car-types data:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all car-models from Firestore
+ * @returns Promise with array of car-model documents
+ */
+export const fetchCarModels = async (): Promise<any[]> => {
+  try {
+    const carModelsRef = collection(db, "car-models");
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(
+      carModelsRef
+    );
+
+    const carModelsData: any[] = [];
+
+    querySnapshot.forEach((doc) => {
+      carModelsData.push({
+        docId: doc.id,
+        id: doc.id,
+        ...doc.data(),
+      });
+    });
+
+    return carModelsData;
+  } catch (error) {
+    console.error("Error fetching car-models data:", error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new car-model document in Firestore
+ * @param carModelData - Car model data including name in Arabic and English
+ * @returns Promise with created document ID and data
+ */
+export const createCarModel = async (carModelData: {
+  name: { ar: string; en?: string };
+  createdUserId?: string | null;
+}): Promise<{ id: string; data: any }> => {
+  try {
+    const currentUser = auth.currentUser;
+    const userEmail = currentUser?.email ?? carModelData.createdUserId ?? null;
+
+    // Get a sample car-model to understand the schema
+    const carModelsCollection = collection(db, "car-models");
+    const sampleQuery = query(carModelsCollection, limit(1));
+    const sampleSnapshot = await getDocs(sampleQuery);
+
+    // Build car-model payload with same structure as existing documents
+    const carModelPayload: any = {
+      name: {
+        ar: carModelData.name.ar,
+        en: carModelData.name.en || carModelData.name.ar,
+      },
+      createdDate: serverTimestamp(),
+      createdUserId: userEmail,
+    };
+
+    // If there's a sample document, copy other fields that might exist
+    if (!sampleSnapshot.empty) {
+      const sampleData = sampleSnapshot.docs[0].data();
+      // Copy fields that should be preserved (excluding name, createdDate, createdUserId)
+      Object.keys(sampleData).forEach((key) => {
+        if (
+          !["name", "createdDate", "createdUserId", "docId", "id"].includes(key)
+        ) {
+          // Set default values for other fields if they exist in sample
+          if (sampleData[key] !== null && sampleData[key] !== undefined) {
+            if (typeof sampleData[key] === "string") {
+              carModelPayload[key] = "";
+            } else if (typeof sampleData[key] === "number") {
+              carModelPayload[key] = 0;
+            } else if (typeof sampleData[key] === "boolean") {
+              carModelPayload[key] = false;
+            } else if (Array.isArray(sampleData[key])) {
+              carModelPayload[key] = [];
+            } else if (typeof sampleData[key] === "object") {
+              carModelPayload[key] = {};
+            } else {
+              carModelPayload[key] = null;
+            }
+          }
+        }
+      });
+    }
+
+    const carModelDocRef = doc(carModelsCollection);
+    await setDoc(carModelDocRef, carModelPayload);
+
+    return {
+      id: carModelDocRef.id,
+      data: carModelPayload,
+    };
+  } catch (error) {
+    console.error("Error creating car-model document:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a single car-type by ID
+ * @param carTypeId - Car type document ID
+ * @returns Promise with car-type data
+ */
+export const fetchCarTypeById = async (carTypeId: string): Promise<any> => {
+  try {
+    const carTypeDocRef = doc(db, "car-types", carTypeId);
+    const carTypeDoc = await getDoc(carTypeDocRef);
+
+    if (!carTypeDoc.exists()) {
+      throw new Error("Car type not found");
+    }
+
+    return {
+      docId: carTypeDoc.id,
+      id: carTypeDoc.id,
+      ...carTypeDoc.data(),
+    };
+  } catch (error) {
+    console.error("Error fetching car-type by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update an existing car-type document in Firestore
+ * @param carTypeId - Car type document ID
+ * @param carTypeData - Updated car type data
+ * @returns Promise with updated document data
+ */
+export const updateCarType = async (
+  carTypeId: string,
+  carTypeData: {
+    name?: { ar: string; en?: string };
+    carModel?: {
+      name?: { ar: string; en?: string };
+      carModelImageUrl?: string | null;
+    };
+    year?: string;
+    fuelType?: string;
+    imageFile?: File | null;
+  }
+): Promise<{ id: string; data: any }> => {
+  try {
+    if (!carTypeId) {
+      throw new Error("Car type ID is required");
+    }
+
+    const carTypeDocRef = doc(db, "car-types", carTypeId);
+    const existingDoc = await getDoc(carTypeDocRef);
+
+    if (!existingDoc.exists()) {
+      throw new Error("Car type not found");
+    }
+
+    const existingData = existingDoc.data();
+    const updatePayload: any = {};
+
+    // Update name if provided
+    if (carTypeData.name) {
+      updatePayload.name = {
+        ar: carTypeData.name.ar,
+        en: carTypeData.name.en || carTypeData.name.ar,
+      };
+    }
+
+    // Update carModel if provided
+    if (carTypeData.carModel) {
+      let imageUrl = existingData.carModel?.carModelImageUrl || null;
+
+      // Upload new image if provided
+      if (carTypeData.imageFile instanceof File) {
+        const timestamp = Date.now();
+        const storagePath = `car-types/${timestamp}-${carTypeData.imageFile.name}`;
+        imageUrl = await uploadFileToStorage(
+          carTypeData.imageFile,
+          storagePath
+        );
+      } else if (carTypeData.carModel.carModelImageUrl !== undefined) {
+        imageUrl = carTypeData.carModel.carModelImageUrl;
+      }
+
+      updatePayload.carModel = {
+        name: {
+          ar:
+            carTypeData.carModel.name?.ar ||
+            existingData.carModel?.name?.ar ||
+            "",
+          en:
+            carTypeData.carModel.name?.en ||
+            carTypeData.carModel.name?.ar ||
+            existingData.carModel?.name?.en ||
+            existingData.carModel?.name?.ar ||
+            "",
+        },
+        carModelImageUrl: imageUrl,
+      };
+    }
+
+    // Update year if provided
+    if (carTypeData.year !== undefined) {
+      updatePayload.year = carTypeData.year;
+    }
+
+    // Update fuelType if provided
+    if (carTypeData.fuelType !== undefined) {
+      updatePayload.fuelType = carTypeData.fuelType;
+    }
+
+    await updateDoc(carTypeDocRef, updatePayload);
+
+    return {
+      id: carTypeId,
+      data: { ...existingData, ...updatePayload },
+    };
+  } catch (error) {
+    console.error("Error updating car-type:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a car-type document from Firestore
+ * @param carTypeId - Car type document ID
+ * @returns Promise<boolean> - true if successful
+ */
+export const deleteCarType = async (carTypeId: string): Promise<boolean> => {
+  try {
+    if (!carTypeId) {
+      throw new Error("Car type ID is required");
+    }
+
+    const carTypeDocRef = doc(db, "car-types", carTypeId);
+    const carTypeDoc = await getDoc(carTypeDocRef);
+
+    if (!carTypeDoc.exists()) {
+      throw new Error("Car type not found");
+    }
+
+    await deleteDoc(carTypeDocRef);
+
+    console.log("✅ Car type deleted successfully:", carTypeId);
+    return true;
+  } catch (error) {
+    console.error("Error deleting car-type:", error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new car-type document in Firestore
+ * @param carTypeData - Car type data including name, carModel, year, fuelType, and optional imageFile
+ * @returns Promise with created document ID and data
+ */
+export const createCarType = async (carTypeData: {
+  name: { ar: string; en?: string };
+  carModel: {
+    name: { ar: string; en?: string };
+    carModelImageUrl?: string | null;
+  };
+  year: string;
+  fuelType: string;
+  imageFile?: File | null;
+  createdUserId?: string | null;
+}): Promise<{ id: string; data: any }> => {
+  try {
+    const currentUser = auth.currentUser;
+    const userEmail = currentUser?.email ?? carTypeData.createdUserId ?? null;
+
+    let imageUrl: string | null = null;
+
+    // Upload image if provided
+    if (carTypeData.imageFile instanceof File) {
+      const timestamp = Date.now();
+      const storagePath = `car-types/${timestamp}-${carTypeData.imageFile.name}`;
+      imageUrl = await uploadFileToStorage(carTypeData.imageFile, storagePath);
+    } else if (carTypeData.carModel.carModelImageUrl) {
+      imageUrl = carTypeData.carModel.carModelImageUrl;
+    }
+
+    // Build car-type payload
+    const carTypePayload: any = {
+      name: {
+        ar: carTypeData.name.ar,
+        en: carTypeData.name.en || carTypeData.name.ar,
+      },
+      carModel: {
+        name: {
+          ar: carTypeData.carModel.name.ar,
+          en: carTypeData.carModel.name.en || carTypeData.carModel.name.ar,
+        },
+        carModelImageUrl: imageUrl,
+      },
+      year: carTypeData.year,
+      fuelType: carTypeData.fuelType,
+      createdDate: serverTimestamp(),
+      createdUserId: userEmail,
+    };
+
+    const carTypesCollection = collection(db, "car-types");
+    const carTypeDocRef = doc(carTypesCollection);
+    await setDoc(carTypeDocRef, carTypePayload);
+
+    return {
+      id: carTypeDocRef.id,
+      data: carTypePayload,
+    };
+  } catch (error) {
+    console.error("Error creating car-type document:", error);
     throw error;
   }
 };
@@ -8005,6 +8925,475 @@ export const fetchSupervisorById = async (supervisorId: string) => {
 };
 
 /**
+ * Update supervisor isActive status in users collection
+ * @param supervisorId - The ID of the supervisor (user document ID)
+ * @param isActive - The new isActive status (true or false)
+ * @returns Promise<boolean> - Returns true if update was successful
+ */
+export const updateSupervisorIsActive = async (
+  supervisorId: string,
+  isActive: boolean
+): Promise<boolean> => {
+  try {
+    console.log(
+      `📝 Updating supervisor isActive status: ${supervisorId} -> ${isActive}`
+    );
+
+    const userDocRef = doc(db, "users", supervisorId);
+    await updateDoc(userDocRef, {
+      isActive: isActive,
+    });
+
+    console.log(`✅ Successfully updated supervisor isActive status`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating supervisor isActive status:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete supervisor from users collection
+ * @param supervisorId - The ID of the supervisor (user document ID)
+ * @returns Promise<boolean> - Returns true if deletion was successful
+ */
+export const deleteSupervisor = async (
+  supervisorId: string
+): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting supervisor from Firestore: ${supervisorId}`);
+
+    // Verify the user is a supervisor/admin before deleting
+    const userDocRef = doc(db, "users", supervisorId);
+    const userDoc = await getDoc(userDocRef);
+
+    if (!userDoc.exists()) {
+      throw new Error("Supervisor not found");
+    }
+
+    const data = userDoc.data();
+    if (data.isAdmin !== true && data.isSuperAdmin !== true) {
+      throw new Error("User is not a supervisor/admin");
+    }
+
+    // Delete the user document
+    await deleteDoc(userDocRef);
+    console.log(`✅ Successfully deleted supervisor from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting supervisor:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add refid to existing supervisors that don't have one
+ * Generates unique 8-digit codes for all supervisors without refid
+ * @returns Promise with the number of supervisors updated
+ */
+export const addRefidToExistingSupervisors = async (): Promise<number> => {
+  try {
+    console.log(
+      "🔄 Starting migration: Adding refid to existing supervisors..."
+    );
+
+    // Fetch all users
+    const usersRef = collection(db, "users");
+    const q = query(usersRef, orderBy("createdDate", "desc"));
+    const usersSnapshot = await getDocs(q);
+    console.log(`📦 Found ${usersSnapshot.size} users`);
+
+    let updatedCount = 0;
+    const supervisorsToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    // First pass: Identify supervisors without refid and generate refids
+    for (const userDoc of usersSnapshot.docs) {
+      const userData = userDoc.data();
+
+      // Only process supervisors/admins
+      if (userData.isAdmin !== true && userData.isSuperAdmin !== true) {
+        continue;
+      }
+
+      // Skip if supervisor already has refid
+      if (userData.refid) {
+        console.log(
+          `⏭️  Supervisor ${userDoc.id} already has refid: ${userData.refid}`
+        );
+        continue;
+      }
+
+      // Generate unique 8-digit refid
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Generate 8-digit number (10000000 to 99999999)
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+
+        // Check if refid already exists in Firestore or in our pending updates
+        const usersRefCheck = collection(db, "users");
+        const qCheck = query(usersRefCheck, where("refid", "==", refid));
+        const querySnapshot = await getDocs(qCheck);
+
+        // Also check if this refid is already in our pending updates
+        const isInPendingUpdates = supervisorsToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for supervisor ${userDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      supervisorsToUpdate.push({
+        docRef: doc(db, "users", userDoc.id),
+        refid: refid,
+      });
+
+      console.log(`✅ Generated refid ${refid} for supervisor ${userDoc.id}`);
+    }
+
+    console.log(
+      `📝 Updating ${supervisorsToUpdate.length} supervisors with refid...`
+    );
+
+    // Second pass: Update all supervisors in batch
+    for (const { docRef, refid } of supervisorsToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(`✅ Updated supervisor ${docRef.id} with refid: ${refid}`);
+      } catch (error) {
+        console.error(`❌ Error updating supervisor ${docRef.id}:`, error);
+      }
+    }
+
+    console.log(
+      `✅ Migration completed: ${updatedCount} supervisors updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a client by its ID
+ * @param clientId - The ID of the client to fetch
+ * @returns Promise with the client data
+ */
+export const fetchClientById = async (clientId: string) => {
+  try {
+    console.log("Fetching client by ID:", clientId);
+
+    // Fetch the specific client document from Firestore
+    const clientDocRef = doc(db, "clients", clientId);
+    const clientDoc = await getDoc(clientDocRef);
+
+    if (!clientDoc.exists()) {
+      throw new Error("Client not found");
+    }
+
+    const clientData = clientDoc.data();
+
+    const client = {
+      id: clientDoc.id,
+      ...clientData,
+    };
+
+    console.log("Client data fetched:", client);
+
+    return client;
+  } catch (error) {
+    console.error("Error fetching client by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update client isActive status in clients collection
+ * @param clientId - The ID of the client (document ID)
+ * @param isActive - The new isActive status (true or false)
+ * @returns Promise<boolean> - Returns true if update was successful
+ */
+export const updateClientIsActive = async (
+  clientId: string,
+  isActive: boolean
+): Promise<boolean> => {
+  try {
+    console.log(
+      `📝 Updating client isActive status: ${clientId} -> ${isActive}`
+    );
+
+    const clientDocRef = doc(db, "clients", clientId);
+    await updateDoc(clientDocRef, {
+      isActive: isActive,
+    });
+
+    console.log(`✅ Successfully updated client isActive status`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating client isActive status:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete client from clients collection
+ * @param clientId - The ID of the client (document ID)
+ * @returns Promise<boolean> - Returns true if deletion was successful
+ */
+export const deleteClient = async (clientId: string): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting client from Firestore: ${clientId}`);
+
+    // Verify the client exists before deleting
+    const clientDocRef = doc(db, "clients", clientId);
+    const clientDoc = await getDoc(clientDocRef);
+
+    if (!clientDoc.exists()) {
+      throw new Error("Client not found");
+    }
+
+    // Delete the client document
+    await deleteDoc(clientDocRef);
+    console.log(`✅ Successfully deleted client from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting client:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add refid to existing clients that don't have one
+ * Generates unique 8-digit codes for all clients without refid
+ * @returns Promise with the number of clients updated
+ */
+export const addRefidToExistingClients = async (): Promise<number> => {
+  try {
+    console.log("🔄 Starting migration: Adding refid to existing clients...");
+
+    // Fetch all clients
+    const clientsRef = collection(db, "clients");
+    const q = query(clientsRef, orderBy("createdDate", "desc"));
+    const clientsSnapshot = await getDocs(q);
+    console.log(`📦 Found ${clientsSnapshot.size} clients`);
+
+    let updatedCount = 0;
+    const clientsToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    // First pass: Identify clients without refid and generate refids
+    for (const clientDoc of clientsSnapshot.docs) {
+      const clientData = clientDoc.data();
+
+      // Skip if client already has refid
+      if (clientData.refid) {
+        console.log(
+          `⏭️  Client ${clientDoc.id} already has refid: ${clientData.refid}`
+        );
+        continue;
+      }
+
+      // Generate unique 8-digit refid
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Generate 8-digit number (10000000 to 99999999)
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+
+        // Check if refid already exists in Firestore or in our pending updates
+        const clientsRefCheck = collection(db, "clients");
+        const qCheck = query(clientsRefCheck, where("refid", "==", refid));
+        const querySnapshot = await getDocs(qCheck);
+
+        // Also check if this refid is already in our pending updates
+        const isInPendingUpdates = clientsToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for client ${clientDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      clientsToUpdate.push({
+        docRef: doc(db, "clients", clientDoc.id),
+        refid: refid,
+      });
+
+      console.log(`✅ Generated refid ${refid} for client ${clientDoc.id}`);
+    }
+
+    console.log(`📝 Updating ${clientsToUpdate.length} clients with refid...`);
+
+    // Second pass: Update all clients in batch
+    for (const { docRef, refid } of clientsToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(`✅ Updated client ${docRef.id} with refid: ${refid}`);
+      } catch (error) {
+        console.error(`❌ Error updating client ${docRef.id}:`, error);
+      }
+    }
+
+    console.log(
+      `✅ Migration completed: ${updatedCount} clients updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
+    throw error;
+  }
+};
+
+export const deleteCompany = async (companyId: string): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting company from Firestore: ${companyId}`);
+
+    // Verify the company exists before deleting
+    const companyDocRef = doc(db, "companies", companyId);
+    const companyDoc = await getDoc(companyDocRef);
+
+    if (!companyDoc.exists()) {
+      throw new Error("Company not found");
+    }
+
+    // Delete the company document
+    await deleteDoc(companyDocRef);
+    console.log(`✅ Successfully deleted company from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting company:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add refid to existing companies that don't have one
+ * Generates unique 8-digit codes for all companies without refid
+ * @returns Promise with the number of companies updated
+ */
+export const addRefidToExistingCompanies = async (): Promise<number> => {
+  try {
+    console.log("🔄 Starting migration: Adding refid to existing companies...");
+
+    // Fetch all companies
+    const companiesSnapshot = await getDocs(collection(db, "companies"));
+    console.log(`📦 Found ${companiesSnapshot.size} companies`);
+
+    let updatedCount = 0;
+    const companiesToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    // First pass: Identify companies without refid and generate refids
+    for (const companyDoc of companiesSnapshot.docs) {
+      const companyData = companyDoc.data();
+
+      // Skip if company already has refid
+      if (companyData.refid) {
+        console.log(
+          `⏭️  Company ${companyDoc.id} already has refid: ${companyData.refid}`
+        );
+        continue;
+      }
+
+      // Generate unique 8-digit refid
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Generate 8-digit number (10000000 to 99999999)
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+
+        // Check if refid already exists in Firestore or in our pending updates
+        const companiesRef = collection(db, "companies");
+        const q = query(companiesRef, where("refid", "==", refid));
+        const querySnapshot = await getDocs(q);
+
+        // Also check if this refid is already in our pending updates
+        const isInPendingUpdates = companiesToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for company ${companyDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      companiesToUpdate.push({
+        docRef: doc(db, "companies", companyDoc.id),
+        refid: refid,
+      });
+
+      console.log(`✅ Generated refid ${refid} for company ${companyDoc.id}`);
+    }
+
+    console.log(
+      `📝 Updating ${companiesToUpdate.length} companies with refid...`
+    );
+
+    // Second pass: Update all companies in batch
+    for (const { docRef, refid } of companiesToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(`✅ Updated company ${docRef.id} with refid: ${refid}`);
+      } catch (error) {
+        console.error(`❌ Error updating company ${docRef.id}:`, error);
+      }
+    }
+
+    console.log(
+      `✅ Migration completed: ${updatedCount} companies updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetch a company by its ID
  * @param companyId - The ID of the company to fetch
  * @returns Promise with the company data
@@ -8420,7 +9809,7 @@ export interface Advertisement {
  * @param email - User email to search for
  * @returns Promise with display_name or null if not found
  */
-const fetchUserDisplayName = async (
+export const fetchUserDisplayNameByEmail = async (
   email: string | null | undefined
 ): Promise<string | null> => {
   if (!email) return null;
@@ -8557,7 +9946,7 @@ export const fetchAdvertisements = async (): Promise<Advertisement[]> => {
 
     // Fetch display names for all unique emails in parallel
     const displayNamePromises = uniqueEmails.map(async (email) => {
-      const displayName = await fetchUserDisplayName(email);
+      const displayName = await fetchUserDisplayNameByEmail(email);
       displayNameMap.set(email, displayName);
     });
 
@@ -8924,13 +10313,42 @@ export const addCompany = async (companyData: AddCompanyData) => {
     const companyUid = result.data.uid;
     console.log("✅ Firebase Auth account created:", companyUid);
 
-    // 4. Build formattedLocation object
+    // 4. Generate unique 8-digit refid
+    let refid: string = "";
+    let isUnique = false;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    while (!isUnique && attempts < maxAttempts) {
+      // Generate 8-digit number (10000000 to 99999999)
+      const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+      refid = randomCode.toString();
+
+      // Check if refid already exists
+      const companiesRef = collection(db, "companies");
+      const q = query(companiesRef, where("refid", "==", refid));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        isUnique = true;
+      } else {
+        attempts++;
+      }
+    }
+
+    if (!isUnique || !refid) {
+      throw new Error("فشل في إنشاء كود الشركة. يرجى المحاولة مرة أخرى.");
+    }
+
+    console.log("✅ Generated unique refid:", refid);
+
+    // 5. Build formattedLocation object
     const formattedLocation = {
       "address.city": companyData.city,
       country: "Saudi Arabia",
     };
 
-    // 5. Prepare company document
+    // 6. Prepare company document
     const companyDocument = {
       // Basic info
       name: companyData.name.trim(),
@@ -8961,6 +10379,9 @@ export const addCompany = async (companyData: AddCompanyData) => {
       status: "approved",
       balance: 0,
 
+      // Company code (8-digit refid)
+      refid: refid,
+
       // Timestamps and user info
       createdDate: serverTimestamp(),
       createdUserId: adminEmail,
@@ -8974,7 +10395,7 @@ export const addCompany = async (companyData: AddCompanyData) => {
 
     console.log("📄 Company document prepared:", companyDocument);
 
-    // 6. Add document to Firestore companies collection
+    // 7. Add document to Firestore companies collection
     console.log("💾 Adding company document to companies collection...");
     const companyDocRef = doc(db, "companies", companyData.email);
     await setDoc(companyDocRef, companyDocument);
@@ -9132,7 +10553,37 @@ export const addServiceProvider = async (
     const providerUid = result.data.uid;
     console.log("✅ Firebase Auth account created:", providerUid);
 
-    // 4. Build formattedLocation object with nested Address structure
+    // 4. Generate unique 8-digit refid for service provider
+    console.log("🔢 Generating unique 8-digit refid for service provider...");
+    let refid: string = "";
+    let isUnique = false;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    while (!isUnique && attempts < maxAttempts) {
+      const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+      refid = randomCode.toString();
+      const stationsCompanyRefCheck = collection(db, "stationscompany");
+      const qCheck = query(
+        stationsCompanyRefCheck,
+        where("refid", "==", refid)
+      );
+      const querySnapshot = await getDocs(qCheck);
+
+      if (querySnapshot.empty) {
+        isUnique = true;
+      } else {
+        attempts++;
+      }
+    }
+
+    if (!isUnique || !refid) {
+      throw new Error("فشل في إنشاء كود العميل. يرجى المحاولة مرة أخرى.");
+    }
+
+    console.log(`✅ Generated unique refid: ${refid}`);
+
+    // 5. Build formattedLocation object with nested Address structure
     const formattedLocation = {
       address: {
         city: providerData.city,
@@ -9146,7 +10597,7 @@ export const addServiceProvider = async (
       },
     };
 
-    // 5. Prepare service provider document
+    // 6. Prepare service provider document
     const providerDocument = {
       // Basic info
       name: providerData.name.trim(),
@@ -9172,6 +10623,9 @@ export const addServiceProvider = async (
       // Auth UID
       uId: providerUid,
 
+      // 8-digit refid
+      refid: refid,
+
       // Default values
       isActive: false,
       status: "pending",
@@ -9190,7 +10644,7 @@ export const addServiceProvider = async (
 
     console.log("📄 Service provider document prepared:", providerDocument);
 
-    // 6. Add document to Firestore stationscompany collection
+    // 7. Add document to Firestore stationscompany collection
     console.log(
       "💾 Adding service provider document to stationscompany collection..."
     );
@@ -9722,6 +11176,7 @@ export interface ServiceProviderData {
   phoneNumber: string;
   email: string;
   status: string;
+  isActive?: boolean | null;
   stationsCount: number;
   ordersCount: number;
   uId?: string;
@@ -9800,13 +11255,19 @@ export const fetchStationsCompanyData = async (): Promise<
 
       // Create service provider data object
       const serviceProvider: ServiceProviderData = {
-        id: data.id || doc.id,
-        clientCode: data.id || data.uId || doc.id,
+        id: doc.id, // Always use Firestore document ID for consistency
+        clientCode: data.refid || data.id || data.uId || doc.id, // Use refid as primary source
         providerName: data.name || "غير محدد",
         type: data.type || "غير محدد",
         phoneNumber: data.phoneNumber || data.phone || "-",
         email: data.email || "-",
         status: data.status || "نشط",
+        isActive:
+          data.isActive !== undefined
+            ? data.isActive
+            : data.status === "نشط" || data.status === "active"
+            ? true
+            : false,
         stationsCount,
         ordersCount,
         uId: companyUid,
@@ -9830,6 +11291,161 @@ export const fetchStationsCompanyData = async (): Promise<
     return serviceProvidersData;
   } catch (error) {
     console.error("❌ Error fetching stations company data:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add 8-digit refid to existing service providers that don't have one
+ * @returns Promise with the number of updated service providers
+ */
+export const addRefidToExistingServiceProviders = async (): Promise<number> => {
+  try {
+    console.log(
+      "🔄 Starting migration: Adding refid to existing service providers..."
+    );
+    const stationsCompanyRef = collection(db, "stationscompany");
+    // Fetch all documents without orderBy to avoid errors if some don't have createdDate
+    const stationsCompanySnapshot = await getDocs(stationsCompanyRef);
+    console.log(`📦 Found ${stationsCompanySnapshot.size} service providers`);
+
+    let updatedCount = 0;
+    const serviceProvidersToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    for (const providerDoc of stationsCompanySnapshot.docs) {
+      const providerData = providerDoc.data();
+      if (providerData.refid) {
+        console.log(
+          `⏭️  Service provider ${providerDoc.id} already has refid: ${providerData.refid}`
+        );
+        continue;
+      }
+
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+        const stationsCompanyRefCheck = collection(db, "stationscompany");
+        const qCheck = query(
+          stationsCompanyRefCheck,
+          where("refid", "==", refid)
+        );
+        const querySnapshot = await getDocs(qCheck);
+        const isInPendingUpdates = serviceProvidersToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for service provider ${providerDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      serviceProvidersToUpdate.push({
+        docRef: doc(db, "stationscompany", providerDoc.id),
+        refid: refid,
+      });
+      console.log(
+        `✅ Generated refid ${refid} for service provider ${providerDoc.id}`
+      );
+    }
+
+    console.log(
+      `📝 Updating ${serviceProvidersToUpdate.length} service providers with refid...`
+    );
+    for (const { docRef, refid } of serviceProvidersToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(
+          `✅ Updated service provider ${docRef.id} with refid: ${refid}`
+        );
+      } catch (error) {
+        console.error(
+          `❌ Error updating service provider ${docRef.id}:`,
+          error
+        );
+      }
+    }
+    console.log(
+      `✅ Migration completed: ${updatedCount} service providers updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a service provider document by ID (for getting raw data like isActive)
+ * @param serviceProviderId - The service provider document ID
+ * @returns Promise with service provider document data
+ */
+export const fetchServiceProviderById = async (serviceProviderId: string) => {
+  try {
+    console.log("Fetching service provider by ID:", serviceProviderId);
+
+    // Fetch the specific service provider document from Firestore
+    const serviceProviderDocRef = doc(db, "stationscompany", serviceProviderId);
+    const serviceProviderDoc = await getDoc(serviceProviderDocRef);
+
+    if (!serviceProviderDoc.exists()) {
+      throw new Error("Service provider not found");
+    }
+
+    const serviceProviderData = serviceProviderDoc.data();
+
+    const serviceProvider = {
+      id: serviceProviderDoc.id,
+      ...serviceProviderData,
+    };
+
+    console.log("Service provider data fetched:", serviceProvider);
+
+    return serviceProvider;
+  } catch (error) {
+    console.error("Error fetching service provider by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update service provider isActive status in Firestore
+ * @param serviceProviderId - The service provider document ID
+ * @param isActive - The new isActive status
+ * @returns Promise<boolean> - Returns true if update was successful
+ */
+export const updateServiceProviderIsActive = async (
+  serviceProviderId: string,
+  isActive: boolean
+): Promise<boolean> => {
+  try {
+    console.log(
+      `📝 Updating service provider isActive status: ${serviceProviderId} -> ${isActive}`
+    );
+
+    const serviceProviderDocRef = doc(db, "stationscompany", serviceProviderId);
+    await updateDoc(serviceProviderDocRef, {
+      isActive: isActive,
+    });
+
+    console.log(`✅ Successfully updated service provider isActive status`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating service provider isActive status:", error);
     throw error;
   }
 };
@@ -9881,12 +11497,18 @@ export const fetchStationsCompanyById = async (
 
       return {
         id: data.id || docSnap.id,
-        clientCode: data.id || data.uId || docSnap.id,
+        clientCode: data.refid || data.id || data.uId || docSnap.id, // Use refid as primary source
         providerName: data.name || "غير محدد",
         type: data.type || "غير محدد",
         phoneNumber: data.phoneNumber || data.phone || "-",
         email: data.email || "-",
         status: data.status || "نشط",
+        isActive:
+          data.isActive !== undefined
+            ? data.isActive
+            : data.status === "نشط" || data.status === "active"
+            ? true
+            : false,
         stationsCount,
         ordersCount,
         uId: companyUid,
@@ -9930,12 +11552,18 @@ export const fetchStationsCompanyById = async (
 
       return {
         id: data.id || doc.id,
-        clientCode: data.id || data.uId || doc.id,
+        clientCode: data.refid || data.id || data.uId || doc.id, // Use refid as primary source
         providerName: data.name || "غير محدد",
         type: data.type || "غير محدد",
         phoneNumber: data.phoneNumber || data.phone || "-",
         email: data.email || "-",
         status: data.status || "نشط",
+        isActive:
+          data.isActive !== undefined
+            ? data.isActive
+            : data.status === "نشط" || data.status === "active"
+            ? true
+            : false,
         stationsCount,
         ordersCount,
         uId: companyUid,
@@ -10313,7 +11941,68 @@ export const fetchProviderStations = async (
     return stations;
   } catch (error) {
     console.error("❌ Error fetching provider stations:", error);
-    return [];
+    throw error;
+  }
+};
+
+/**
+ * Fetch a station document by ID (for getting raw data like isActive)
+ * @param stationId - The station document ID
+ * @returns Promise with station document data
+ */
+export const fetchStationById = async (stationId: string) => {
+  try {
+    console.log("Fetching station by ID:", stationId);
+
+    // Fetch the specific station document from Firestore
+    const stationDocRef = doc(db, "carstations", stationId);
+    const stationDoc = await getDoc(stationDocRef);
+
+    if (!stationDoc.exists()) {
+      throw new Error("Station not found");
+    }
+
+    const stationData = stationDoc.data();
+
+    const station = {
+      id: stationDoc.id,
+      ...stationData,
+    };
+
+    console.log("Station data fetched:", station);
+
+    return station;
+  } catch (error) {
+    console.error("Error fetching station by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update station isActive status in Firestore
+ * @param stationId - The station document ID
+ * @param isActive - The new isActive status
+ * @returns Promise<boolean> - Returns true if update was successful
+ */
+export const updateStationIsActive = async (
+  stationId: string,
+  isActive: boolean
+): Promise<boolean> => {
+  try {
+    console.log(
+      `📝 Updating station isActive status: ${stationId} -> ${isActive}`
+    );
+
+    const stationDocRef = doc(db, "carstations", stationId);
+    await updateDoc(stationDocRef, {
+      isActive: isActive,
+    });
+
+    console.log(`✅ Successfully updated station isActive status`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating station isActive status:", error);
+    throw error;
   }
 };
 
@@ -11459,6 +13148,480 @@ export const fetchTopStationsByConsumption = async (): Promise<any[]> => {
     return topStations;
   } catch (error) {
     console.error("❌ Error fetching top stations by consumption:", error);
+    throw error;
+  }
+};
+
+/**
+ * Interface for communication policies data
+ */
+export interface CommunicationPoliciesData {
+  platformPolicy: string;
+  whatsappLink: string;
+  instagramLink: string;
+  tiktokLink: string;
+  facebookLink: string;
+  xPlatformLink: string;
+  emailLink: string;
+}
+
+/**
+ * Default dummy data for communication policies
+ */
+const defaultCommunicationPoliciesData: CommunicationPoliciesData = {
+  platformPolicy: `نحن نجمع المعلومات لتقديم خدمات ذات مستوى أفضل المستخدمينا جميعًا. نحن نستخدم المعلومات التي نجمعها من جميع خدماتنا (مثل تطبيقاتك ومتصفحاتك وأجهزتك) لتقديم خدماتنا وصيانتها وتحسينها وتطوير خدمات جديدة وقياس الأداء والتواصل معك.
+
+المعلومات التي تجمعها Google
+نستخدم المعلومات التي نجمعها من جميع خدماتنا لتقديم خدماتنا وصيانتها وتحسينها وتطوير خدمات جديدة وقياس الأداء والتواصل معك.
+
+عناصر تنشئها أو تقدمها لنا
+عندما تنشئ حساب Google أو تضيف معلومات إلى حسابك، فإنك تزودنا بمعلومات شخصية تتضمن اسمك وكلمة المرور.
+
+المعلومات التي تجمعها أثناء استخدامك لخدماتنا
+نحن نجمع المعلومات حول الطريقة التي تستخدم بها خدماتنا، مثل نوع المحتوى الذي تبحث عنه أو تعرضه أو تشتريه، والمواقع التي تزورها، والتفاعلات مع المحتوى والخدمات.
+
+تطبيقاتك ومتصفحاتك وأجهزتك
+نحن نجمع معلومات محددة حول تطبيقاتك ومتصفحاتك وأجهزتك التي تستخدمها للوصول إلى خدمات Google، والتي تساعدنا في توفير ميزات مثل تحديثات المنتج تلقائيًا وتقليل معدل الأعطال.`,
+  whatsappLink: "https://wa.me/966500000000",
+  instagramLink: "https://www.instagram.com/petrolife",
+  tiktokLink: "https://www.tiktok.com/@petrolife",
+  facebookLink: "https://www.facebook.com/petrolife",
+  xPlatformLink: "https://www.x.com/petrolife",
+  emailLink: "info@petrolife.com",
+};
+
+/**
+ * Fetch communication policies data from Firestore
+ * Returns default dummy data if document doesn't exist
+ * @returns Promise with communication policies data
+ */
+export const fetchCommunicationPolicies =
+  async (): Promise<CommunicationPoliciesData> => {
+    try {
+      console.log("📋 Fetching communication policies from Firestore...");
+
+      const docRef = doc(db, "communication-policies", "settings");
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        console.log("✅ Communication policies data fetched successfully");
+        return {
+          platformPolicy:
+            data.platformPolicy ||
+            defaultCommunicationPoliciesData.platformPolicy,
+          whatsappLink:
+            data.whatsappLink || defaultCommunicationPoliciesData.whatsappLink,
+          instagramLink:
+            data.instagramLink ||
+            defaultCommunicationPoliciesData.instagramLink,
+          tiktokLink:
+            data.tiktokLink || defaultCommunicationPoliciesData.tiktokLink,
+          facebookLink:
+            data.facebookLink || defaultCommunicationPoliciesData.facebookLink,
+          xPlatformLink:
+            data.xPlatformLink ||
+            defaultCommunicationPoliciesData.xPlatformLink,
+          emailLink:
+            data.emailLink || defaultCommunicationPoliciesData.emailLink,
+        };
+      } else {
+        console.log(
+          "⚠️ Communication policies document not found, using default data"
+        );
+        // Create document with default data
+        await setDoc(docRef, defaultCommunicationPoliciesData);
+        return defaultCommunicationPoliciesData;
+      }
+    } catch (error) {
+      console.error("❌ Error fetching communication policies:", error);
+      // Return default data on error
+      return defaultCommunicationPoliciesData;
+    }
+  };
+
+/**
+ * Save communication policies data to Firestore
+ * @param data - Communication policies data to save
+ * @returns Promise<boolean> - Success status
+ */
+export const saveCommunicationPolicies = async (
+  data: CommunicationPoliciesData
+): Promise<boolean> => {
+  try {
+    console.log("💾 Saving communication policies to Firestore...");
+
+    const docRef = doc(db, "communication-policies", "settings");
+    await setDoc(docRef, {
+      ...data,
+      updatedAt: serverTimestamp(),
+    });
+
+    console.log("✅ Communication policies saved successfully");
+    return true;
+  } catch (error) {
+    console.error("❌ Error saving communication policies:", error);
+    throw error;
+  }
+};
+
+// FAQ Types
+export interface FAQQuestion {
+  id?: string;
+  question: string;
+  answer: string;
+  userType:
+    | "company"
+    | "user"
+    | "distributer"
+    | "driver"
+    | "all"
+    | "admin"
+    | "superAdmin";
+  createdBy: string;
+  createdAt?: any;
+}
+
+/**
+ * Fetch user data from users collection by email
+ * @param email - User email address
+ * @returns Promise with user data including user_type, or null if not found
+ */
+export const fetchUserByEmail = async (email: string): Promise<any | null> => {
+  try {
+    if (!email) return null;
+
+    const usersRef = collection(db, "users");
+    const q = query(usersRef, where("email", "==", email));
+    const querySnapshot = await getDocs(q);
+
+    if (!querySnapshot.empty) {
+      const userData = querySnapshot.docs[0].data();
+      return {
+        id: querySnapshot.docs[0].id,
+        ...userData,
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error("❌ Error fetching user by email:", error);
+    return null;
+  }
+};
+
+/**
+ * Map user_type from users collection to FAQ userType
+ * @param userType - user_type from users collection
+ * @returns Mapped FAQ userType
+ */
+const mapUserTypeToFAQType = (
+  userType: string | undefined | null
+): FAQQuestion["userType"] => {
+  if (!userType) return "all";
+
+  const typeMap: Record<string, FAQQuestion["userType"]> = {
+    company: "company",
+    "service-provider": "distributer",
+    "service-distributer": "distributer",
+    station: "distributer",
+    driver: "driver",
+    user: "user",
+    individual: "user",
+    admin: "admin",
+    superadmin: "superAdmin",
+  };
+
+  return typeMap[userType.toLowerCase()] || "all";
+};
+
+/**
+ * Fetch all FAQ questions from Firestore
+ * @returns Promise with array of FAQ questions
+ */
+export const fetchFAQQuestions = async (): Promise<FAQQuestion[]> => {
+  try {
+    console.log("📋 Fetching FAQ questions from Firestore...");
+
+    const faqRef = collection(db, "faq");
+    const q = query(faqRef, orderBy("createdAt", "desc"));
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
+
+    const faqData: FAQQuestion[] = [];
+
+    querySnapshot.forEach((doc) => {
+      faqData.push({
+        id: doc.id,
+        ...doc.data(),
+      } as FAQQuestion);
+    });
+
+    console.log(
+      `✅ FAQ questions fetched successfully: ${faqData.length} questions`
+    );
+    return faqData;
+  } catch (error) {
+    console.error("❌ Error fetching FAQ questions:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get FAQ userType from user data
+ * Checks isAdmin/isSuperAdmin first, then falls back to user_type
+ * @param userData - User data from users collection
+ * @returns FAQ userType
+ */
+const getUserTypeFromUserData = (userData: any): FAQQuestion["userType"] => {
+  if (!userData) {
+    return "all";
+  }
+
+  // First check for admin flags
+  if (userData.isSuperAdmin === true) {
+    return "superAdmin";
+  }
+
+  if (userData.isAdmin === true) {
+    return "admin";
+  }
+
+  // If not admin, check user_type field
+  const userTypeFromDB = userData.user_type;
+  if (userTypeFromDB) {
+    return mapUserTypeToFAQType(userTypeFromDB);
+  }
+
+  // Default fallback
+  return "all";
+};
+
+/**
+ * Add a new FAQ question to Firestore
+ * @param data - FAQ question data (userType will be overridden by logged-in user's type)
+ * @returns Promise with the created FAQ question including document ID
+ */
+export const addFAQQuestion = async (
+  data: Omit<FAQQuestion, "id" | "createdAt" | "userType" | "createdBy"> & {
+    userType?: string;
+  }
+): Promise<FAQQuestion> => {
+  try {
+    console.log("💾 Adding new FAQ question to Firestore...");
+
+    const currentUser = auth.currentUser;
+    const userEmail = currentUser?.email;
+
+    if (!userEmail) {
+      throw new Error("No logged-in user found");
+    }
+
+    // Fetch user data from users collection
+    const userData = await fetchUserByEmail(userEmail);
+
+    if (!userData) {
+      console.warn(
+        "⚠️ User not found in users collection, using default values"
+      );
+    }
+
+    // Get userType from user data (checks isAdmin/isSuperAdmin first, then user_type)
+    const finalUserType = getUserTypeFromUserData(userData);
+
+    const createdBy = userEmail;
+
+    console.log("📋 User data:", {
+      email: userEmail,
+      isAdmin: userData?.isAdmin,
+      isSuperAdmin: userData?.isSuperAdmin,
+      user_type: userData?.user_type,
+      finalUserType: finalUserType,
+    });
+
+    const faqRef = collection(db, "faq");
+    const docRef = await addDoc(faqRef, {
+      question: data.question,
+      answer: data.answer,
+      userType: finalUserType,
+      createdBy: createdBy,
+      createdAt: serverTimestamp(),
+    });
+
+    const newQuestion: FAQQuestion = {
+      id: docRef.id,
+      question: data.question,
+      answer: data.answer,
+      userType: finalUserType,
+      createdBy: createdBy,
+    };
+
+    console.log("✅ FAQ question added successfully:", docRef.id);
+    console.log(`   User: ${createdBy}, FAQ Type: ${finalUserType}`);
+    return newQuestion;
+  } catch (error) {
+    console.error("❌ Error adding FAQ question:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update an existing FAQ question in Firestore
+ * @param id - Document ID of the FAQ question
+ * @param data - Updated FAQ question data
+ * @returns Promise<boolean> - Success status
+ */
+export const updateFAQQuestion = async (
+  id: string,
+  data: Partial<Omit<FAQQuestion, "id" | "createdAt" | "createdBy">>
+): Promise<boolean> => {
+  try {
+    console.log("💾 Updating FAQ question in Firestore...", id);
+
+    const docRef = doc(db, "faq", id);
+    await updateDoc(docRef, {
+      ...data,
+      updatedAt: serverTimestamp(),
+    });
+
+    console.log("✅ FAQ question updated successfully:", id);
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating FAQ question:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete an FAQ question from Firestore
+ * @param id - Document ID of the FAQ question
+ * @returns Promise<boolean> - Success status
+ */
+export const deleteFAQQuestion = async (id: string): Promise<boolean> => {
+  try {
+    console.log("🗑️ Deleting FAQ question from Firestore...", id);
+
+    const docRef = doc(db, "faq", id);
+    await deleteDoc(docRef);
+
+    console.log("✅ FAQ question deleted successfully:", id);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting FAQ question:", error);
+    throw error;
+  }
+};
+
+/**
+ * Seed dummy FAQ questions to Firestore
+ * This function can be called once to populate initial data
+ */
+export const seedFAQQuestions = async (): Promise<void> => {
+  try {
+    console.log("🌱 Seeding FAQ questions to Firestore...");
+
+    const currentUser = auth.currentUser;
+    const userEmail = currentUser?.email;
+
+    if (!userEmail) {
+      throw new Error("No logged-in user found for seeding");
+    }
+
+    // Fetch user data to get user_type
+    const userData = await fetchUserByEmail(userEmail);
+    const userTypeFromDB = userData?.user_type || "all";
+    const createdBy = userEmail;
+
+    const dummyQuestions: Omit<FAQQuestion, "id" | "createdAt">[] = [
+      {
+        question: "كيف يمكنني التسجيل في المنصة؟",
+        answer:
+          "يمكنك التسجيل في المنصة من خلال الضغط على زر التسجيل وإدخال بياناتك الشخصية مثل الاسم والبريد الإلكتروني ورقم الهاتف. بعد إتمام التسجيل، ستحصل على رسالة تأكيد عبر البريد الإلكتروني.",
+        userType: "all",
+        createdBy: createdBy,
+      },
+      {
+        question: "ما هي طرق الدفع المتاحة؟",
+        answer:
+          "نوفر عدة طرق للدفع تشمل الدفع النقدي عند الاستلام، والدفع عبر البطاقات الائتمانية، والدفع الإلكتروني عبر المحفظة الرقمية. يمكنك اختيار الطريقة التي تناسبك أثناء إتمام الطلب.",
+        userType: "all",
+        createdBy: createdBy,
+      },
+      {
+        question: "كيف يمكن للشركات التسجيل في النظام؟",
+        answer:
+          "يمكن للشركات التسجيل من خلال قسم الشركات في الموقع. ستحتاج إلى تقديم الوثائق القانونية للشركة مثل السجل التجاري ورخصة العمل. بعد مراجعة الطلب، سيتم تفعيل حساب الشركة.",
+        userType: "company",
+        createdBy: createdBy,
+      },
+      {
+        question: "ما هي متطلبات التسجيل للشركات؟",
+        answer:
+          "للشركات، نحتاج إلى السجل التجاري، رخصة العمل، هوية المدير المسؤول، وبطاقة ضريبية. يجب أن تكون جميع الوثائق سارية المفعول.",
+        userType: "company",
+        createdBy: createdBy,
+      },
+      {
+        question: "كيف يمكن للأفراد استخدام الخدمة؟",
+        answer:
+          "يمكن للأفراد التسجيل بسهولة من خلال التطبيق أو الموقع. بعد التسجيل، يمكنك طلب الخدمات المتاحة مثل توصيل الوقود أو الصيانة. يمكنك تتبع طلباتك من خلال لوحة التحكم.",
+        userType: "user",
+        createdBy: createdBy,
+      },
+      {
+        question: "ما هي الخدمات المتاحة للأفراد؟",
+        answer:
+          "نوفر للأفراد خدمات متعددة تشمل توصيل الوقود، صيانة المركبات، تغيير الزيوت، وخدمات الطوارئ على الطريق. يمكنك طلب أي خدمة من خلال التطبيق.",
+        userType: "user",
+        createdBy: createdBy,
+      },
+      {
+        question: "كيف يمكن لمزودي الخدمة التسجيل؟",
+        answer:
+          "يمكن لمزودي الخدمة التسجيل من خلال قسم مزودي الخدمة. يجب تقديم الوثائق المطلوبة مثل رخصة مزود الخدمة، شهادات التأهيل، وبطاقة الهوية. بعد الموافقة، سيتم تفعيل الحساب.",
+        userType: "distributer",
+        createdBy: createdBy,
+      },
+      {
+        question: "ما هي متطلبات مزودي الخدمة؟",
+        answer:
+          "يجب أن يكون مزود الخدمة حاصلاً على رخصة مزاولة المهنة، شهادات التأهيل المطلوبة، ووثائق التأمين. كما يجب أن يكون لديه فريق عمل مدرب ومعدات مناسبة.",
+        userType: "distributer",
+        createdBy: createdBy,
+      },
+      {
+        question: "كيف يمكن للسائقين استخدام التطبيق؟",
+        answer:
+          "يمكن للسائقين تحميل تطبيق السائق من متجر التطبيقات. بعد التسجيل وإدخال بيانات المركبة ورخصة القيادة، سيتم تفعيل الحساب. يمكن للسائقين بعد ذلك استقبال الطلبات وتنفيذها.",
+        userType: "driver",
+        createdBy: createdBy,
+      },
+      {
+        question: "ما هي متطلبات التسجيل للسائقين؟",
+        answer:
+          "يجب أن يكون السائق حاصلاً على رخصة قيادة سارية المفعول، وثيقة تأمين المركبة، وبطاقة الهوية. كما يجب أن تكون المركبة في حالة جيدة ومطابقة للمواصفات المطلوبة.",
+        userType: "driver",
+        createdBy: createdBy,
+      },
+    ];
+
+    const faqRef = collection(db, "faq");
+    const promises = dummyQuestions.map((question) =>
+      addDoc(faqRef, {
+        ...question,
+        createdBy: createdBy, // Override with actual user email
+        createdAt: serverTimestamp(),
+      })
+    );
+
+    await Promise.all(promises);
+    console.log(
+      `✅ Successfully seeded ${dummyQuestions.length} FAQ questions`
+    );
+    console.log(
+      `   Seeded by: ${createdBy} (user_type from users collection: ${userTypeFromDB})`
+    );
+  } catch (error) {
+    console.error("❌ Error seeding FAQ questions:", error);
     throw error;
   }
 };

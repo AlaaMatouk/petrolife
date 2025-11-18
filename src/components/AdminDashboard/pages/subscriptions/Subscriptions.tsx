@@ -1,12 +1,17 @@
 import { useState, useEffect } from "react";
-import { Rocket, Edit, CirclePlus } from "lucide-react";
+import { Rocket, Edit, CirclePlus, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Check } from "lucide-react";
-import { fetchSubscriptions } from "../../../../services/firestore";
+import {
+  fetchSubscriptions,
+  deleteSubscription,
+} from "../../../../services/firestore";
 import { LoadingSpinner } from "../../../shared";
+import { useToast } from "../../../../context/ToastContext";
 
 const Subscriptions = () => {
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [subscriptionType, setSubscriptionType] = useState<
     "monthly" | "annual"
   >("monthly");
@@ -14,27 +19,97 @@ const Subscriptions = () => {
   const [subscriptions, setSubscriptions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    subscriptionId: string | null;
+    subscriptionName: string;
+  }>({
+    isOpen: false,
+    subscriptionId: null,
+    subscriptionName: "",
+  });
 
   // Fetch subscriptions on component mount
-  useEffect(() => {
-    const loadSubscriptions = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        const data = await fetchSubscriptions();
-        console.log("📦 Loaded subscriptions:", data);
-        console.log("📦 Total subscriptions:", data.length);
-        setSubscriptions(data);
-      } catch (err: any) {
-        console.error("Error loading subscriptions:", err);
-        setError(err.message || "فشل تحميل الاشتراكات");
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  const loadSubscriptions = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const data = await fetchSubscriptions();
+      console.log("📦 Loaded subscriptions:", data);
+      console.log("📦 Total subscriptions:", data.length);
+      setSubscriptions(data);
+    } catch (err: any) {
+      console.error("Error loading subscriptions:", err);
+      setError(err.message || "فشل تحميل الاشتراكات");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
+  useEffect(() => {
     loadSubscriptions();
   }, []);
+
+  // Handle delete subscription - open confirmation popup
+  const handleDeleteClick = (
+    subscriptionId: string,
+    subscriptionName: string
+  ) => {
+    setDeleteConfirm({
+      isOpen: true,
+      subscriptionId,
+      subscriptionName,
+    });
+  };
+
+  // Confirm and delete subscription
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirm.subscriptionId) return;
+
+    try {
+      setDeletingId(deleteConfirm.subscriptionId);
+      await deleteSubscription(deleteConfirm.subscriptionId);
+      addToast({
+        title: "نجح",
+        message: "تم حذف الباقة بنجاح",
+        type: "success",
+      });
+
+      // Reload subscriptions list
+      await loadSubscriptions();
+
+      // Clear selection if deleted subscription was selected
+      if (selectedCardId === deleteConfirm.subscriptionId) {
+        setSelectedCardId(null);
+      }
+
+      // Close confirmation popup
+      setDeleteConfirm({
+        isOpen: false,
+        subscriptionId: null,
+        subscriptionName: "",
+      });
+    } catch (err: any) {
+      console.error("Error deleting subscription:", err);
+      addToast({
+        title: "خطأ",
+        message: "فشل حذف الباقة: " + (err.message || "خطأ غير معروف"),
+        type: "error",
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  // Cancel delete
+  const handleDeleteCancel = () => {
+    setDeleteConfirm({
+      isOpen: false,
+      subscriptionId: null,
+      subscriptionName: "",
+    });
+  };
 
   // Filter subscriptions by periodName (periodName.ar or periodName.en)
   const filteredSubscriptions = subscriptions.filter((sub) => {
@@ -298,17 +373,39 @@ const Subscriptions = () => {
                   </div>
                 )}
 
-                {/* Edit Icon - Bottom Left */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate(`/admin-subscriptions/${subscription.id}`);
-                  }}
-                  className="absolute bottom-4 left-4 p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                  aria-label="تعديل الباقة"
-                >
-                  <Edit className="w-5 h-5 text-[#5A66C1]" />
-                </button>
+                {/* Edit and Delete Icons - Bottom Left */}
+                <div className="absolute bottom-4 left-4 flex items-center gap-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/admin-subscriptions/${subscription.id}`);
+                    }}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    aria-label="تعديل الباقة"
+                  >
+                    <Edit className="w-5 h-5 text-[#5A66C1]" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const subscriptionName =
+                        subscription.title?.ar ||
+                        subscription.title?.en ||
+                        subscription.title ||
+                        "هذه الباقة";
+                      handleDeleteClick(subscription.id, subscriptionName);
+                    }}
+                    disabled={deletingId === subscription.id}
+                    className="p-2 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    aria-label="حذف الباقة"
+                  >
+                    {deletingId === subscription.id ? (
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-red-600"></div>
+                    ) : (
+                      <Trash2 className="w-5 h-5 text-red-600" />
+                    )}
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -319,6 +416,54 @@ const Subscriptions = () => {
       {!isLoading && !error && filteredSubscriptions.length === 0 && (
         <div className="w-full flex justify-center items-center py-12">
           <p className="text-gray-500">لا توجد اشتراكات متاحة</p>
+        </div>
+      )}
+
+      {/* Delete Confirmation Popup */}
+      {deleteConfirm.isOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          dir="rtl"
+        >
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">
+              تأكيد الحذف
+            </h3>
+            <p className="text-gray-700 mb-6">
+              هل أنت متأكد من حذف الباقة{" "}
+              <span className="font-semibold">
+                "{deleteConfirm.subscriptionName}"
+              </span>
+              ؟
+              <br />
+              <span className="text-red-600 text-sm mt-2 block">
+                هذه العملية لا يمكن التراجع عنها.
+              </span>
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={handleDeleteCancel}
+                disabled={deletingId === deleteConfirm.subscriptionId}
+                className="px-4 py-2 rounded-[10px] border-[1.5px] border-solid border-gray-300 text-gray-700 bg-white hover:bg-gray-50 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={deletingId === deleteConfirm.subscriptionId}
+                className="px-4 py-2 rounded-[10px] bg-red-600 hover:bg-red-700 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {deletingId === deleteConfirm.subscriptionId ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    جاري الحذف...
+                  </>
+                ) : (
+                  "حذف"
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

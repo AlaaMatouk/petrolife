@@ -1,10 +1,13 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { MoveLeft, CirclePlus, Sheet, Upload } from "lucide-react";
+import { MoveLeft, CirclePlus, Sheet, Upload, X, ChevronLeft } from "lucide-react";
 import { useForm } from "../../../../hooks/useForm";
-import { Select, RadioGroup } from "../../../../components/shared/Form";
+import { Select, RadioGroup, Input } from "../../../../components/shared/Form";
 import { Car, CarFront, Truck } from "lucide-react";
 import { Loader2 } from "lucide-react";
+import { createCarType, fetchCarModels, createCarModel } from "../../../../services/firestore";
+import { useToast } from "../../../../context/ToastContext";
+import { createPortal } from "react-dom";
 
 const initialValues = {
   fuelType: "بنزين 91",
@@ -58,11 +61,125 @@ const VehicleDetailsSection = () => {
 const AddVehicle = () => {
   const form = useForm(initialValues);
   const navigate = useNavigate();
+  const { addToast } = useToast();
+  const [brandOptions, setBrandOptions] = useState<
+    { value: string; label: string }[]
+  >([]);
+  const [isLoadingBrands, setIsLoadingBrands] = useState(true);
+  const [showAddBrandModal, setShowAddBrandModal] = useState(false);
+  const [newBrandForm, setNewBrandForm] = useState({
+    nameAr: "",
+    nameEn: "",
+  });
+  const [isSubmittingBrand, setIsSubmittingBrand] = useState(false);
+
+  // Function to load car models
+  const loadCarModels = async () => {
+    setIsLoadingBrands(true);
+    try {
+      const carModels = await fetchCarModels();
+      const brands = carModels
+        .map((carModel) => {
+          const nameAr = carModel.name?.ar;
+          if (nameAr && typeof nameAr === "string" && nameAr.trim()) {
+            return {
+              value: nameAr.trim(),
+              label: nameAr.trim(),
+            };
+          }
+          return null;
+        })
+        .filter(
+          (brand): brand is { value: string; label: string } => brand !== null
+        )
+        .sort((a, b) => a.label.localeCompare(b.label)); // Sort alphabetically
+
+      // Remove duplicates
+      const uniqueBrands = Array.from(
+        new Map(brands.map((brand) => [brand.value, brand])).values()
+      );
+
+      // Add "Add new brand" option at the end
+      const brandsWithAddOption = [
+        ...uniqueBrands,
+        {
+          value: "__ADD_NEW_BRAND__",
+          label: "إضافة ماركة جديدة",
+        },
+      ];
+
+      setBrandOptions(brandsWithAddOption);
+    } catch (error) {
+      console.error("Error loading car models:", error);
+      addToast({
+        type: "error",
+        title: "خطأ",
+        message: "فشل في تحميل قائمة الماركات",
+      });
+    } finally {
+      setIsLoadingBrands(false);
+    }
+  };
+
+  // Fetch car-models on component mount
+  useEffect(() => {
+    loadCarModels();
+  }, [addToast]);
+
+  // Handle add new brand
+  const handleAddBrand = async () => {
+    if (!newBrandForm.nameAr.trim()) {
+      addToast({
+        type: "error",
+        title: "بيانات ناقصة",
+        message: "يرجى إدخال اسم الماركة بالعربي",
+      });
+      return;
+    }
+
+    setIsSubmittingBrand(true);
+    try {
+      await createCarModel({
+        name: {
+          ar: newBrandForm.nameAr.trim(),
+          en: newBrandForm.nameEn.trim() || newBrandForm.nameAr.trim(),
+        },
+      });
+
+      const newBrandName = newBrandForm.nameAr.trim();
+
+      addToast({
+        type: "success",
+        title: "تم الإضافة",
+        message: "تم إضافة الماركة بنجاح",
+      });
+
+      // Reset form and close modal
+      setNewBrandForm({ nameAr: "", nameEn: "" });
+      setShowAddBrandModal(false);
+
+      // Reload brands list
+      await loadCarModels();
+
+      // Set the newly added brand as selected
+      form.setFieldValue("brand", newBrandName);
+    } catch (error: any) {
+      console.error("Error adding brand:", error);
+      addToast({
+        type: "error",
+        title: "خطأ",
+        message:
+          error?.message || "حدث خطأ أثناء إضافة الماركة. يرجى المحاولة مرة أخرى",
+      });
+    } finally {
+      setIsSubmittingBrand(false);
+    }
+  };
 
   const fuelTypes = [
-    { id: "diesel", label: "ديزل" },
-    { id: "petrol95", label: "بنزين 95" },
-    { id: "petrol91", label: "بنزين 91" },
+    { id: "ديزل", label: "ديزل" },
+    { id: "بنزين 95", label: "بنزين 95" },
+    { id: "بنزين 91", label: "بنزين 91" },
   ];
 
   const carTypes = [
@@ -93,22 +210,6 @@ const AddVehicle = () => {
     return { value: year.toString(), label: year.toString() };
   });
 
-  const modelOptions = [
-    { value: "كرولا", label: "كرولا" },
-    { value: "كامري", label: "كامري" },
-    { value: "أكورد", label: "أكورد" },
-    { value: "سيفيك", label: "سيفيك" },
-    { value: "سوناتا", label: "سوناتا" },
-  ];
-
-  const brandOptions = [
-    { value: "تيوتا", label: "تيوتا" },
-    { value: "هوندا", label: "هوندا" },
-    { value: "نيسان", label: "نيسان" },
-    { value: "هيونداي", label: "هيونداي" },
-    { value: "كيا", label: "كيا" },
-  ];
-
   const handleFileUpload = () => {
     const input = document.createElement("input");
     input.type = "file";
@@ -122,28 +223,58 @@ const AddVehicle = () => {
     input.click();
   };
 
+  // Map fuel type from Arabic label to value
+  const mapFuelType = (fuelTypeLabel: string): string => {
+    const fuelTypeMap: { [key: string]: string } = {
+      "بنزين 91": "fuel91",
+      "بنزين 95": "fuel95",
+      "ديزل": "diesel",
+      petrol91: "fuel91",
+      petrol95: "fuel95",
+      diesel: "diesel",
+    };
+    return fuelTypeMap[fuelTypeLabel] || fuelTypeLabel;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    console.log("Form values:", form.values);
+    // Validate required fields
+    if (!form.values.brand || !form.values.model || !form.values.year) {
+      addToast({
+        type: "error",
+        title: "بيانات ناقصة",
+        message: "يرجى إدخال الماركة والطراز وسنة الاصدار",
+      });
+      return;
+    }
 
     form.setIsSubmitting(true);
 
     try {
-      // Prepare car data
-      const carData = {
-        fuelType: form.values.fuelType,
-        carType: form.values.carType,
+      // Prepare car-type data
+      const carTypeData = {
+        name: {
+          ar: form.values.model,
+        },
+        carModel: {
+          name: {
+            ar: form.values.brand,
+          },
+        },
         year: form.values.year,
-        model: form.values.model,
-        brand: form.values.brand,
-        logo: form.values.logo,
+        fuelType: mapFuelType(form.values.fuelType),
+        imageFile: form.values.logo,
       };
 
-      console.log("Submitting car data:", carData);
+      // Create car-type in Firestore
+      await createCarType(carTypeData);
 
-      // TODO: Add car to Firestore or API
-      // await addAdminCar(carData);
+      addToast({
+        type: "success",
+        title: "تم الإضافة",
+        message: "تم إضافة المركبة بنجاح",
+      });
 
       // Reset form
       form.resetForm();
@@ -154,7 +285,12 @@ const AddVehicle = () => {
       }, 1000);
     } catch (error: any) {
       console.error("Error adding car:", error);
-      // TODO: Show error toast
+      addToast({
+        type: "error",
+        title: "خطأ",
+        message:
+          error?.message || "حدث خطأ أثناء إضافة المركبة. يرجى المحاولة مرة أخرى",
+      });
     } finally {
       form.setIsSubmitting(false);
     }
@@ -173,7 +309,7 @@ const AddVehicle = () => {
         >
           <div className="flex flex-col items-start gap-2.5 relative self-stretch w-full flex-[0_0_auto]">
             <div className="flex flex-col items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
-              {/* Row 1: Logo upload, Brand, Model */}
+              {/* Row 1: Logo, Vehicle Type, Fuel Type (right to left) */}
               <div className="flex items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
                 {/* Logo Upload */}
                 <div className="flex flex-col items-end gap-[var(--corner-radius-extra-small)] relative flex-1 grow">
@@ -197,36 +333,6 @@ const AddVehicle = () => {
                   </button>
                 </div>
 
-                <Select
-                  label="الماركة"
-                  value={form.values.brand}
-                  onChange={(value) => form.setFieldValue("brand", value)}
-                  error={form.errors.brand}
-                  required={true}
-                  options={brandOptions}
-                />
-
-                <Select
-                  label="الطراز"
-                  value={form.values.model}
-                  onChange={(value) => form.setFieldValue("model", value)}
-                  error={form.errors.model}
-                  required={true}
-                  options={modelOptions}
-                />
-              </div>
-
-              {/* Row 2: Year, Vehicle Type, Fuel Type */}
-              <div className="flex items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
-                <Select
-                  label="سنة الاصدار"
-                  value={form.values.year}
-                  onChange={(value) => form.setFieldValue("year", value)}
-                  error={form.errors.year}
-                  required={true}
-                  options={yearOptions}
-                />
-
                 <RadioGroup
                   label="نوع السيارة"
                   value={form.values.carType}
@@ -243,6 +349,95 @@ const AddVehicle = () => {
                   error={form.errors.fuelType}
                   required={true}
                   options={fuelTypes}
+                />
+              </div>
+
+              {/* Row 2: Brand, Model, Year (right to left) */}
+              <div className="flex items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
+                <div className="flex flex-col items-end gap-[var(--corner-radius-extra-small)] relative flex-1 grow">
+                  <label className="self-stretch mt-[-1.00px] font-[number:var(--body-body-2-font-weight)] text-[var(--form-active-label-color)] tracking-[var(--body-body-2-letter-spacing)] relative font-body-body-2 text-[length:var(--body-body-2-font-size)] leading-[var(--body-body-2-line-height)] [direction:rtl] [font-style:var(--body-body-2-font-style)]">
+                    الماركة
+                    <span className="text-red-500 mr-1">*</span>
+                  </label>
+                  <div className="relative w-full">
+                    <div
+                      className={`flex h-[46px] items-center justify-end gap-[var(--corner-radius-small)] pt-[var(--corner-radius-small)] pr-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] pl-[var(--corner-radius-small)] relative self-stretch w-full rounded-[var(--corner-radius-small)] border-[0.5px] border-solid transition-colors ${
+                        form.errors.brand
+                          ? "border-red-500 bg-red-50"
+                          : "border-color-mode-text-icons-t-placeholder hover:border-color-mode-text-icons-t-sec focus-within:border-color-mode-text-icons-t-blue"
+                      }`}
+                    >
+                      <ChevronLeft className="w-4 h-4 text-gray-500 absolute left-2 top-1/2 -translate-y-1/2" />
+                      <div className="flex items-center justify-end pt-[3px] pb-0 px-0 relative flex-1 grow">
+                        <select
+                          value={
+                            form.values.brand === "__ADD_NEW_BRAND__"
+                              ? ""
+                              : form.values.brand
+                          }
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            if (value === "__ADD_NEW_BRAND__") {
+                              setShowAddBrandModal(true);
+                              form.setFieldValue("brand", "");
+                            } else {
+                              form.setFieldValue("brand", value);
+                            }
+                          }}
+                          disabled={isLoadingBrands}
+                          className={`text-right relative pr-2 pl-7 w-full mt-[-1.00px] font-body-body-2 font-[number:var(--body-body-2-font-weight)] text-[length:var(--body-body-2-font-size)] text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] [font-style:var(--body-body-2-font-style)] bg-transparent border-none outline-none ${
+                            form.errors.brand
+                              ? "text-red-500"
+                              : "text-[var(--form-active-input-text-color)]"
+                          }`}
+                        >
+                          <option value="" disabled>
+                            {isLoadingBrands ? "جاري التحميل..." : "اختر الماركة"}
+                          </option>
+                          {brandOptions.map((option) => (
+                            <option
+                              key={option.value}
+                              value={option.value}
+                              className={
+                                option.value === "__ADD_NEW_BRAND__"
+                                  ? "text-[#5A66C1] font-medium"
+                                  : ""
+                              }
+                            >
+                              {option.value === "__ADD_NEW_BRAND__"
+                                ? `+ ${option.label}`
+                                : option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    {form.errors.brand && (
+                      <div className="absolute top-full left-0 right-0 mt-1 px-2">
+                        <p className="text-red-500 text-xs font-medium [direction:rtl] text-right">
+                          {form.errors.brand}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <Input
+                  label="الطراز"
+                  value={form.values.model}
+                  onChange={(value) => form.setFieldValue("model", value)}
+                  error={form.errors.model}
+                  required={true}
+                  placeholder="اكتب الطراز هنا"
+                />
+
+                <Select
+                  label="سنة الاصدار"
+                  value={form.values.year}
+                  onChange={(value) => form.setFieldValue("year", value)}
+                  error={form.errors.year}
+                  required={true}
+                  options={yearOptions}
                 />
               </div>
 
@@ -268,6 +463,89 @@ const AddVehicle = () => {
           </div>
         </form>
       </div>
+
+      {/* Add Brand Modal */}
+      {showAddBrandModal &&
+        createPortal(
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm px-4">
+            <div className="bg-white rounded-[var(--corner-radius-large)] w-full max-w-md shadow-2xl border border-gray-200">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <CirclePlus className="w-5 h-5 text-[#5A66C1]" />
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    إضافة ماركة جديدة
+                  </h2>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowAddBrandModal(false);
+                    setNewBrandForm({ nameAr: "", nameEn: "" });
+                  }}
+                  className="w-9 h-9 rounded-full hover:bg-gray-100 flex items-center justify-center transition-colors"
+                  aria-label="إغلاق"
+                >
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="px-5 py-4 space-y-4" dir="rtl">
+                <Input
+                  label="اسم الماركة بالعربي"
+                  value={newBrandForm.nameAr}
+                  onChange={(value) =>
+                    setNewBrandForm((prev) => ({ ...prev, nameAr: value }))
+                  }
+                  placeholder="الماركة بالعربي هنا"
+                  required={true}
+                />
+
+                <Input
+                  label="اسم الماركة بالانجليزي"
+                  value={newBrandForm.nameEn}
+                  onChange={(value) =>
+                    setNewBrandForm((prev) => ({ ...prev, nameEn: value }))
+                  }
+                  placeholder="الماركة بالانجليزي هنا"
+                />
+              </div>
+
+              {/* Modal Footer */}
+              <div
+                className="flex items-center justify-between px-5 py-4 border-t border-gray-100 gap-3"
+                dir="rtl"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddBrandModal(false);
+                    setNewBrandForm({ nameAr: "", nameEn: "" });
+                  }}
+                  className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
+                >
+                  رجوع
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddBrand}
+                  disabled={isSubmittingBrand}
+                  className={`px-4 py-2 rounded-lg text-white font-medium transition-colors flex items-center gap-2 ${
+                    isSubmittingBrand
+                      ? "bg-gray-400 cursor-not-allowed"
+                      : "bg-[#5A66C1] hover:bg-[#4A5AB1]"
+                  }`}
+                >
+                  {isSubmittingBrand && (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  )}
+                  إضافة الماركة
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

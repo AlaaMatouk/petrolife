@@ -1,13 +1,18 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Input, Select } from "../../../shared/Form";
 import { Calendar, ArrowLeft, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { useToast } from "../../../../context/ToastContext";
-import { createCouponWithSchema } from "../../../../services/firestore";
+import { createCouponWithSchema, fetchCouponById } from "../../../../services/firestore";
+import { doc, updateDoc } from "firebase/firestore";
+import { db } from "../../../../config/firebase";
 
 const AddPetrolifeCoupon = () => {
   const navigate = useNavigate();
   const { addToast } = useToast();
+  const [searchParams] = useSearchParams();
+  const editId = searchParams.get("edit");
+  const isEditMode = !!editId;
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [form, setForm] = useState({
     discountCode: "",
@@ -18,6 +23,7 @@ const AddPetrolifeCoupon = () => {
     beneficiary: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const calendarRef = useRef<HTMLDivElement | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
 
@@ -36,6 +42,60 @@ const AddPetrolifeCoupon = () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isCalendarOpen]);
+
+  // Load coupon data when in edit mode
+  useEffect(() => {
+    const loadCouponData = async () => {
+      if (!isEditMode || !editId) return;
+
+      try {
+        setIsLoading(true);
+        const couponData = await fetchCouponById(editId);
+
+        // Format expiration date
+        let expirationDate = "";
+        if (couponData?.expireDate) {
+          if (couponData.expireDate?.seconds) {
+            const date = new Date(couponData.expireDate.seconds * 1000);
+            expirationDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+          } else if (typeof couponData.expireDate === "string") {
+            expirationDate = couponData.expireDate;
+          }
+        }
+
+        // Format beneficiary
+        let beneficiary = "";
+        if (couponData?.beneficiary) {
+          beneficiary = String(couponData.beneficiary);
+        } else if (couponData?.isCompany === true) {
+          beneficiary = "شركات";
+        } else if (couponData?.isCompany === false) {
+          beneficiary = "افراد";
+        }
+
+        // Populate form data
+        setForm({
+          discountCode: couponData?.code || couponData?.discountCode || "",
+          discountPercentage: String(couponData?.percentage || couponData?.precentage || couponData?.discountPercentage || "0"),
+          capacity: String(couponData?.capacity || couponData?.limit || couponData?.usageLimit || couponData?.minmumValueToApplyCoupon || "0"),
+          expirationDate: expirationDate,
+          categories: couponData?.categories || couponData?.specificCategories || couponData?.category || couponData?.allowedCategories || "",
+          beneficiary: beneficiary,
+        });
+      } catch (error: any) {
+        console.error("Error loading coupon data:", error);
+        addToast({
+          type: "error",
+          title: "خطأ",
+          message: "فشل في تحميل بيانات الكوبون. يرجى المحاولة مرة أخرى.",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadCouponData();
+  }, [isEditMode, editId, addToast]);
 
   useEffect(() => {
     if (form.expirationDate) {
@@ -205,7 +265,7 @@ const AddPetrolifeCoupon = () => {
       addToast({
         type: "error",
         title: "كود الخصم مطلوب",
-        message: "يرجى إدخال كود الخصم قبل متابعة الإضافة.",
+        message: `يرجى إدخال كود الخصم قبل متابعة ${isEditMode ? "التعديل" : "الإضافة"}.`,
       });
       return;
     }
@@ -214,7 +274,7 @@ const AddPetrolifeCoupon = () => {
       addToast({
         type: "error",
         title: "نسبة الخصم مطلوبة",
-        message: "يرجى إدخال نسبة الخصم قبل متابعة الإضافة.",
+        message: `يرجى إدخال نسبة الخصم قبل متابعة ${isEditMode ? "التعديل" : "الإضافة"}.`,
       });
       return;
     }
@@ -272,27 +332,43 @@ const AddPetrolifeCoupon = () => {
         beneficiary: beneficiaryValue || null,
         isCompany,
         capacity: parsedCapacity,
-        numberOfUsers: null,
-        usage: null,
       };
 
-      await createCouponWithSchema(payload);
+      if (isEditMode && editId) {
+        // Update existing coupon
+        const couponDocRef = doc(db, "coupons", editId);
+        await updateDoc(couponDocRef, payload);
 
-      addToast({
-        type: "success",
-        title: "تمت الإضافة",
-        message: "تم إضافة الكوبون الجديد بنجاح.",
-      });
+        addToast({
+          type: "success",
+          title: "تم التعديل",
+          message: "تم تعديل بيانات الكوبون بنجاح.",
+        });
+      } else {
+        // Create new coupon
+        await createCouponWithSchema({
+          ...payload,
+          numberOfUsers: null,
+          usage: null,
+        });
 
-      resetForm();
+        addToast({
+          type: "success",
+          title: "تمت الإضافة",
+          message: "تم إضافة الكوبون الجديد بنجاح.",
+        });
+
+        resetForm();
+      }
+
       setTimeout(() => navigate(-1), 600);
     } catch (error: any) {
-      console.error("Error adding coupon:", error);
+      console.error(`Error ${isEditMode ? "updating" : "adding"} coupon:`, error);
       addToast({
         type: "error",
         title: "خطأ",
         message:
-          error?.message || "حدث خطأ أثناء إضافة الكوبون. يرجى المحاولة مرة أخرى.",
+          error?.message || `حدث خطأ أثناء ${isEditMode ? "تعديل" : "إضافة"} الكوبون. يرجى المحاولة مرة أخرى.`,
       });
     } finally {
       setIsSubmitting(false);
@@ -325,16 +401,22 @@ const AddPetrolifeCoupon = () => {
         <div className="flex items-center justify-between w-full">
           {/* Title on the right */}
           <div className="flex items-center gap-2">
-            <span className="text-2xl">➕</span>
+            <span className="text-2xl">{isEditMode ? "✏️" : "➕"}</span>
             <h1 className="text-[length:var(--subtitle-subtitle-2-font-size)] font-[number:var(--subtitle-subtitle-2-font-weight)] text-color-mode-text-icons-t-sec">
-              إضافة كوبون جديد
+              {isEditMode ? "تعديل بيانات الكوبون" : "إضافة كوبون جديد"}
             </h1>
           </div>
 
           {/* Back button on the left */}
           <button
             type="button"
-            onClick={() => navigate(-1)}
+            onClick={() => {
+              if (isEditMode && editId) {
+                navigate(`/petrolife-coupons/${editId}`);
+              } else {
+                navigate(-1);
+              }
+            }}
             aria-label="رجوع"
             className="inline-flex h-10 items-center gap-[var(--corner-radius-medium)] relative flex-[0_0_auto]"
           >
@@ -427,11 +509,11 @@ const AddPetrolifeCoupon = () => {
         <div className="w-full flex justify-end">
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || isLoading}
             className="px-5 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors disabled:bg-[#5A66C1]/60 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-            إضافة الكوبون
+            {(isSubmitting || isLoading) && <Loader2 className="w-4 h-4 animate-spin" />}
+            {isEditMode ? "حفظ التعديلات" : "إضافة الكوبون"}
           </button>
         </div>
       </div>

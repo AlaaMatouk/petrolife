@@ -8,22 +8,22 @@ import { useNavigate } from "react-router-dom";
 import { fetchCompaniesDrivers } from "../../../../services/firestore";
 import { exportDataTable } from "../../../../services/exportService";
 import { useToast } from "../../../../context/ToastContext";
-import { 
-  UserRound, 
-  CirclePlus, 
-  Download, 
-  MoreVertical, 
-  ChevronDown, 
-  ChevronUp, 
-  Car, 
-  Truck, 
-  CarFront, 
-  FileSpreadsheet, 
+import {
+  UserRound,
+  CirclePlus,
+  Download,
+  MoreVertical,
+  ChevronDown,
+  ChevronUp,
+  Car,
+  Truck,
+  CarFront,
+  FileSpreadsheet,
   FileText,
   Download as DownloadIcon,
   Trash2,
   User,
-  SlidersHorizontal
+  SlidersHorizontal,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 
@@ -50,24 +50,24 @@ const calculateDriverStats = (drivers: Driver[]) => {
     small: 0,
   };
 
-  drivers.forEach(driver => {
+  drivers.forEach((driver) => {
     const category = driver.carCategory?.text;
     if (!category) return;
-    
+
     // Handle VIP (case-insensitive)
-    if (category.toUpperCase() === 'VIP') {
+    if (category.toUpperCase() === "VIP") {
       stats.vip++;
-    } 
+    }
     // Handle كبيرة (big/large)
-    else if (category === 'كبيرة') {
+    else if (category === "كبيرة") {
       stats.large++;
-    } 
+    }
     // Handle متوسطة (middle/medium)
-    else if (category === 'متوسطة') {
+    else if (category === "متوسطة") {
       stats.medium++;
-    } 
+    }
     // Handle صغيرة (small)
-    else if (category === 'صغيرة') {
+    else if (category === "صغيرة") {
       stats.small++;
     }
   });
@@ -78,36 +78,36 @@ const calculateDriverStats = (drivers: Driver[]) => {
       count: stats.vip.toString(),
       icon: <Car className="w-6 h-6 text-purple-600" />,
       iconBgColor: "bg-purple-100",
-      iconBorderColor: "border-purple-300"
+      iconBorderColor: "border-purple-300",
     },
     {
       title: "سائقي السيارات الكبيرة",
       count: stats.large.toString(),
       icon: <Truck className="w-6 h-6 text-blue-600" />,
       iconBgColor: "bg-blue-100",
-      iconBorderColor: "border-blue-300"
+      iconBorderColor: "border-blue-300",
     },
     {
       title: "سائقي السيارات المتوسطة",
       count: stats.medium.toString(),
       icon: <CarFront className="w-6 h-6 text-orange-600" />,
       iconBgColor: "bg-orange-100",
-      iconBorderColor: "border-orange-300"
+      iconBorderColor: "border-orange-300",
     },
     {
       title: "سائقي السيارات الصغيرة",
       count: stats.small.toString(),
       icon: <Car className="w-6 h-6 text-green-600" />,
       iconBgColor: "bg-green-100",
-      iconBorderColor: "border-green-300"
+      iconBorderColor: "border-green-300",
     },
   ];
 };
 
 // Helper function to safely get value or return "-"
 const getValueOrDash = (value: any): string => {
-  if (value === null || value === undefined || value === '') {
-    return '-';
+  if (value === null || value === undefined || value === "") {
+    return "-";
   }
   return String(value);
 };
@@ -115,12 +115,12 @@ const getValueOrDash = (value: any): string => {
 // Helper function to get car size text in Arabic
 const getCarSizeText = (size: string): string => {
   const sizeMap: { [key: string]: string } = {
-    'small': 'صغيرة',
-    'medium': 'متوسطة',
-    'middle': 'متوسطة',
-    'large': 'كبيرة',
-    'big': 'كبيرة',
-    'vip': 'VIP',
+    small: "صغيرة",
+    medium: "متوسطة",
+    middle: "متوسطة",
+    large: "كبيرة",
+    big: "كبيرة",
+    vip: "VIP",
   };
   return sizeMap[size?.toLowerCase()] || getValueOrDash(size);
 };
@@ -128,9 +128,9 @@ const getCarSizeText = (size: string): string => {
 // Helper function to get fuel type text in Arabic
 const getFuelTypeText = (fuelType: string): string => {
   const fuelMap: { [key: string]: string } = {
-    'fuel91': 'بنزين 91',
-    'fuel95': 'بنزين 95',
-    'diesel': 'ديزل',
+    fuel91: "بنزين 91",
+    fuel95: "بنزين 95",
+    diesel: "ديزل",
   };
   return fuelMap[fuelType?.toLowerCase()] || getValueOrDash(fuelType);
 };
@@ -140,43 +140,57 @@ const convertFirestoreToDrivers = (firestoreData: any[]): Driver[] => {
   return firestoreData.map((driver, index) => {
     // Extract car size from plan.carSize or size
     const carSize = driver.plan?.carSize || driver.size || driver.car?.size;
-    
+
     // Extract plate number (prefer Arabic)
-    const plateNumber = driver.plateNumber?.ar || driver.plateNumber?.en || driver.car?.plateNumber?.ar || driver.car?.plateNumber?.en;
-    
+    const plateNumber =
+      driver.plateNumber?.ar ||
+      driver.plateNumber?.en ||
+      driver.car?.plateNumber?.ar ||
+      driver.car?.plateNumber?.en;
+
     // Extract city/address (prefer Arabic)
-    const cityName = driver.city?.name?.ar || driver.city?.name?.en || driver.location;
-    
+    const cityName =
+      driver.city?.name?.ar || driver.city?.name?.en || driver.location;
+
     // Extract fuel type
     const fuelType = driver.fuelType || driver.car?.fuelType;
-    
+
     // Extract financial values
     const balance = driver.balance;
     const dailyLimit = driver.plan?.dailyTrans;
-    const financialValue = balance && dailyLimit 
-      ? `${balance} / ${dailyLimit}`
-      : balance 
+    const financialValue =
+      balance && dailyLimit
+        ? `${balance} / ${dailyLimit}`
+        : balance
         ? String(balance)
-        : dailyLimit 
-          ? String(dailyLimit)
-          : '-';
-    
+        : dailyLimit
+        ? String(dailyLimit)
+        : "-";
+
     return {
       id: driver.id || index + 1,
       driverCode: getValueOrDash(driver.id || driver.code),
-      driverName: getValueOrDash(driver.name || driver.driverName || driver.fullName),
-      phone: getValueOrDash(driver.phone || driver.phoneNumber || driver.mobile || driver.email),
+      driverName: getValueOrDash(
+        driver.name || driver.driverName || driver.fullName
+      ),
+      phone: getValueOrDash(
+        driver.phone || driver.phoneNumber || driver.mobile || driver.email
+      ),
       address: getValueOrDash(cityName),
       fuelType: getFuelTypeText(fuelType),
       financialValue: financialValue,
       carNumber: getValueOrDash(plateNumber),
       carCategory: {
         text: getCarSizeText(carSize),
-        icon: null
+        icon: null,
       },
       accountStatus: {
-        active: driver.isActive ?? driver.accountStatus?.active ?? driver.status === 'active' ?? true,
-        text: driver.isActive ? 'مفعل' : 'معطل'
+        active:
+          driver.isActive ??
+          driver.accountStatus?.active ??
+          driver.status === "active" ??
+          true,
+        text: driver.isActive ? "مفعل" : "معطل",
       },
     };
   });
@@ -193,7 +207,10 @@ const convertMockDataToDrivers = (mockData: any[]): Driver[] => {
     fuelType: driver.fuelType || "بنزين 91",
     financialValue: driver.financialValue || "1600 / 1400",
     carNumber: driver.carNumber || "2145224",
-    carCategory: driver.carCategory || { text: "صغيرة", icon: "/img/component-4-11.svg" },
+    carCategory: driver.carCategory || {
+      text: "صغيرة",
+      icon: "/img/component-4-11.svg",
+    },
     accountStatus: driver.accountStatus || { active: true, text: "مفعل" },
   }));
 };
@@ -207,7 +224,7 @@ const ActionMenu = ({ driver }: { driver: Driver }) => {
 
   const handleAction = (action: string) => {
     console.log(`${action} clicked for driver:`, driver.driverCode);
-    if (action === 'view') {
+    if (action === "view") {
       navigate(`/driver/${driver.id}`);
     }
     setIsOpen(false);
@@ -215,40 +232,40 @@ const ActionMenu = ({ driver }: { driver: Driver }) => {
 
   const updateMenuPosition = () => {
     if (!buttonRef) return;
-    
+
     const rect = buttonRef.getBoundingClientRect();
     const menuWidth = 192; // 48 * 4 (w-48 = 12rem = 192px)
     const viewportWidth = window.innerWidth;
-    
+
     // Calculate position to the right of the icon
     let left = rect.right + 4;
-    
+
     // If menu would go off-screen to the right, position it to the left of the icon
     if (left + menuWidth > viewportWidth) {
       left = rect.left - menuWidth - 4;
     }
-    
+
     const newPosition = {
       top: rect.bottom + 4, // Position below the button
-      left: Math.max(4, left) // Ensure it doesn't go off-screen to the left
+      left: Math.max(4, left), // Ensure it doesn't go off-screen to the left
     };
-    
+
     setMenuPosition(newPosition);
   };
 
   useEffect(() => {
     if (isOpen) {
       updateMenuPosition();
-      
+
       const handleScroll = () => updateMenuPosition();
       const handleResize = () => updateMenuPosition();
-      
-      window.addEventListener('scroll', handleScroll);
-      window.addEventListener('resize', handleResize);
-      
+
+      window.addEventListener("scroll", handleScroll);
+      window.addEventListener("resize", handleResize);
+
       return () => {
-        window.removeEventListener('scroll', handleScroll);
-        window.removeEventListener('resize', handleResize);
+        window.removeEventListener("scroll", handleScroll);
+        window.removeEventListener("resize", handleResize);
       };
     }
   }, [isOpen, buttonRef]);
@@ -270,32 +287,32 @@ const ActionMenu = ({ driver }: { driver: Driver }) => {
             className="fixed inset-0 z-40"
             onClick={() => setIsOpen(false)}
           />
-          
+
           {createPortal(
-            <div 
+            <div
               className="fixed w-48 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden"
               style={{
                 top: `${menuPosition.top}px`,
-                left: `${menuPosition.left}px`
+                left: `${menuPosition.left}px`,
               }}
             >
               <div className="py-1">
                 <button
-                  onClick={() => handleAction('view')}
+                  onClick={() => handleAction("view")}
                   className="w-full px-4 py-2 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-2 transition-colors"
                 >
                   <span>معلومات السائق</span>
                   <User className="w-4 h-4 text-gray-500" />
                 </button>
                 <button
-                  onClick={() => handleAction('export')}
+                  onClick={() => handleAction("export")}
                   className="w-full px-4 py-2 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-2 transition-colors"
                 >
                   <span>تصدير البيانات</span>
                   <DownloadIcon className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={() => handleAction('delete')}
+                  onClick={() => handleAction("delete")}
                   className="w-full px-4 py-2 text-right text-sm text-red-600 hover:bg-red-50 flex items-center justify-end gap-2 transition-colors"
                 >
                   <span>حذف السائق</span>
@@ -318,82 +335,82 @@ const ExportMenu = ({ drivers }: { drivers: Driver[] }) => {
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const { addToast } = useToast();
 
-  const handleExport = async (format: 'excel' | 'pdf') => {
+  const handleExport = async (format: "excel" | "pdf") => {
     setIsOpen(false);
-    
+
     try {
       // Define columns for export (excluding actions column)
       const exportColumns = [
-        { key: 'driverCode', label: 'كود السائق' },
-        { key: 'driverName', label: 'اسم السائق' },
-        { key: 'phone', label: 'رقم الهاتف' },
-        { key: 'address', label: 'العنوان' },
-        { key: 'fuelType', label: 'نوع الوقود' },
-        { key: 'financialValue', label: 'القيمة المالية' },
-        { key: 'carNumber', label: 'رقم السيارة' },
-        { key: 'carCategory', label: 'تصنيف السيارة' },
-        { key: 'accountStatus', label: 'حالة الحساب' },
+        { key: "driverCode", label: "كود السائق" },
+        { key: "driverName", label: "اسم السائق" },
+        { key: "phone", label: "رقم الهاتف" },
+        { key: "address", label: "العنوان" },
+        { key: "fuelType", label: "نوع الوقود" },
+        { key: "financialValue", label: "القيمة المالية" },
+        { key: "carNumber", label: "رقم السيارة" },
+        { key: "carCategory", label: "تصنيف السيارة" },
+        { key: "accountStatus", label: "حالة الحساب" },
       ];
 
       await exportDataTable(
         drivers,
         exportColumns,
-        'drivers-report',
+        "drivers-report",
         format,
-        'تقرير السائقين'
+        "تقرير السائقين"
       );
 
       addToast({
-        title: 'نجح التصدير',
+        title: "نجح التصدير",
         message: `تم تصدير بيانات السائقين بنجاح`,
-        type: 'success',
+        type: "success",
       });
     } catch (error) {
-      console.error('Export error:', error);
+      console.error("Export error:", error);
       addToast({
-        title: 'فشل التصدير',
-        message: 'حدث خطأ أثناء تصدير البيانات',
-        type: 'error',
+        title: "فشل التصدير",
+        message: "حدث خطأ أثناء تصدير البيانات",
+        type: "error",
       });
     }
   };
 
   const updateMenuPosition = () => {
     if (!buttonRef) return;
-    
+
     const rect = buttonRef.getBoundingClientRect();
     const menuWidth = 150;
     const viewportWidth = window.innerWidth;
-    
+
     // Calculate position to the right of the button
     let left = rect.right + 4;
-    
+
     // If menu would go off-screen to the right, position it to the left of the button
     if (left + menuWidth > viewportWidth) {
       left = rect.left - menuWidth - 4;
     }
-    
+
     const newPosition = {
       top: rect.bottom + 4, // Position below the button
-      left: Math.max(4, left) // Ensure it doesn't go off-screen to the left
+      left: Math.max(4, left), // Ensure it doesn't go off-screen to the left
     };
-    
+
     setMenuPosition(newPosition);
   };
 
   useEffect(() => {
     if (isOpen) {
       updateMenuPosition();
-      
+
       const handleScroll = () => updateMenuPosition();
       const handleResize = () => updateMenuPosition();
-      
-      window.addEventListener('scroll', handleScroll);
-      window.addEventListener('resize', handleResize);
-      
+
+      window.addEventListener("scroll", handleScroll);
+      window.addEventListener("resize", handleResize);
+
       return () => {
-        window.removeEventListener('scroll', handleScroll);
-        window.removeEventListener('resize', handleResize);
+        window.removeEventListener("scroll", handleScroll);
+        window.removeEventListener("resize", handleResize);
       };
     }
   }, [isOpen, buttonRef]);
@@ -421,25 +438,25 @@ const ExportMenu = ({ drivers }: { drivers: Driver[] }) => {
             className="fixed inset-0 z-40"
             onClick={() => setIsOpen(false)}
           />
-          
+
           {createPortal(
-            <div 
+            <div
               className="fixed w-40 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden"
               style={{
                 top: `${menuPosition.top}px`,
-                left: `${menuPosition.left}px`
+                left: `${menuPosition.left}px`,
               }}
             >
               <div className="py-1">
                 <button
-                  onClick={() => handleExport('excel')}
+                  onClick={() => handleExport("excel")}
                   className="w-full px-4 py-2 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-2 transition-colors"
                 >
                   <span>ملف Excel</span>
                   <FileSpreadsheet className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={() => handleExport('pdf')}
+                  onClick={() => handleExport("pdf")}
                   className="w-full px-4 py-2 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-2 transition-colors"
                 >
                   <span>ملف PDF</span>
@@ -455,19 +472,15 @@ const ExportMenu = ({ drivers }: { drivers: Driver[] }) => {
   );
 };
 
-
 interface DataTableSectionProps {
   searchQuery?: string;
 }
 
-export const DataTableSection = ({ searchQuery = "" }: DataTableSectionProps): JSX.Element => {
-  const { 
-    drivers, 
-    pagination, 
-    setDrivers, 
-    setCurrentPage,
-    updateDriver
-  } = useDrivers();
+export const DataTableSection = ({
+  searchQuery = "",
+}: DataTableSectionProps): JSX.Element => {
+  const { drivers, pagination, setDrivers, setCurrentPage, updateDriver } =
+    useDrivers();
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -477,11 +490,11 @@ export const DataTableSection = ({ searchQuery = "" }: DataTableSectionProps): J
     const loadDriversData = async () => {
       setIsLoading(true);
       setError(null);
-      
+
       try {
         // console.log('Loading companies-drivers data from Firestore...');
         const firestoreDrivers = await fetchCompaniesDrivers();
-        
+
         if (firestoreDrivers && firestoreDrivers.length > 0) {
           // console.log('Converting Firestore data to Driver format...');
           const convertedDrivers = convertFirestoreToDrivers(firestoreDrivers);
@@ -493,8 +506,8 @@ export const DataTableSection = ({ searchQuery = "" }: DataTableSectionProps): J
           setDrivers([]);
         }
       } catch (err) {
-        console.error('Error loading drivers from Firestore:', err);
-        setError('فشل في تحميل بيانات السائقين.');
+        console.error("Error loading drivers from Firestore:", err);
+        setError("فشل في تحميل بيانات السائقين.");
         setDrivers([]);
       } finally {
         setIsLoading(false);
@@ -508,15 +521,14 @@ export const DataTableSection = ({ searchQuery = "" }: DataTableSectionProps): J
     setCurrentPage(page);
   };
 
-
   // Filter drivers based on search query
-  const filteredDrivers = drivers.filter(driver => {
-    if (!searchQuery || searchQuery.trim() === '') {
+  const filteredDrivers = drivers.filter((driver) => {
+    if (!searchQuery || searchQuery.trim() === "") {
       return true;
     }
-    
+
     const query = searchQuery.toLowerCase().trim();
-    
+
     // Search across multiple fields
     return (
       driver.driverName?.toLowerCase().includes(query) ||
@@ -547,9 +559,11 @@ export const DataTableSection = ({ searchQuery = "" }: DataTableSectionProps): J
       priority: "high",
       render: (value: any) => (
         <div className="flex items-center justify-center">
-          <span className={`text-sm font-medium ${
-            value.active ? 'text-green-700' : 'text-gray-500'
-          }`}>
+          <span
+            className={`text-sm font-medium ${
+              value.active ? "text-green-700" : "text-gray-500"
+            }`}
+          >
             {value.text}
           </span>
         </div>
@@ -569,13 +583,13 @@ export const DataTableSection = ({ searchQuery = "" }: DataTableSectionProps): J
         // Map car category text to appropriate icons
         const getCarIcon = (categoryText: string) => {
           switch (categoryText) {
-            case 'VIP':
+            case "VIP":
               return <Car className="w-4 h-4 text-purple-600" />;
-            case 'كبيرة':
+            case "كبيرة":
               return <Truck className="w-4 h-4 text-blue-600" />;
-            case 'متوسطة':
+            case "متوسطة":
               return <CarFront className="w-4 h-4 text-orange-600" />;
-            case 'صغيرة':
+            case "صغيرة":
               return <Car className="w-4 h-4 text-green-600" />;
             default:
               return <Car className="w-4 h-4 text-gray-500" />;
@@ -603,7 +617,9 @@ export const DataTableSection = ({ searchQuery = "" }: DataTableSectionProps): J
       label: (
         <div className="text-center [direction:rtl]">
           <div className="text-sm font-medium">القيمة المالية (ر.س)</div>
-          <div className="text-xs text-gray-500 mt-1">المستخدمة / المحددة يوميا</div>
+          <div className="text-xs text-gray-500 mt-1">
+            المستخدمة / المحددة يوميا
+          </div>
         </div>
       ),
       width: "flex-1 grow min-w-[200px]",
@@ -645,116 +661,123 @@ export const DataTableSection = ({ searchQuery = "" }: DataTableSectionProps): J
     <section className="flex flex-col items-start gap-5 w-full">
       {/* Loading State - Full page spinner */}
       {isLoading ? (
-        <LoadingSpinner 
-          size="lg" 
-          message="جاري التحميل..." 
-        />
+        <LoadingSpinner size="lg" message="جاري التحميل..." />
       ) : (
         <>
           {/* Error Message */}
           {error && (
             <div className="w-full p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-red-800 text-center [direction:rtl]">{error}</p>
+              <p className="text-red-800 text-center [direction:rtl]">
+                {error}
+              </p>
             </div>
           )}
 
           {/* Driver Stats Cards */}
           <div className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder">
-        <div className="flex items-center justify-end gap-1.5 relative self-stretch w-full flex-[0_0_auto]">
-          <h2 className="relative w-[229px] h-5 mt-[-1.00px] font-[number:var(--subtitle-subtitle-2-font-weight)] text-color-mode-text-icons-t-sec text-[length:var(--subtitle-subtitle-2-font-size)] tracking-[var(--subtitle-subtitle-2-letter-spacing)] leading-[var(--subtitle-subtitle-2-line-height)] [direction:rtl] font-subtitle-subtitle-2 whitespace-nowrap [font-style:var(--subtitle-subtitle-2-font-style)]">
-            توزيع السائقين على السيارات
-          </h2>
-          <UserRound className="w-5 h-5 text-gray-500" />
-        </div>
-        
-        <div className="flex h-[119px] items-center gap-5 relative w-full">
-          {driverStats.map((stat, index) => (
-            <div key={index} className="flex-1 h-full bg-white rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder p-4 relative">
-              {/* Title - Top Right */}
-              <div className="absolute top-4 right-4 text-sm font-medium text-gray-700 [direction:rtl] text-right">
-                {stat.title}
-              </div>
-              
-              {/* Number - Bottom Right */}
-              <div className="absolute bottom-4 right-4 text-3xl font-bold text-purple-600 [direction:rtl] text-right">
-                {stat.count}
-              </div>
-              
-              {/* Icon - Bottom Left with colored circle background */}
-              <div className={`absolute bottom-4 left-4 w-12 h-12 ${stat.iconBgColor} ${stat.iconBorderColor} border-2 rounded-full flex items-center justify-center`}>
-                {stat.icon}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Main Data Table Section */}
-      <div className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder">
-        <header className="flex flex-col items-end gap-[var(--corner-radius-extra-large)] relative self-stretch w-full flex-[0_0_auto]">
-          <div className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
-            <div className="inline-flex items-center gap-[var(--corner-radius-medium)] relative flex-[0_0_auto]">
-              <button
-                onClick={() => navigate("/adddriver")}
-                className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray transition-colors"
-              >
-                <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
-                  <div className="inline-flex items-center justify-center gap-2.5 pt-1 pb-0 px-0 relative flex-[0_0_auto]">
-                    <span className="w-fit mt-[-1.00px] font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-sec text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] relative font-body-body-2 text-[length:var(--body-body-2-font-size)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
-                      إضافة سائق جديد
-                    </span>
-                  </div>
-                  <CirclePlus className="w-4 h-4 text-gray-500" />
-                </div>
-              </button>
-
-              <ExportMenu drivers={filteredDrivers} />
-            </div>
-
-            <div className="flex w-[134px] items-center justify-end gap-1.5 relative">
-              <h1 className="relative w-[117px] h-5 mt-[-1.00px] ml-[-7.00px] font-[number:var(--subtitle-subtitle-2-font-weight)] text-color-mode-text-icons-t-sec text-[length:var(--subtitle-subtitle-2-font-size)] tracking-[var(--subtitle-subtitle-2-letter-spacing)] leading-[var(--subtitle-subtitle-2-line-height)] [direction:rtl] font-subtitle-subtitle-2 whitespace-nowrap [font-style:var(--subtitle-subtitle-2-font-style)]">
-                عدد السائقين ({filteredDrivers.length})
-              </h1>
+            <div className="flex items-center justify-end gap-1.5 relative self-stretch w-full flex-[0_0_auto]">
+              <h2 className="relative w-[229px] h-5 mt-[-1.00px] font-[number:var(--subtitle-subtitle-2-font-weight)] text-color-mode-text-icons-t-sec text-[length:var(--subtitle-subtitle-2-font-size)] tracking-[var(--subtitle-subtitle-2-letter-spacing)] leading-[var(--subtitle-subtitle-2-line-height)] [direction:rtl] font-subtitle-subtitle-2 whitespace-nowrap [font-style:var(--subtitle-subtitle-2-font-style)]">
+                توزيع السائقين على السيارات
+              </h2>
               <UserRound className="w-5 h-5 text-gray-500" />
             </div>
+
+            <div className="flex h-[119px] items-center gap-5 relative w-full">
+              {driverStats.map((stat, index) => (
+                <div
+                  key={index}
+                  className="flex-1 h-full bg-white rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder p-4 relative"
+                >
+                  {/* Title - Top Right */}
+                  <div className="absolute top-4 right-4 text-sm font-medium text-gray-700 [direction:rtl] text-right">
+                    {stat.title}
+                  </div>
+
+                  {/* Number - Bottom Right */}
+                  <div className="absolute bottom-4 right-4 text-3xl font-bold text-purple-600 [direction:rtl] text-right">
+                    {stat.count}
+                  </div>
+
+                  {/* Icon - Bottom Left with colored circle background */}
+                  <div
+                    className={`absolute bottom-4 left-4 w-12 h-12 ${stat.iconBgColor} ${stat.iconBorderColor} border-2 rounded-full flex items-center justify-center`}
+                  >
+                    {stat.icon}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        </header>
 
-        <main className="flex flex-col items-start gap-7 relative self-stretch w-full flex-[0_0_auto]">
-          <div className="flex flex-col items-end gap-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto]">
-            {/* Desktop Table View */}
-            <div className="hidden lg:block w-full">
-              <Table
-                columns={driverColumns}
-                data={Array.isArray(filteredDrivers) ? filteredDrivers : []}
-                className="relative self-stretch w-full flex-[0_0_auto]"
-              />
-            </div>
+          {/* Main Data Table Section */}
+          <div className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder">
+            <header className="flex flex-col items-end gap-[var(--corner-radius-extra-large)] relative self-stretch w-full flex-[0_0_auto]">
+              <div className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
+                <div className="inline-flex items-center gap-[var(--corner-radius-medium)] relative flex-[0_0_auto]">
+                  <button
+                    onClick={() => navigate("/adddriver")}
+                    className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray transition-colors"
+                  >
+                    <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
+                      <div className="inline-flex items-center justify-center gap-2.5 pt-1 pb-0 px-0 relative flex-[0_0_auto]">
+                        <span className="w-fit mt-[-1.00px] font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-sec text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] relative font-body-body-2 text-[length:var(--body-body-2-font-size)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
+                          إضافة سائق جديد
+                        </span>
+                      </div>
+                      <CirclePlus className="w-4 h-4 text-gray-500" />
+                    </div>
+                  </button>
 
-            {/* Tablet Responsive Table View */}
-            <div className="hidden md:block lg:hidden w-full">
-              <Table
-                columns={driverColumns.filter(col => col.priority === 'high' || col.priority === 'medium')}
-                data={Array.isArray(filteredDrivers) ? filteredDrivers : []}
-                className="relative self-stretch w-full flex-[0_0_auto]"
-              />
-            </div>
+                  <ExportMenu drivers={filteredDrivers} />
+                </div>
 
-            {/* Mobile Card View - You can implement this later if needed */}
-            <div className="md:hidden space-y-4 w-full">
-              <div className="text-center text-gray-500 py-8">
-                عرض الجوال غير متوفر حالياً
+                <div className="flex w-[134px] items-center justify-end gap-1.5 relative">
+                  <h1 className="relative w-[117px] h-5 mt-[-1.00px] ml-[-7.00px] font-[number:var(--subtitle-subtitle-2-font-weight)] text-color-mode-text-icons-t-sec text-[length:var(--subtitle-subtitle-2-font-size)] tracking-[var(--subtitle-subtitle-2-letter-spacing)] leading-[var(--subtitle-subtitle-2-line-height)] [direction:rtl] font-subtitle-subtitle-2 whitespace-nowrap [font-style:var(--subtitle-subtitle-2-font-style)]">
+                    عدد السائقين ({filteredDrivers.length})
+                  </h1>
+                  <UserRound className="w-5 h-5 text-gray-500" />
+                </div>
               </div>
-            </div>
-          </div>
+            </header>
 
-          <Pagination
-            currentPage={pagination.currentPage}
-            totalPages={pagination.totalPages}
-            onPageChange={handlePageChange}
-          />
-        </main>
-      </div>
+            <main className="flex flex-col items-start gap-7 relative self-stretch w-full flex-[0_0_auto]">
+              <div className="flex flex-col items-end gap-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto]">
+                {/* Desktop Table View */}
+                <div className="hidden lg:block w-full">
+                  <Table
+                    columns={driverColumns}
+                    data={Array.isArray(filteredDrivers) ? filteredDrivers : []}
+                    className="relative self-stretch w-full flex-[0_0_auto]"
+                  />
+                </div>
+
+                {/* Tablet Responsive Table View */}
+                <div className="hidden md:block lg:hidden w-full">
+                  <Table
+                    columns={driverColumns.filter(
+                      (col) =>
+                        col.priority === "high" || col.priority === "medium"
+                    )}
+                    data={Array.isArray(filteredDrivers) ? filteredDrivers : []}
+                    className="relative self-stretch w-full flex-[0_0_auto]"
+                  />
+                </div>
+
+                {/* Mobile Card View - You can implement this later if needed */}
+                <div className="md:hidden space-y-4 w-full">
+                  <div className="text-center text-gray-500 py-8">
+                    عرض الجوال غير متوفر حالياً
+                  </div>
+                </div>
+              </div>
+
+              <Pagination
+                currentPage={pagination.currentPage}
+                totalPages={pagination.totalPages}
+                onPageChange={handlePageChange}
+              />
+            </main>
+          </div>
 
           {/* No Data Message */}
           {!isLoading && !error && filteredDrivers.length === 0 && (
@@ -762,10 +785,14 @@ export const DataTableSection = ({ searchQuery = "" }: DataTableSectionProps): J
               <div className="text-center">
                 <UserRound className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                 <p className="text-gray-600 text-lg [direction:rtl]">
-                  {searchQuery ? 'لا توجد نتائج للبحث' : 'لا توجد بيانات سائقين'}
+                  {searchQuery
+                    ? "لا توجد نتائج للبحث"
+                    : "لا توجد بيانات سائقين"}
                 </p>
                 <p className="text-gray-400 text-sm mt-2 [direction:rtl]">
-                  {searchQuery ? 'جرب مصطلح بحث آخر' : 'قم بإضافة سائق جديد للبدء'}
+                  {searchQuery
+                    ? "جرب مصطلح بحث آخر"
+                    : "قم بإضافة سائق جديد للبدء"}
                 </p>
               </div>
             </div>

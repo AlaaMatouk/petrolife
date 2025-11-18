@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useState } from "react";
-import { Eye, X } from "lucide-react";
+import { Eye, X, ArrowLeft } from "lucide-react";
 
 interface RequestData {
   id: number;
@@ -59,6 +59,19 @@ export const ReqRevision = () => {
 
   return (
     <div className="max-w-[582px] ml-auto" dir="rtl">
+      {/* Back Arrow */}
+      <div className="mb-4">
+        <button
+          onClick={() => navigate("/wallet-requests")}
+          aria-label="رجوع"
+          className="inline-flex h-10 items-center gap-[var(--corner-radius-medium)] relative flex-[0_0_auto]"
+        >
+          <div className="flex flex-col w-10 items-center justify-center gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative self-stretch bg-color-mode-surface-bg-icon-gray rounded-[var(--corner-radius-small)]">
+            <ArrowLeft className="w-4 h-4 text-gray-600" />
+          </div>
+        </button>
+      </div>
+
       {/* Request Details Card */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
         {/* Header */}
