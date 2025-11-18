@@ -458,6 +458,7 @@ const PetrolifeCouponDetails = (): JSX.Element => {
           <div className="w-full flex items-center justify-end">
             <button
               type="button"
+              onClick={() => navigate(`/petrolife-coupons/add?edit=${id}`)}
               className="px-4 h-10 rounded-[10px] bg-yellow-500 hover:bg-yellow-600 text-white font-medium"
             >
               تعديل البيانات
