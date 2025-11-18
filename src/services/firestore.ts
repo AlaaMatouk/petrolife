@@ -168,6 +168,178 @@ export const fetchDrivers = async () => {
 };
 
 /**
+ * Add 8-digit refid to existing petrolife drivers that don't have one
+ * @returns Promise with the number of updated drivers
+ */
+export const addRefidToExistingPetrolifeDrivers = async (): Promise<number> => {
+  try {
+    console.log(
+      "🔄 Starting migration: Adding refid to existing petrolife drivers..."
+    );
+    const driversRef = collection(db, "drivers");
+    // Fetch all documents without orderBy to avoid errors if some don't have createdDate
+    const driversSnapshot = await getDocs(driversRef);
+    console.log(`📦 Found ${driversSnapshot.size} drivers`);
+
+    let updatedCount = 0;
+    const driversToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    for (const driverDoc of driversSnapshot.docs) {
+      const driverData = driverDoc.data();
+      if (driverData.refid) {
+        console.log(
+          `⏭️  Driver ${driverDoc.id} already has refid: ${driverData.refid}`
+        );
+        continue;
+      }
+
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+        const driversRefCheck = collection(db, "drivers");
+        const qCheck = query(driversRefCheck, where("refid", "==", refid));
+        const querySnapshot = await getDocs(qCheck);
+        const isInPendingUpdates = driversToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for driver ${driverDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      driversToUpdate.push({
+        docRef: doc(db, "drivers", driverDoc.id),
+        refid: refid,
+      });
+      console.log(`✅ Generated refid ${refid} for driver ${driverDoc.id}`);
+    }
+
+    console.log(`📝 Updating ${driversToUpdate.length} drivers with refid...`);
+    for (const { docRef, refid } of driversToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(`✅ Updated driver ${docRef.id} with refid: ${refid}`);
+      } catch (error) {
+        console.error(`❌ Error updating driver ${docRef.id}:`, error);
+      }
+    }
+    console.log(
+      `✅ Migration completed: ${updatedCount} drivers updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a petrolife driver document by ID (for getting raw data like isActive)
+ * @param driverId - The driver document ID
+ * @returns Promise with driver document data
+ */
+export const fetchPetrolifeDriverById = async (driverId: string) => {
+  try {
+    console.log("Fetching petrolife driver by ID:", driverId);
+
+    // Fetch the specific driver document from Firestore
+    const driverDocRef = doc(db, "drivers", driverId);
+    const driverDoc = await getDoc(driverDocRef);
+
+    if (!driverDoc.exists()) {
+      throw new Error("Driver not found");
+    }
+
+    const driverData = driverDoc.data();
+
+    const driver = {
+      id: driverDoc.id,
+      ...driverData,
+    };
+
+    console.log("Driver data fetched:", driver);
+
+    return driver;
+  } catch (error) {
+    console.error("Error fetching petrolife driver by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update petrolife driver isActive status in Firestore
+ * @param driverId - The driver document ID
+ * @param isActive - The new isActive status
+ * @returns Promise<boolean> - Returns true if update was successful
+ */
+export const updatePetrolifeDriverIsActive = async (
+  driverId: string,
+  isActive: boolean
+): Promise<boolean> => {
+  try {
+    console.log(
+      `📝 Updating petrolife driver isActive status: ${driverId} -> ${isActive}`
+    );
+
+    const driverDocRef = doc(db, "drivers", driverId);
+    await updateDoc(driverDocRef, {
+      isActive: isActive,
+    });
+
+    console.log(`✅ Successfully updated petrolife driver isActive status`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating petrolife driver isActive status:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a petrolife driver from Firestore
+ * @param driverId - The driver document ID
+ * @returns Promise<boolean> - Returns true if deletion was successful
+ */
+export const deletePetrolifeDriver = async (
+  driverId: string
+): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting petrolife driver from Firestore: ${driverId}`);
+
+    // Verify the driver exists before deleting
+    const driverDocRef = doc(db, "drivers", driverId);
+    const driverDoc = await getDoc(driverDocRef);
+
+    if (!driverDoc.exists()) {
+      throw new Error("Driver not found");
+    }
+
+    // Delete the driver document
+    await deleteDoc(driverDocRef);
+    console.log(`✅ Successfully deleted petrolife driver from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting petrolife driver:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetch a single driver document from the Firestore "drivers" collection
  * @param driverId - Driver document ID
  * @returns Promise with the driver data
@@ -443,6 +615,36 @@ export const createNewDriver = async (formData: Record<string, any>) => {
   const payload = await generateFullDriverPayload(formData);
 
   applyTimestampOverrides(payload);
+
+  // Generate unique 8-digit refid for driver
+  console.log("🔢 Generating unique 8-digit refid for petrolife driver...");
+  let refid: string = "";
+  let isUnique = false;
+  let attempts = 0;
+  const maxAttempts = 10;
+
+  while (!isUnique && attempts < maxAttempts) {
+    const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+    refid = randomCode.toString();
+    const driversRefCheck = collection(db, "drivers");
+    const qCheck = query(driversRefCheck, where("refid", "==", refid));
+    const querySnapshot = await getDocs(qCheck);
+
+    if (querySnapshot.empty) {
+      isUnique = true;
+    } else {
+      attempts++;
+    }
+  }
+
+  if (!isUnique || !refid) {
+    throw new Error("فشل في إنشاء كود السائق. يرجى المحاولة مرة أخرى.");
+  }
+
+  console.log(`✅ Generated unique refid: ${refid}`);
+
+  // Add refid to payload
+  payload.refid = refid;
 
   const driversRef = collection(db, "drivers");
   const docRef = await addDoc(driversRef, payload);
