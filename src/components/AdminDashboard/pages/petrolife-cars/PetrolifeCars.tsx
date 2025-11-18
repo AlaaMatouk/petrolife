@@ -1,6 +1,13 @@
 import { DataTableSection } from "../../../sections/DataTableSection/DataTableSection";
 import { Car } from "lucide-react";
-import { fetchVehicles, fetchDrivers } from "../../../../services/firestore";
+import {
+  fetchVehicles,
+  fetchDrivers,
+  deletePetrolifeCar,
+} from "../../../../services/firestore";
+import { useState } from "react";
+import { useToast } from "../../../../context/ToastContext";
+import { ConfirmDialog } from "../../../shared/ConfirmDialog/ConfirmDialog";
 
 interface PetrolifeVehicleRow {
   id: string;
@@ -211,18 +218,114 @@ const fetchData = async (): Promise<PetrolifeVehicleRow[]> => {
 };
 
 const PetrolifeCars = () => {
+  const { addToast } = useToast();
+  const [vehiclesData, setVehiclesData] = useState<PetrolifeVehicleRow[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    vehicleId: string | null;
+    vehicleName: string;
+  }>({
+    isOpen: false,
+    vehicleId: null,
+    vehicleName: "",
+  });
+
+  // Fetch vehicles with state update
+  const fetchDataWithState = async (): Promise<PetrolifeVehicleRow[]> => {
+    const data = await fetchData();
+    setVehiclesData(data);
+    return data;
+  };
+
+  // Handle delete
+  const handleDelete = (id: string | number) => {
+    const vehicleId = String(id);
+
+    // Find vehicle name for confirmation message
+    const vehicle = vehiclesData.find((v) => v.id === vehicleId);
+    const vehicleName = vehicle?.name || vehicle?.plateNumber || "المركبة";
+
+    // Open confirmation dialog
+    setDeleteConfirm({
+      isOpen: true,
+      vehicleId,
+      vehicleName,
+    });
+  };
+
+  // Confirm and delete vehicle
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirm.vehicleId) return;
+
+    try {
+      setDeletingId(deleteConfirm.vehicleId);
+
+      // Delete from Firestore
+      await deletePetrolifeCar(deleteConfirm.vehicleId);
+
+      // Show success message
+      addToast({
+        type: "success",
+        message: `تم حذف ${deleteConfirm.vehicleName} بنجاح`,
+        duration: 3000,
+      });
+
+      // Close confirmation popup
+      setDeleteConfirm({
+        isOpen: false,
+        vehicleId: null,
+        vehicleName: "",
+      });
+
+      // Reload the page to refresh the table
+      window.location.reload();
+    } catch (error: any) {
+      console.error("Error deleting vehicle:", error);
+      addToast({
+        type: "error",
+        message: error.message || "فشل في حذف المركبة",
+        duration: 3000,
+      });
+      setDeletingId(null);
+    }
+  };
+
+  // Cancel delete
+  const handleDeleteCancel = () => {
+    setDeleteConfirm({
+      isOpen: false,
+      vehicleId: null,
+      vehicleName: "",
+    });
+  };
+
   return (
-    <DataTableSection
-      title="مركبات بترولايف"
-      entityName="مركبة"
-      entityNamePlural="مركبات"
-      icon={Car}
-      columns={columns}
-      fetchData={fetchData}
-      addNewRoute="/petrolife-cars/add"
-      viewDetailsRoute={(id) => `/petrolife-cars/${id}`}
-      itemsPerPage={10}
-    />
+    <>
+      <DataTableSection
+        title="مركبات بترولايف"
+        entityName="مركبة"
+        entityNamePlural="مركبات"
+        icon={Car}
+        columns={columns}
+        fetchData={fetchDataWithState}
+        onDelete={handleDelete}
+        addNewRoute="/petrolife-cars/add"
+        viewDetailsRoute={(id) => `/petrolife-cars/${id}`}
+        itemsPerPage={10}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={deleteConfirm.isOpen}
+        title="تأكيد الحذف"
+        message={`هل أنت متأكد من حذف ${deleteConfirm.vehicleName}؟\n\nهذه العملية لا يمكن التراجع عنها.`}
+        confirmText="حذف"
+        cancelText="إلغاء"
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+      />
+    </>
   );
 };
 

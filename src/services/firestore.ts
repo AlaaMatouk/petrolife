@@ -7324,6 +7324,35 @@ export const fetchVehicles = async () => {
   }
 };
 
+/**
+ * Delete a petrolife car/vehicle from Firestore
+ * @param vehicleId - The vehicle document ID
+ * @returns Promise<boolean> - Returns true if deletion was successful
+ */
+export const deletePetrolifeCar = async (
+  vehicleId: string
+): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting petrolife car from Firestore: ${vehicleId}`);
+
+    // Verify the vehicle exists before deleting
+    const vehicleDocRef = doc(db, "vehicles", vehicleId);
+    const vehicleDoc = await getDoc(vehicleDocRef);
+
+    if (!vehicleDoc.exists()) {
+      throw new Error("Vehicle not found");
+    }
+
+    // Delete the vehicle document
+    await deleteDoc(vehicleDocRef);
+    console.log(`✅ Successfully deleted petrolife car from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting petrolife car:", error);
+    throw error;
+  }
+};
+
 export interface CreateVehicleOptions {
   chassisNumber: string | null;
   plateNumber: string | null;
