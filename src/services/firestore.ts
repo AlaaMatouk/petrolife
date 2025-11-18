@@ -7312,6 +7312,344 @@ export const createVehicleWithSchema = async ({
   }
 };
 
+/**
+ * Fetch all car-types from Firestore
+ * @returns Promise with array of car-type documents
+ */
+export const fetchCarTypes = async (): Promise<any[]> => {
+  try {
+    const carTypesRef = collection(db, "car-types");
+    const q = query(carTypesRef, orderBy("createdDate", "desc"));
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
+
+    const carTypesData: any[] = [];
+
+    querySnapshot.forEach((doc) => {
+      carTypesData.push({
+        docId: doc.id,
+        id: doc.id,
+        ...doc.data(),
+      });
+    });
+
+    return carTypesData;
+  } catch (error) {
+    console.error("Error fetching car-types data:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all car-models from Firestore
+ * @returns Promise with array of car-model documents
+ */
+export const fetchCarModels = async (): Promise<any[]> => {
+  try {
+    const carModelsRef = collection(db, "car-models");
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(
+      carModelsRef
+    );
+
+    const carModelsData: any[] = [];
+
+    querySnapshot.forEach((doc) => {
+      carModelsData.push({
+        docId: doc.id,
+        id: doc.id,
+        ...doc.data(),
+      });
+    });
+
+    return carModelsData;
+  } catch (error) {
+    console.error("Error fetching car-models data:", error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new car-model document in Firestore
+ * @param carModelData - Car model data including name in Arabic and English
+ * @returns Promise with created document ID and data
+ */
+export const createCarModel = async (carModelData: {
+  name: { ar: string; en?: string };
+  createdUserId?: string | null;
+}): Promise<{ id: string; data: any }> => {
+  try {
+    const currentUser = auth.currentUser;
+    const userEmail = currentUser?.email ?? carModelData.createdUserId ?? null;
+
+    // Get a sample car-model to understand the schema
+    const carModelsCollection = collection(db, "car-models");
+    const sampleQuery = query(carModelsCollection, limit(1));
+    const sampleSnapshot = await getDocs(sampleQuery);
+
+    // Build car-model payload with same structure as existing documents
+    const carModelPayload: any = {
+      name: {
+        ar: carModelData.name.ar,
+        en: carModelData.name.en || carModelData.name.ar,
+      },
+      createdDate: serverTimestamp(),
+      createdUserId: userEmail,
+    };
+
+    // If there's a sample document, copy other fields that might exist
+    if (!sampleSnapshot.empty) {
+      const sampleData = sampleSnapshot.docs[0].data();
+      // Copy fields that should be preserved (excluding name, createdDate, createdUserId)
+      Object.keys(sampleData).forEach((key) => {
+        if (
+          !["name", "createdDate", "createdUserId", "docId", "id"].includes(key)
+        ) {
+          // Set default values for other fields if they exist in sample
+          if (sampleData[key] !== null && sampleData[key] !== undefined) {
+            if (typeof sampleData[key] === "string") {
+              carModelPayload[key] = "";
+            } else if (typeof sampleData[key] === "number") {
+              carModelPayload[key] = 0;
+            } else if (typeof sampleData[key] === "boolean") {
+              carModelPayload[key] = false;
+            } else if (Array.isArray(sampleData[key])) {
+              carModelPayload[key] = [];
+            } else if (typeof sampleData[key] === "object") {
+              carModelPayload[key] = {};
+            } else {
+              carModelPayload[key] = null;
+            }
+          }
+        }
+      });
+    }
+
+    const carModelDocRef = doc(carModelsCollection);
+    await setDoc(carModelDocRef, carModelPayload);
+
+    return {
+      id: carModelDocRef.id,
+      data: carModelPayload,
+    };
+  } catch (error) {
+    console.error("Error creating car-model document:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a single car-type by ID
+ * @param carTypeId - Car type document ID
+ * @returns Promise with car-type data
+ */
+export const fetchCarTypeById = async (carTypeId: string): Promise<any> => {
+  try {
+    const carTypeDocRef = doc(db, "car-types", carTypeId);
+    const carTypeDoc = await getDoc(carTypeDocRef);
+
+    if (!carTypeDoc.exists()) {
+      throw new Error("Car type not found");
+    }
+
+    return {
+      docId: carTypeDoc.id,
+      id: carTypeDoc.id,
+      ...carTypeDoc.data(),
+    };
+  } catch (error) {
+    console.error("Error fetching car-type by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update an existing car-type document in Firestore
+ * @param carTypeId - Car type document ID
+ * @param carTypeData - Updated car type data
+ * @returns Promise with updated document data
+ */
+export const updateCarType = async (
+  carTypeId: string,
+  carTypeData: {
+    name?: { ar: string; en?: string };
+    carModel?: {
+      name?: { ar: string; en?: string };
+      carModelImageUrl?: string | null;
+    };
+    year?: string;
+    fuelType?: string;
+    imageFile?: File | null;
+  }
+): Promise<{ id: string; data: any }> => {
+  try {
+    if (!carTypeId) {
+      throw new Error("Car type ID is required");
+    }
+
+    const carTypeDocRef = doc(db, "car-types", carTypeId);
+    const existingDoc = await getDoc(carTypeDocRef);
+
+    if (!existingDoc.exists()) {
+      throw new Error("Car type not found");
+    }
+
+    const existingData = existingDoc.data();
+    const updatePayload: any = {};
+
+    // Update name if provided
+    if (carTypeData.name) {
+      updatePayload.name = {
+        ar: carTypeData.name.ar,
+        en: carTypeData.name.en || carTypeData.name.ar,
+      };
+    }
+
+    // Update carModel if provided
+    if (carTypeData.carModel) {
+      let imageUrl = existingData.carModel?.carModelImageUrl || null;
+
+      // Upload new image if provided
+      if (carTypeData.imageFile instanceof File) {
+        const timestamp = Date.now();
+        const storagePath = `car-types/${timestamp}-${carTypeData.imageFile.name}`;
+        imageUrl = await uploadFileToStorage(
+          carTypeData.imageFile,
+          storagePath
+        );
+      } else if (carTypeData.carModel.carModelImageUrl !== undefined) {
+        imageUrl = carTypeData.carModel.carModelImageUrl;
+      }
+
+      updatePayload.carModel = {
+        name: {
+          ar:
+            carTypeData.carModel.name?.ar ||
+            existingData.carModel?.name?.ar ||
+            "",
+          en:
+            carTypeData.carModel.name?.en ||
+            carTypeData.carModel.name?.ar ||
+            existingData.carModel?.name?.en ||
+            existingData.carModel?.name?.ar ||
+            "",
+        },
+        carModelImageUrl: imageUrl,
+      };
+    }
+
+    // Update year if provided
+    if (carTypeData.year !== undefined) {
+      updatePayload.year = carTypeData.year;
+    }
+
+    // Update fuelType if provided
+    if (carTypeData.fuelType !== undefined) {
+      updatePayload.fuelType = carTypeData.fuelType;
+    }
+
+    await updateDoc(carTypeDocRef, updatePayload);
+
+    return {
+      id: carTypeId,
+      data: { ...existingData, ...updatePayload },
+    };
+  } catch (error) {
+    console.error("Error updating car-type:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a car-type document from Firestore
+ * @param carTypeId - Car type document ID
+ * @returns Promise<boolean> - true if successful
+ */
+export const deleteCarType = async (carTypeId: string): Promise<boolean> => {
+  try {
+    if (!carTypeId) {
+      throw new Error("Car type ID is required");
+    }
+
+    const carTypeDocRef = doc(db, "car-types", carTypeId);
+    const carTypeDoc = await getDoc(carTypeDocRef);
+
+    if (!carTypeDoc.exists()) {
+      throw new Error("Car type not found");
+    }
+
+    await deleteDoc(carTypeDocRef);
+
+    console.log("✅ Car type deleted successfully:", carTypeId);
+    return true;
+  } catch (error) {
+    console.error("Error deleting car-type:", error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new car-type document in Firestore
+ * @param carTypeData - Car type data including name, carModel, year, fuelType, and optional imageFile
+ * @returns Promise with created document ID and data
+ */
+export const createCarType = async (carTypeData: {
+  name: { ar: string; en?: string };
+  carModel: {
+    name: { ar: string; en?: string };
+    carModelImageUrl?: string | null;
+  };
+  year: string;
+  fuelType: string;
+  imageFile?: File | null;
+  createdUserId?: string | null;
+}): Promise<{ id: string; data: any }> => {
+  try {
+    const currentUser = auth.currentUser;
+    const userEmail = currentUser?.email ?? carTypeData.createdUserId ?? null;
+
+    let imageUrl: string | null = null;
+
+    // Upload image if provided
+    if (carTypeData.imageFile instanceof File) {
+      const timestamp = Date.now();
+      const storagePath = `car-types/${timestamp}-${carTypeData.imageFile.name}`;
+      imageUrl = await uploadFileToStorage(carTypeData.imageFile, storagePath);
+    } else if (carTypeData.carModel.carModelImageUrl) {
+      imageUrl = carTypeData.carModel.carModelImageUrl;
+    }
+
+    // Build car-type payload
+    const carTypePayload: any = {
+      name: {
+        ar: carTypeData.name.ar,
+        en: carTypeData.name.en || carTypeData.name.ar,
+      },
+      carModel: {
+        name: {
+          ar: carTypeData.carModel.name.ar,
+          en: carTypeData.carModel.name.en || carTypeData.carModel.name.ar,
+        },
+        carModelImageUrl: imageUrl,
+      },
+      year: carTypeData.year,
+      fuelType: carTypeData.fuelType,
+      createdDate: serverTimestamp(),
+      createdUserId: userEmail,
+    };
+
+    const carTypesCollection = collection(db, "car-types");
+    const carTypeDocRef = doc(carTypesCollection);
+    await setDoc(carTypeDocRef, carTypePayload);
+
+    return {
+      id: carTypeDocRef.id,
+      data: carTypePayload,
+    };
+  } catch (error) {
+    console.error("Error creating car-type document:", error);
+    throw error;
+  }
+};
+
 export const updateVehicleWithSchema = async ({
   vehicleId,
   chassisNumber,
