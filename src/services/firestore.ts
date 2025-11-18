@@ -9,16 +9,23 @@ import {
   doc,
   getDoc,
   updateDoc,
+  deleteDoc,
   arrayUnion,
   where,
   orderBy,
   setDoc,
+  limit,
   deleteDoc,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { onAuthStateChanged } from "firebase/auth";
 import { db, auth, storage } from "../config/firebase";
+import {
+  DriversSummaryData,
+  SubscriptionGroupSummary,
+  SubscriptionsSummaryData,
+} from "../types/dashboardStats";
 
 /**
  * Normalize car size to standard Arabic format
@@ -130,6 +137,583 @@ export const fetchCompaniesDrivers = async () => {
     }
   } catch (error) {
     console.error("Error fetching companies-drivers data:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all documents from the Firestore "drivers" collection
+ * @returns Promise with the drivers data
+ */
+export const fetchDrivers = async () => {
+  try {
+    const driversRef = collection(db, "drivers");
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(
+      driversRef
+    );
+
+    const driversData: any[] = [];
+
+    querySnapshot.forEach((doc) => {
+      driversData.push({
+        docId: doc.id,
+        ...doc.data(),
+      });
+    });
+
+    return driversData;
+  } catch (error) {
+    console.error("Error fetching drivers data:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add 8-digit refid to existing petrolife drivers that don't have one
+ * @returns Promise with the number of updated drivers
+ */
+export const addRefidToExistingPetrolifeDrivers = async (): Promise<number> => {
+  try {
+    console.log(
+      "🔄 Starting migration: Adding refid to existing petrolife drivers..."
+    );
+    const driversRef = collection(db, "drivers");
+    // Fetch all documents without orderBy to avoid errors if some don't have createdDate
+    const driversSnapshot = await getDocs(driversRef);
+    console.log(`📦 Found ${driversSnapshot.size} drivers`);
+
+    let updatedCount = 0;
+    const driversToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    for (const driverDoc of driversSnapshot.docs) {
+      const driverData = driverDoc.data();
+      if (driverData.refid) {
+        console.log(
+          `⏭️  Driver ${driverDoc.id} already has refid: ${driverData.refid}`
+        );
+        continue;
+      }
+
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+        const driversRefCheck = collection(db, "drivers");
+        const qCheck = query(driversRefCheck, where("refid", "==", refid));
+        const querySnapshot = await getDocs(qCheck);
+        const isInPendingUpdates = driversToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for driver ${driverDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      driversToUpdate.push({
+        docRef: doc(db, "drivers", driverDoc.id),
+        refid: refid,
+      });
+      console.log(`✅ Generated refid ${refid} for driver ${driverDoc.id}`);
+    }
+
+    console.log(`📝 Updating ${driversToUpdate.length} drivers with refid...`);
+    for (const { docRef, refid } of driversToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(`✅ Updated driver ${docRef.id} with refid: ${refid}`);
+      } catch (error) {
+        console.error(`❌ Error updating driver ${docRef.id}:`, error);
+      }
+    }
+    console.log(
+      `✅ Migration completed: ${updatedCount} drivers updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a petrolife driver document by ID (for getting raw data like isActive)
+ * @param driverId - The driver document ID
+ * @returns Promise with driver document data
+ */
+export const fetchPetrolifeDriverById = async (driverId: string) => {
+  try {
+    console.log("Fetching petrolife driver by ID:", driverId);
+
+    // Fetch the specific driver document from Firestore
+    const driverDocRef = doc(db, "drivers", driverId);
+    const driverDoc = await getDoc(driverDocRef);
+
+    if (!driverDoc.exists()) {
+      throw new Error("Driver not found");
+    }
+
+    const driverData = driverDoc.data();
+
+    const driver = {
+      id: driverDoc.id,
+      ...driverData,
+    };
+
+    console.log("Driver data fetched:", driver);
+
+    return driver;
+  } catch (error) {
+    console.error("Error fetching petrolife driver by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update petrolife driver isActive status in Firestore
+ * @param driverId - The driver document ID
+ * @param isActive - The new isActive status
+ * @returns Promise<boolean> - Returns true if update was successful
+ */
+export const updatePetrolifeDriverIsActive = async (
+  driverId: string,
+  isActive: boolean
+): Promise<boolean> => {
+  try {
+    console.log(
+      `📝 Updating petrolife driver isActive status: ${driverId} -> ${isActive}`
+    );
+
+    const driverDocRef = doc(db, "drivers", driverId);
+    await updateDoc(driverDocRef, {
+      isActive: isActive,
+    });
+
+    console.log(`✅ Successfully updated petrolife driver isActive status`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating petrolife driver isActive status:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a petrolife driver from Firestore
+ * @param driverId - The driver document ID
+ * @returns Promise<boolean> - Returns true if deletion was successful
+ */
+export const deletePetrolifeDriver = async (
+  driverId: string
+): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting petrolife driver from Firestore: ${driverId}`);
+
+    // Verify the driver exists before deleting
+    const driverDocRef = doc(db, "drivers", driverId);
+    const driverDoc = await getDoc(driverDocRef);
+
+    if (!driverDoc.exists()) {
+      throw new Error("Driver not found");
+    }
+
+    // Delete the driver document
+    await deleteDoc(driverDocRef);
+    console.log(`✅ Successfully deleted petrolife driver from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting petrolife driver:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a single driver document from the Firestore "drivers" collection
+ * @param driverId - Driver document ID
+ * @returns Promise with the driver data
+ */
+export const fetchDriverDocumentById = async (driverId: string) => {
+  try {
+    const driverDocRef = doc(db, "drivers", driverId);
+    const driverDoc = await getDoc(driverDocRef);
+
+    if (!driverDoc.exists()) {
+      throw new Error("Driver not found");
+    }
+
+    return {
+      docId: driverDoc.id,
+      ...driverDoc.data(),
+    };
+  } catch (error) {
+    console.error("Error fetching driver document:", error);
+    throw error;
+  }
+};
+
+type DriverSchemaNode =
+  | { kind: "value" }
+  | { kind: "object"; fields: Record<string, DriverSchemaNode> }
+  | { kind: "array"; element: DriverSchemaNode | null };
+
+let driverSchemaCache: DriverSchemaNode | null = null;
+let driverSchemaPromise: Promise<DriverSchemaNode> | null = null;
+let couponSchemaCache: DriverSchemaNode | null = null;
+let couponSchemaPromise: Promise<DriverSchemaNode> | null = null;
+
+const isFirestoreTimestamp = (value: any): boolean =>
+  Boolean(value) &&
+  typeof value === "object" &&
+  typeof value.toDate === "function" &&
+  typeof value.seconds === "number";
+
+const isPlainObjectLike = (value: any): value is Record<string, any> =>
+  Boolean(value) &&
+  typeof value === "object" &&
+  !Array.isArray(value) &&
+  !isFirestoreTimestamp(value);
+
+const mergeSchemaNode = (
+  existing: DriverSchemaNode | undefined,
+  value: any
+): DriverSchemaNode => {
+  if (value === null || value === undefined) {
+    return existing ?? { kind: "value" };
+  }
+
+  if (Array.isArray(value)) {
+    const elementSchema =
+      existing && existing.kind === "array" ? existing.element : null;
+
+    const mergedElement = value.reduce<DriverSchemaNode | null>((acc, item) => {
+      if (item === undefined) {
+        return acc;
+      }
+      const next = mergeSchemaNode(acc ?? undefined, item);
+      return next;
+    }, elementSchema ?? null);
+
+    return {
+      kind: "array",
+      element: mergedElement,
+    };
+  }
+
+  if (isPlainObjectLike(value)) {
+    const fields: Record<string, DriverSchemaNode> =
+      existing && existing.kind === "object" ? { ...existing.fields } : {};
+
+    Object.entries(value).forEach(([key, nestedValue]) => {
+      if (key === "docId") {
+        return;
+      }
+      fields[key] = mergeSchemaNode(fields[key], nestedValue);
+    });
+
+    return {
+      kind: "object",
+      fields,
+    };
+  }
+
+  return { kind: "value" };
+};
+
+const deriveSchemaFromDocuments = (documents: any[]): DriverSchemaNode => {
+  const root: DriverSchemaNode = { kind: "object", fields: {} };
+
+  documents.forEach((document) => {
+    if (!isPlainObjectLike(document)) {
+      return;
+    }
+
+    Object.entries(document).forEach(([key, value]) => {
+      if (key === "docId") {
+        return;
+      }
+      root.fields[key] = mergeSchemaNode(root.fields[key], value);
+    });
+  });
+
+  return root;
+};
+
+const deriveSchemaFromDrivers = (drivers: any[]): DriverSchemaNode =>
+  deriveSchemaFromDocuments(drivers);
+
+const ensureDriverSchemaLoaded = async (): Promise<DriverSchemaNode> => {
+  if (driverSchemaCache) {
+    return driverSchemaCache;
+  }
+
+  if (!driverSchemaPromise) {
+    driverSchemaPromise = (async () => {
+      const drivers = await fetchDrivers();
+      const schema = deriveSchemaFromDrivers(drivers);
+      driverSchemaCache = schema;
+      return schema;
+    })();
+  }
+
+  return driverSchemaPromise;
+};
+
+const ensureCouponSchemaLoaded = async (): Promise<DriverSchemaNode> => {
+  if (couponSchemaCache) {
+    return couponSchemaCache;
+  }
+
+  if (!couponSchemaPromise) {
+    couponSchemaPromise = (async () => {
+      const couponsSnapshot = await getDocs(collection(db, "coupons"));
+      const coupons = couponsSnapshot.docs.map((docSnapshot) =>
+        docSnapshot.data()
+      );
+      const schema = deriveSchemaFromDocuments(coupons);
+      couponSchemaCache = schema;
+      return schema;
+    })();
+  }
+
+  return couponSchemaPromise;
+};
+
+const buildPayloadFromSchema = (schema: DriverSchemaNode, source: any): any => {
+  if (schema.kind === "value") {
+    // Leaf nodes fallback to null whenever the caller does not provide a value.
+    return source ?? null;
+  }
+
+  if (schema.kind === "array") {
+    if (!Array.isArray(source)) {
+      return [];
+    }
+
+    const elementSchema = schema.element;
+    if (!elementSchema) {
+      return source;
+    }
+
+    return source.map((item) => buildPayloadFromSchema(elementSchema, item));
+  }
+
+  const result: Record<string, any> = {};
+  const sourceObject = isPlainObjectLike(source) ? source : {};
+
+  Object.entries(schema.fields).forEach(([key, childSchema]) => {
+    // Materialise nested objects recursively to keep structure identical
+    // across all documents (missing values bubble down as nulls).
+    result[key] = buildPayloadFromSchema(childSchema, sourceObject[key]);
+  });
+
+  return result;
+};
+
+const TIMESTAMP_FIELD_NAMES = new Set([
+  "createdAt",
+  "createdDate",
+  "updatedAt",
+  "updatedDate",
+  "lastUpdatedAt",
+]);
+
+const applyTimestampOverrides = (value: any): void => {
+  if (Array.isArray(value)) {
+    value.forEach((entry) => applyTimestampOverrides(entry));
+    return;
+  }
+
+  if (!isPlainObjectLike(value)) {
+    return;
+  }
+
+  Object.entries(value).forEach(([key, nested]) => {
+    if (
+      TIMESTAMP_FIELD_NAMES.has(key) &&
+      (nested === null || nested === undefined)
+    ) {
+      value[key] = serverTimestamp();
+      return;
+    }
+
+    applyTimestampOverrides(nested);
+  });
+};
+
+/**
+ * Generate a full driver payload by projecting the provided form data
+ * over the schema derived from existing driver documents.
+ *
+ * - We scan historic documents once to collect every field (including nested).
+ * - For each field, we copy the supplied value if present, otherwise we fall back to null.
+ * - Nested objects are always materialised so the Firestore document keeps a consistent shape.
+ */
+export const generateFullDriverPayload = async (
+  formData: Record<string, any>
+): Promise<Record<string, any>> => {
+  let schema = await ensureDriverSchemaLoaded();
+
+  if (
+    schema.kind === "object" &&
+    Object.keys(schema.fields).length === 0 &&
+    isPlainObjectLike(formData)
+  ) {
+    schema = deriveSchemaFromDrivers([formData]);
+    driverSchemaCache = schema;
+  }
+
+  return buildPayloadFromSchema(schema, formData);
+};
+
+export const generateFullCouponPayload = async (
+  formData: Record<string, any>
+): Promise<Record<string, any>> => {
+  let schema = await ensureCouponSchemaLoaded();
+
+  if (
+    schema.kind === "object" &&
+    Object.keys(schema.fields).length === 0 &&
+    isPlainObjectLike(formData)
+  ) {
+    schema = deriveSchemaFromDocuments([formData]);
+    couponSchemaCache = schema;
+  }
+
+  const payload = buildPayloadFromSchema(schema, formData);
+
+  if (isPlainObjectLike(formData)) {
+    Object.entries(formData).forEach(([key, value]) => {
+      if (!(key in payload)) {
+        payload[key] = value;
+      }
+    });
+  }
+
+  return payload;
+};
+
+/**
+ * Create a new driver document in the "drivers" collection while ensuring
+ * the payload respects the complete schema observed in previous documents.
+ *
+ * This prevents new records from dropping fields (they become null instead),
+ * which keeps Firestore data shape consistent for downstream consumers.
+ */
+export const createNewDriver = async (formData: Record<string, any>) => {
+  const payload = await generateFullDriverPayload(formData);
+
+  applyTimestampOverrides(payload);
+
+  // Generate unique 8-digit refid for driver
+  console.log("🔢 Generating unique 8-digit refid for petrolife driver...");
+  let refid: string = "";
+  let isUnique = false;
+  let attempts = 0;
+  const maxAttempts = 10;
+
+  while (!isUnique && attempts < maxAttempts) {
+    const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+    refid = randomCode.toString();
+    const driversRefCheck = collection(db, "drivers");
+    const qCheck = query(driversRefCheck, where("refid", "==", refid));
+    const querySnapshot = await getDocs(qCheck);
+
+    if (querySnapshot.empty) {
+      isUnique = true;
+    } else {
+      attempts++;
+    }
+  }
+
+  if (!isUnique || !refid) {
+    throw new Error("فشل في إنشاء كود السائق. يرجى المحاولة مرة أخرى.");
+  }
+
+  console.log(`✅ Generated unique refid: ${refid}`);
+
+  // Add refid to payload
+  payload.refid = refid;
+
+  const driversRef = collection(db, "drivers");
+  const docRef = await addDoc(driversRef, payload);
+
+  return {
+    docId: docRef.id,
+    ...payload,
+  };
+};
+
+export const createCouponWithSchema = async (formData: Record<string, any>) => {
+  const payload = await generateFullCouponPayload(formData);
+
+  if (payload.createdDate === null || payload.createdDate === undefined) {
+    payload.createdDate = serverTimestamp();
+  }
+
+  const currentUser = auth.currentUser;
+  const currentUserIdentifier = currentUser?.uid ?? currentUser?.email ?? null;
+
+  payload.createdUserId =
+    currentUserIdentifier ?? payload.createdUserId ?? null;
+
+  if (payload.percentage === undefined) {
+    payload.percentage = formData.percentage ?? null;
+  }
+
+  if (payload.precentage === undefined) {
+    payload.precentage = formData.precentage ?? payload.percentage ?? null;
+  } else if (payload.precentage === null && payload.percentage != null) {
+    payload.precentage = payload.percentage;
+  }
+
+  applyTimestampOverrides(payload);
+
+  const couponsRef = collection(db, "coupons");
+  const docRef = await addDoc(couponsRef, payload);
+
+  couponSchemaCache = null;
+  couponSchemaPromise = null;
+
+  return {
+    id: docRef.id,
+    ...payload,
+  };
+};
+
+/**
+ * Fetch all documents from the Firestore "orders" collection
+ * @returns Promise with the orders data
+ */
+export const fetchAllOrdersDocuments = async () => {
+  try {
+    const ordersRef = collection(db, "orders");
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(ordersRef);
+
+    const ordersData: any[] = [];
+
+    querySnapshot.forEach((doc) => {
+      ordersData.push({
+        docId: doc.id,
+        ...doc.data(),
+      });
+    });
+
+    return ordersData;
+  } catch (error) {
+    console.error("Error fetching orders data:", error);
     throw error;
   }
 };
@@ -412,7 +996,6 @@ export const fetchOrders = async () => {
     throw error;
   }
 };
-
 /**
  * Fetch orders data for a specific company from Firestore orders collection
  * Filtered by companyUid matching the provided company ID or email
@@ -1164,6 +1747,58 @@ export const calculateOilChangeStatistics = (
  * @param orders - Array of order documents
  * @returns Object with battery orders grouped by car size
  */
+export const fetchProductById = async (productId: string) => {
+  try {
+    const productDocRef = doc(db, "products", productId);
+    const productDoc = await getDoc(productDocRef);
+
+    if (!productDoc.exists()) {
+      throw new Error("Product not found");
+    }
+
+    return {
+      id: productDoc.id,
+      ...productDoc.data(),
+    };
+  } catch (error) {
+    console.error("Error fetching product by ID:", error);
+    throw error;
+  }
+};
+
+export const fetchCouponById = async (couponId: string) => {
+  try {
+    const couponDocRef = doc(db, "coupons", couponId);
+    const couponDoc = await getDoc(couponDocRef);
+
+    if (!couponDoc.exists()) {
+      throw new Error("Coupon not found");
+    }
+
+    return {
+      id: couponDoc.id,
+      ...couponDoc.data(),
+    };
+  } catch (error) {
+    console.error("Error fetching coupon by ID:", error);
+    throw error;
+  }
+};
+
+export const fetchCoupons = async (): Promise<any[]> => {
+  try {
+    const couponsCollection = collection(db, "coupons");
+    const couponsSnapshot = await getDocs(couponsCollection);
+
+    return couponsSnapshot.docs.map((couponDoc) => ({
+      id: couponDoc.id,
+      ...couponDoc.data(),
+    }));
+  } catch (error) {
+    console.error("Error fetching coupons:", error);
+    return [];
+  }
+};
 export const calculateBatteryChangeStatistics = (
   orders: any[]
 ): {
@@ -1798,12 +2433,21 @@ export const fetchCarWashOrders = async (): Promise<any[]> => {
  * Fetch car stations and calculate total liters consumed from orders
  * @returns Promise with car stations data enriched with consumption info
  */
-export const fetchCarStationsWithConsumption = async (): Promise<any[]> => {
+export interface CarStationsWithConsumptionOptions {
+  includeAllOrders?: boolean;
+  orders?: any[];
+}
+
+export const fetchCarStationsWithConsumption = async (
+  options?: CarStationsWithConsumptionOptions
+): Promise<any[]> => {
   try {
     const user = auth.currentUser;
-    if (!user) {
-      console.error("No authenticated user");
-      return [];
+    if (!options?.includeAllOrders) {
+      if (!user) {
+        console.error("No authenticated user");
+        return [];
+      }
     }
 
     // Step 1: Fetch all car stations
@@ -1840,9 +2484,18 @@ export const fetchCarStationsWithConsumption = async (): Promise<any[]> => {
       });
     });
 
-    // Step 2: Fetch orders filtered by current user
-    const orders = await fetchOrders();
-    console.log("\n📦 Orders fetched for current user:", orders.length);
+    // Step 2: Fetch orders based on scope
+    let orders: any[] = [];
+    if (options?.orders) {
+      orders = options.orders;
+      console.log("\n📦 Orders provided via options:", orders.length);
+    } else if (options?.includeAllOrders) {
+      orders = await fetchAllOrders();
+      console.log("\n📦 Orders fetched for admin view:", orders.length);
+    } else {
+      orders = await fetchOrders();
+      console.log("\n📦 Orders fetched for current user:", orders.length);
+    }
 
     // Debug: Show first 3 orders
     if (orders.length > 0) {
@@ -1930,7 +2583,6 @@ export const fetchCarStationsWithConsumption = async (): Promise<any[]> => {
     return [];
   }
 };
-
 /**
  * Fetch orders and transform them for financial reports
  * @returns Promise with formatted financial report data
@@ -2052,7 +2704,12 @@ export const fetchFinancialReportData = async (): Promise<any[]> => {
  * Groups stations by city and sums consumption
  * @returns Promise with array of cities and their fuel consumption
  */
-export const calculateFuelConsumptionByCities = async () => {
+export interface FuelConsumptionByCitiesOptions
+  extends CarStationsWithConsumptionOptions {}
+
+export const calculateFuelConsumptionByCities = async (
+  options?: FuelConsumptionByCitiesOptions
+) => {
   try {
     console.log("\n🏙️ ========================================");
     console.log("📊 CALCULATING FUEL CONSUMPTION BY CITIES");
@@ -2061,7 +2718,7 @@ export const calculateFuelConsumptionByCities = async () => {
 
     // Fetch car stations WITH consumption calculated from orders
     // This function matches orders to stations and calculates totalLitersConsumed
-    const stations = await fetchCarStationsWithConsumption();
+    const stations = await fetchCarStationsWithConsumption(options);
 
     if (!stations || stations.length === 0) {
       console.log("⚠️ No stations found");
@@ -2362,8 +3019,6 @@ export const fetchUserSubscriptions = async (): Promise<any[]> => {
  */
 export const fetchProducts = async (): Promise<any[]> => {
   try {
-    // console.log('Fetching products from Firestore...');
-
     const productsCollection = collection(db, "products");
     const q = query(productsCollection, orderBy("createdDate", "desc"));
     const productsSnapshot = await getDocs(q);
@@ -2373,11 +3028,486 @@ export const fetchProducts = async (): Promise<any[]> => {
       ...doc.data(),
     }));
 
-    // console.log('Fetched products:', products.length);
     return products;
   } catch (error) {
     console.error("Error fetching products:", error);
     return [];
+  }
+};
+
+/**
+ * Delete a petrolife product from Firestore
+ * @param productId - The product document ID
+ * @returns Promise<boolean> - Returns true if deletion was successful
+ */
+export const deletePetrolifeProduct = async (
+  productId: string
+): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting petrolife product from Firestore: ${productId}`);
+
+    // Verify the product exists before deleting
+    const productDocRef = doc(db, "products", productId);
+    const productDoc = await getDoc(productDocRef);
+
+    if (!productDoc.exists()) {
+      throw new Error("Product not found");
+    }
+
+    // Delete the product document
+    await deleteDoc(productDocRef);
+    console.log(`✅ Successfully deleted petrolife product from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting petrolife product:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add 8-digit refid to existing products that don't have one
+ * @returns Promise with the number of updated products
+ */
+export const addRefidToExistingProducts = async (): Promise<number> => {
+  try {
+    console.log("🔄 Starting migration: Adding refid to existing products...");
+    const productsRef = collection(db, "products");
+    // Try to fetch with orderBy, fallback to without if it fails
+    let productsSnapshot;
+    try {
+      const q = query(productsRef, orderBy("createdDate", "desc"));
+      productsSnapshot = await getDocs(q);
+    } catch (orderByError) {
+      console.warn("⚠️ Could not order by createdDate, fetching without order");
+      productsSnapshot = await getDocs(productsRef);
+    }
+    console.log(`📦 Found ${productsSnapshot.size} products`);
+
+    let updatedCount = 0;
+    const productsToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    for (const productDoc of productsSnapshot.docs) {
+      const productData = productDoc.data();
+      if (productData.refid) {
+        console.log(
+          `⏭️  Product ${productDoc.id} already has refid: ${productData.refid}`
+        );
+        continue;
+      }
+
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+        const productsRefCheck = collection(db, "products");
+        const qCheck = query(productsRefCheck, where("refid", "==", refid));
+        const querySnapshot = await getDocs(qCheck);
+        const isInPendingUpdates = productsToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for product ${productDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      productsToUpdate.push({
+        docRef: doc(db, "products", productDoc.id),
+        refid: refid,
+      });
+      console.log(`✅ Generated refid ${refid} for product ${productDoc.id}`);
+    }
+
+    console.log(
+      `📝 Updating ${productsToUpdate.length} products with refid...`
+    );
+    for (const { docRef, refid } of productsToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(`✅ Updated product ${docRef.id} with refid: ${refid}`);
+      } catch (error) {
+        console.error(`❌ Error updating product ${docRef.id}:`, error);
+      }
+    }
+    console.log(
+      `✅ Migration completed: ${updatedCount} products updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all subscriptions from Firestore
+ * @returns Promise with subscriptions data
+ */
+export const fetchSubscriptions = async (): Promise<any[]> => {
+  try {
+    console.log("📋 Fetching subscriptions from Firestore...");
+    const subscriptionsCollection = collection(db, "subscriptions");
+
+    let subscriptionsSnapshot;
+    try {
+      // Try with orderBy first
+      const q = query(subscriptionsCollection, orderBy("createdDate", "desc"));
+      subscriptionsSnapshot = await getDocs(q);
+    } catch (orderByError) {
+      // If orderBy fails (no index or field doesn't exist), fetch without ordering
+      console.warn(
+        "⚠️ Could not order by createdDate, fetching without order:",
+        orderByError
+      );
+      subscriptionsSnapshot = await getDocs(subscriptionsCollection);
+    }
+
+    const subscriptions = subscriptionsSnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    console.log(
+      `✅ Fetched ${subscriptions.length} subscriptions from Firestore`
+    );
+    if (subscriptions.length > 0) {
+      console.log(
+        "📄 Sample subscription data:",
+        JSON.stringify(subscriptions[0], null, 2)
+      );
+      console.log(
+        "📄 All subscriptions periodName values:",
+        subscriptions.map((s: any) => ({ id: s.id, periodName: s.periodName }))
+      );
+    }
+    return subscriptions;
+  } catch (error) {
+    console.error("Error fetching subscriptions:", error);
+    return [];
+  }
+};
+
+/**
+ * Fetch a single subscription by ID from Firestore
+ * @param subscriptionId - The subscription document ID
+ * @returns Promise with subscription data or null if not found
+ */
+export const fetchSubscriptionById = async (
+  subscriptionId: string
+): Promise<any | null> => {
+  try {
+    console.log(
+      "📋 Fetching subscription by ID from Firestore:",
+      subscriptionId
+    );
+    const subscriptionsCollection = collection(db, "subscriptions");
+    const subscriptionDoc = doc(subscriptionsCollection, subscriptionId);
+    const subscriptionSnapshot = await getDoc(subscriptionDoc);
+
+    if (!subscriptionSnapshot.exists()) {
+      console.warn(`⚠️ Subscription with ID ${subscriptionId} not found`);
+      return null;
+    }
+
+    const subscriptionData = {
+      id: subscriptionSnapshot.id,
+      ...subscriptionSnapshot.data(),
+    };
+
+    console.log("✅ Fetched subscription from Firestore:", subscriptionData);
+    return subscriptionData;
+  } catch (error) {
+    console.error("Error fetching subscription by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update a subscription in Firestore
+ * @param subscriptionId - The subscription document ID
+ * @param updateData - The data to update (should maintain the structure with .ar and .en fields)
+ * @returns Promise<void>
+ */
+export const updateSubscription = async (
+  subscriptionId: string,
+  updateData: {
+    title?: { ar?: string; en?: string } | string;
+    description?:
+      | {
+          ar?: string;
+          en?: string;
+          minCarNumber?: number;
+          maxCarNumber?: number;
+        }
+      | string;
+    status?: { ar?: string; en?: string } | string;
+    price?: number;
+    options?: Array<{ ar?: string; en?: string } | string>;
+    periodName?: { ar?: string; en?: string } | string;
+    periodValueInDays?: number;
+  }
+): Promise<void> => {
+  try {
+    console.log(
+      "📝 Updating subscription in Firestore:",
+      subscriptionId,
+      updateData
+    );
+    const subscriptionsCollection = collection(db, "subscriptions");
+    const subscriptionDoc = doc(subscriptionsCollection, subscriptionId);
+
+    // Prepare update data - maintain structure if it's an object, otherwise convert
+    const firestoreUpdateData: any = {};
+
+    if (updateData.title !== undefined) {
+      if (typeof updateData.title === "string") {
+        // If title is a string, preserve existing structure or create new
+        firestoreUpdateData.title = { ar: updateData.title };
+      } else {
+        firestoreUpdateData.title = updateData.title;
+      }
+    }
+
+    if (updateData.description !== undefined) {
+      if (typeof updateData.description === "string") {
+        firestoreUpdateData.description = { ar: updateData.description };
+      } else {
+        // Clean description object - remove undefined fields
+        const cleanDescription: any = {};
+        if (updateData.description.ar !== undefined) {
+          cleanDescription.ar = updateData.description.ar;
+        }
+        if (updateData.description.en !== undefined) {
+          cleanDescription.en = updateData.description.en;
+        }
+        if (updateData.description.minCarNumber !== undefined) {
+          cleanDescription.minCarNumber = updateData.description.minCarNumber;
+        }
+        if (updateData.description.maxCarNumber !== undefined) {
+          cleanDescription.maxCarNumber = updateData.description.maxCarNumber;
+        }
+        firestoreUpdateData.description = cleanDescription;
+      }
+    }
+
+    if (updateData.status !== undefined) {
+      if (typeof updateData.status === "string") {
+        firestoreUpdateData.status = { ar: updateData.status };
+      } else {
+        firestoreUpdateData.status = updateData.status;
+      }
+    }
+
+    if (updateData.price !== undefined) {
+      firestoreUpdateData.price = updateData.price;
+    }
+
+    if (updateData.options !== undefined) {
+      firestoreUpdateData.options = updateData.options.map((option) => {
+        if (typeof option === "string") {
+          return { ar: option, en: option };
+        }
+        return option;
+      });
+    }
+
+    if (updateData.periodName !== undefined) {
+      if (typeof updateData.periodName === "string") {
+        firestoreUpdateData.periodName = { ar: updateData.periodName };
+      } else {
+        firestoreUpdateData.periodName = updateData.periodName;
+      }
+    }
+
+    if (updateData.periodValueInDays !== undefined) {
+      firestoreUpdateData.periodValueInDays = updateData.periodValueInDays;
+    }
+
+    await updateDoc(subscriptionDoc, firestoreUpdateData);
+    console.log("✅ Subscription updated successfully in Firestore");
+  } catch (error) {
+    console.error("Error updating subscription:", error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new subscription in Firestore
+ * @param subscriptionData - The subscription data with proper structure
+ * @returns Promise with the created subscription document ID
+ */
+export const createSubscription = async (subscriptionData: {
+  title: { ar: string; en?: string };
+  description: {
+    ar: string;
+    en?: string;
+    minCarNumber?: number;
+    maxCarNumber?: number;
+  };
+  status: { ar: string; en?: string };
+  price: number;
+  options: Array<{ ar: string; en?: string }>;
+  periodName: { ar: string; en?: string };
+  periodValueInDays: number;
+  logo?: string;
+}): Promise<string> => {
+  try {
+    console.log("📝 Creating new subscription in Firestore:", subscriptionData);
+    const subscriptionsCollection = collection(db, "subscriptions");
+
+    // Prepare subscription document with all required fields
+    const subscriptionDocument: any = {
+      title: subscriptionData.title,
+      description: subscriptionData.description,
+      status: subscriptionData.status,
+      price: subscriptionData.price,
+      options: subscriptionData.options,
+      periodName: subscriptionData.periodName,
+      periodValueInDays: subscriptionData.periodValueInDays,
+      createdDate: serverTimestamp(),
+      createdUserId: auth.currentUser?.uid || auth.currentUser?.email || null,
+    };
+
+    // Add optional fields only if they exist
+    if (subscriptionData.logo) {
+      subscriptionDocument.logo = subscriptionData.logo;
+    }
+
+    const docRef = await addDoc(subscriptionsCollection, subscriptionDocument);
+    console.log(
+      "✅ Subscription created successfully in Firestore with ID:",
+      docRef.id
+    );
+    return docRef.id;
+  } catch (error) {
+    console.error("Error creating subscription:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a subscription from Firestore
+ * @param subscriptionId - The subscription document ID to delete
+ * @returns Promise<void>
+ */
+export const deleteSubscription = async (
+  subscriptionId: string
+): Promise<void> => {
+  try {
+    console.log("🗑️ Deleting subscription from Firestore:", subscriptionId);
+    const subscriptionsCollection = collection(db, "subscriptions");
+    const subscriptionDoc = doc(subscriptionsCollection, subscriptionId);
+
+    await deleteDoc(subscriptionDoc);
+    console.log("✅ Subscription deleted successfully from Firestore");
+  } catch (error) {
+    console.error("Error deleting subscription:", error);
+    throw error;
+  }
+};
+
+export const createProductWithSchema = async (
+  formFields: Record<string, any>,
+  imageFile?: File | string | null
+) => {
+  try {
+    let imageUrl: string | null = null;
+
+    if (imageFile instanceof File) {
+      const timestamp = Date.now();
+      const storagePath = `products/${timestamp}-${imageFile.name}`;
+      imageUrl = await uploadFileToStorage(imageFile, storagePath);
+    } else if (typeof imageFile === "string" && imageFile.trim() !== "") {
+      imageUrl = imageFile.trim();
+    }
+
+    const productsCollection = collection(db, "products");
+    const snapshot = await getDocs(query(productsCollection, limit(1)));
+    const sampleSchema = snapshot.empty ? {} : snapshot.docs[0].data();
+
+    const combined: Record<string, any> = {};
+
+    Object.keys(sampleSchema).forEach((key) => {
+      if (key === "image") {
+        combined[key] = imageUrl ?? null;
+      } else if (Object.prototype.hasOwnProperty.call(formFields, key)) {
+        combined[key] = formFields[key];
+      } else {
+        combined[key] = null;
+      }
+    });
+
+    Object.entries(formFields).forEach(([key, value]) => {
+      if (!Object.prototype.hasOwnProperty.call(combined, key)) {
+        combined[key] = value;
+      }
+    });
+
+    if (!Object.prototype.hasOwnProperty.call(combined, "image")) {
+      combined.image = imageUrl;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(combined, "createdDate") &&
+      (combined.createdDate === null || combined.createdDate === undefined)
+    ) {
+      combined.createdDate = serverTimestamp();
+    }
+
+    // Generate unique 8-digit refid for product
+    console.log("🔢 Generating unique 8-digit refid for product...");
+    let refid: string = "";
+    let isUnique = false;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    while (!isUnique && attempts < maxAttempts) {
+      const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+      refid = randomCode.toString();
+      const productsRefCheck = collection(db, "products");
+      const qCheck = query(productsRefCheck, where("refid", "==", refid));
+      const querySnapshot = await getDocs(qCheck);
+
+      if (querySnapshot.empty) {
+        isUnique = true;
+      } else {
+        attempts++;
+      }
+    }
+
+    if (!isUnique || !refid) {
+      throw new Error("فشل في إنشاء كود المنتج. يرجى المحاولة مرة أخرى.");
+    }
+
+    console.log(`✅ Generated unique refid: ${refid}`);
+
+    // Add refid to combined data
+    combined.refid = refid;
+
+    const productDocRef = doc(productsCollection);
+    await setDoc(productDocRef, combined);
+
+    return {
+      id: productDocRef.id,
+      data: combined,
+    };
+  } catch (error) {
+    console.error("Error creating product document:", error);
+    throw error;
   }
 };
 
@@ -2453,6 +3583,379 @@ export const fetchAllCategories = async (): Promise<any[]> => {
     return categories;
   } catch (error) {
     console.error("❌ Error fetching categories:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a single category by ID from Firestore
+ * @param categoryId - Category document ID
+ * @returns Promise with the category data or null if not found
+ */
+export const fetchCategoryById = async (
+  categoryId: string
+): Promise<any | null> => {
+  try {
+    if (!categoryId) {
+      console.warn("⚠️ No categoryId provided to fetchCategoryById");
+      return null;
+    }
+
+    const categoryRef = doc(db, "categories", categoryId);
+    const snapshot = await getDoc(categoryRef);
+
+    if (!snapshot.exists()) {
+      console.warn(`⚠️ No category found with ID: ${categoryId}`);
+      return null;
+    }
+
+    return {
+      id: snapshot.id,
+      ...snapshot.data(),
+    };
+  } catch (error) {
+    console.error("❌ Error fetching category by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch subcategories for a given parent category ID
+ * @param parentId - Parent category document ID
+ * @returns Promise with array of subcategory documents
+ */
+export const fetchSubcategoriesByParentId = async (
+  parentId: string
+): Promise<any[]> => {
+  try {
+    if (!parentId) {
+      console.warn("⚠️ No parentId provided to fetchSubcategoriesByParentId");
+      return [];
+    }
+
+    const categoriesCollection = collection(db, "categories");
+    const subcategoriesQuery = query(
+      categoriesCollection,
+      where("parentId", "==", parentId)
+    );
+    const snapshot = await getDocs(subcategoriesQuery);
+
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+  } catch (error) {
+    console.error(
+      `❌ Error fetching subcategories for parentId ${parentId}:`,
+      error
+    );
+    throw error;
+  }
+};
+
+/**
+ * Fetch all countries from Firestore countries collection
+ */
+export const fetchAllCountries = async (): Promise<any[]> => {
+  try {
+    const countriesCollection = collection(db, "countries");
+    const countriesQuery = query(
+      countriesCollection,
+      orderBy("createdDate", "desc")
+    );
+    const snapshot = await getDocs(countriesQuery);
+
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+  } catch (error) {
+    console.error("❌ Error fetching countries:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all cities from Firestore cities collection
+ */
+export const fetchAllCities = async (): Promise<any[]> => {
+  try {
+    const citiesCollection = collection(db, "cities");
+    const snapshot = await getDocs(citiesCollection);
+
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+  } catch (error) {
+    console.error("❌ Error fetching cities:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all areas from Firestore areas collection
+ */
+export const fetchAllAreas = async (): Promise<any[]> => {
+  try {
+    const areasCollection = collection(db, "areas");
+    const snapshot = await getDocs(areasCollection);
+
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+  } catch (error) {
+    console.error("❌ Error fetching areas:", error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new country in Firestore countries collection
+ * Ensures all standard fields are populated and preserves schema compatible with existing docs
+ */
+export const createCountry = async ({
+  arabicName,
+  englishName,
+}: {
+  arabicName: string;
+  englishName: string;
+}): Promise<{ id: string }> => {
+  try {
+    const currentUser = auth.currentUser;
+
+    const countriesCollection = collection(db, "countries");
+
+    const payload: Record<string, any> = {
+      name: {
+        ar: arabicName || null,
+        en: englishName || null,
+      },
+      createdDate: serverTimestamp(),
+      createdUserId: currentUser?.email ?? null,
+    };
+
+    const docRef = await addDoc(countriesCollection, payload);
+
+    return { id: docRef.id };
+  } catch (error) {
+    console.error("❌ Error creating country:", error);
+    throw error;
+  }
+};
+
+export const createCity = async ({
+  countryId,
+  countryNameAr,
+  countryNameEn,
+  cityNameAr,
+  cityNameEn,
+  latitude = 0,
+  longitude = 0,
+}: {
+  countryId: string | null;
+  countryNameAr: string | null;
+  countryNameEn: string | null;
+  cityNameAr: string;
+  cityNameEn: string;
+  latitude?: number;
+  longitude?: number;
+}): Promise<{ id: string }> => {
+  try {
+    const currentUser = auth.currentUser;
+    const citiesCollection = collection(db, "cities");
+
+    const timestamp = serverTimestamp();
+    const creator = currentUser?.email ?? null;
+
+    const countryMap: Record<string, any> = {
+      id: countryId ?? null,
+      name: {
+        ar: countryNameAr ?? null,
+        en: countryNameEn ?? null,
+      },
+      createdDate: timestamp,
+      createdUserId: creator,
+    };
+
+    const payload: Record<string, any> = {
+      country: countryMap,
+      createdDate: timestamp,
+      createdUserId: creator,
+      latlng: {
+        lat: latitude ?? 0,
+        lng: longitude ?? 0,
+      },
+      name: {
+        ar: cityNameAr || null,
+        en: cityNameEn || null,
+      },
+      id: null,
+    };
+
+    const docRef = await addDoc(citiesCollection, payload);
+    await updateDoc(docRef, { id: docRef.id });
+
+    return { id: docRef.id };
+  } catch (error) {
+    console.error("❌ Error creating city:", error);
+    throw error;
+  }
+};
+
+export const createArea = async ({
+  countryId,
+  countryNameAr,
+  countryNameEn,
+  cityId,
+  cityNameAr,
+  cityNameEn,
+  cityLatitude = 0,
+  cityLongitude = 0,
+  areaNameAr,
+  areaNameEn,
+}: {
+  countryId: string | null;
+  countryNameAr: string | null;
+  countryNameEn: string | null;
+  cityId: string | null;
+  cityNameAr: string | null;
+  cityNameEn: string | null;
+  cityLatitude?: number;
+  cityLongitude?: number;
+  areaNameAr: string;
+  areaNameEn: string;
+}): Promise<{ id: string }> => {
+  try {
+    const currentUser = auth.currentUser;
+    const areasCollection = collection(db, "areas");
+
+    const timestamp = serverTimestamp();
+    const creator = currentUser?.email ?? null;
+
+    const countryMap: Record<string, any> = {
+      id: countryId ?? null,
+      name: {
+        ar: countryNameAr ?? null,
+        en: countryNameEn ?? null,
+      },
+      createdDate: timestamp,
+      createdUserId: creator,
+    };
+
+    const cityMap: Record<string, any> = {
+      id: cityId ?? null,
+      name: {
+        ar: cityNameAr ?? null,
+        en: cityNameEn ?? null,
+      },
+      createdDate: timestamp,
+      createdUserId: creator,
+      latlng: {
+        lat: cityLatitude ?? 0,
+        lng: cityLongitude ?? 0,
+      },
+      country: countryMap,
+    };
+
+    const payload: Record<string, any> = {
+      city: cityMap,
+      country: countryMap,
+      createdDate: timestamp,
+      createdUserId: creator,
+      name: {
+        ar: areaNameAr || null,
+        en: areaNameEn || null,
+      },
+      id: null,
+    };
+
+    const docRef = await addDoc(areasCollection, payload);
+    await updateDoc(docRef, { id: docRef.id });
+
+    return { id: docRef.id };
+  } catch (error) {
+    console.error("❌ Error creating area:", error);
+    throw error;
+  }
+};
+/**
+ * Create a new category document in Firestore
+ * Ensures all standard fields are included and preserves base structure
+ */
+export const createCategory = async ({
+  arabicName,
+  englishName,
+  accountingSystemId,
+  unitOfMeasurement,
+  individualPrice,
+  companyPrice,
+  imageFile,
+  parentCategoryId,
+  categoryType = "essential",
+}: {
+  arabicName: string;
+  englishName: string;
+  accountingSystemId: string;
+  unitOfMeasurement: string;
+  individualPrice: string | number;
+  companyPrice: string | number;
+  imageFile?: File | null;
+  parentCategoryId?: string | null;
+  categoryType?: string;
+}): Promise<{ id: string }> => {
+  try {
+    const currentUser = auth.currentUser;
+
+    const categoriesCollection = collection(db, "categories");
+    const randomRefId = Math.floor(100000000 + Math.random() * 900000000);
+
+    let imageUrl: string | null = null;
+
+    if (imageFile) {
+      const storagePath = `categories/${Date.now()}_${imageFile.name}`;
+      const storageRef = ref(storage, storagePath);
+      await uploadBytes(storageRef, imageFile);
+      imageUrl = await getDownloadURL(storageRef);
+    }
+
+    const hasParent =
+      parentCategoryId !== undefined &&
+      parentCategoryId !== null &&
+      parentCategoryId !== "";
+
+    const payload: Record<string, any> = {
+      categoryTypeEnum: hasParent ? categoryType : "essential",
+      createdDate: serverTimestamp(),
+      createdUserEmail: currentUser?.email ?? null,
+      createdUserId: currentUser?.uid ?? null,
+      id: null,
+      label: englishName || null,
+      majorTypeEnum: unitOfMeasurement || null,
+      name: {
+        ar: arabicName || null,
+        en: englishName || null,
+      },
+      onyxProductId: null,
+      parentId: hasParent ? parentCategoryId : accountingSystemId || null,
+      refId: randomRefId.toString(),
+      individualPrice:
+        individualPrice !== undefined && individualPrice !== null
+          ? Number(individualPrice)
+          : null,
+      companyPrice:
+        companyPrice !== undefined && companyPrice !== null
+          ? Number(companyPrice)
+          : null,
+      image: imageUrl,
+    };
+
+    const docRef = await addDoc(categoriesCollection, payload);
+
+    return { id: docRef.id };
+  } catch (error) {
+    console.error("❌ Error creating category:", error);
     throw error;
   }
 };
@@ -2561,8 +4064,6 @@ export const updateService = async (
  */
 export const fetchWalletChargeRequests = async () => {
   try {
-    // console.log('\n🔄 Fetching companies-wallets-requests...');
-
     const requestsRef = collection(db, "companies-wallets-requests");
     const q = query(requestsRef, orderBy("createdDate", "desc"));
     const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
@@ -2576,19 +4077,14 @@ export const fetchWalletChargeRequests = async () => {
       });
     });
 
-    // console.log('✅ Total requests found:', allRequestsData.length);
-
-    // Get current user
     const currentUser = auth.currentUser;
 
     if (!currentUser) {
-      // console.log('⚠️ No user logged in. Returning all data.');
       return allRequestsData;
     }
 
     const userEmail = currentUser.email;
 
-    // Filter requests where requestedUser.email matches current user's email
     const filteredRequests = allRequestsData.filter((request) => {
       const requestedUserEmail = request.requestedUser?.email;
 
@@ -2600,15 +4096,10 @@ export const fetchWalletChargeRequests = async () => {
       return emailMatch;
     });
 
-    // console.log('✅ Filtered requests:', filteredRequests.length);
-
-    // Add oldBalance from requestedUser.balance
     const enrichedRequests = filteredRequests.map((request) => ({
       ...request,
       oldBalance: request.requestedUser?.balance || 0,
     }));
-
-    // console.log('✅ Requests with balance:', enrichedRequests.length);
 
     return enrichedRequests;
   } catch (error) {
@@ -2616,7 +4107,6 @@ export const fetchWalletChargeRequests = async () => {
     throw error;
   }
 };
-
 /**
  * Fetch admin wallet reports data from wallets-requests collection
  * @returns Promise with admin wallet reports data
@@ -2631,7 +4121,6 @@ export const fetchAdminWalletReports = async () => {
 
     const allRequestsData: any[] = [];
 
-    // Helper function to format Firestore timestamp
     const formatDate = (timestamp: any): string => {
       if (!timestamp) return "-";
 
@@ -2669,16 +4158,16 @@ export const fetchAdminWalletReports = async () => {
     querySnapshot.forEach((doc) => {
       const data = doc.data();
       allRequestsData.push({
-        id: doc.id, // رقم العملية
-        date: formatDate(data.actionDate), // التاريخ (formatted)
-        clientType: data.requestedUser?.type || "-", // نوع العميل
-        clientName: data.requestedUser?.name || "-", // اسم العميل
-        operationNumber: doc.id, // رقم العملية (document ID)
-        operationType: "-", // نوع العملية (leave as "-" for now)
-        debit: data.value || "-", // مدين
-        credit: "-", // دائن (leave as "-" for now)
-        balance: data.requestedUser?.balance || "-", // الرصيد (ر.س)
-        rawDate: data.actionDate, // Store raw date for sorting
+        id: doc.id,
+        date: formatDate(data.actionDate),
+        clientType: data.requestedUser?.type || "-",
+        clientName: data.requestedUser?.name || "-",
+        operationNumber: doc.id,
+        operationType: "-",
+        debit: data.value || "-",
+        credit: "-",
+        balance: data.requestedUser?.balance || "-",
+        rawDate: data.actionDate,
       });
     });
 
@@ -2691,7 +4180,6 @@ export const fetchAdminWalletReports = async () => {
     throw error;
   }
 };
-
 /**
  * Fetch all companies-wallets-requests data for admin dashboard
  * @returns Promise with all wallet requests data
@@ -2747,7 +4235,7 @@ export const fetchAllAdminWalletRequests = async () => {
       const data = doc.data();
       allRequestsData.push({
         id: doc.id,
-        requestNumber: doc.id, // رقم العملية
+        requestNumber: data.refid || doc.id, // رقم العملية - use refid if available, otherwise fall back to doc.id
         clientName: data.requestedUser?.name || "-", // العميل
         orderType: "-", // نوع الشحن
         oldBalance: data.requestedUser?.balance || "-", // الرصيد القديم
@@ -2764,6 +4252,132 @@ export const fetchAllAdminWalletRequests = async () => {
     return allRequestsData;
   } catch (error) {
     console.error("❌ Error fetching admin wallet requests:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a wallet request from Firestore
+ * @param requestId - The wallet request document ID
+ * @returns Promise with boolean indicating success
+ */
+export const deleteWalletRequest = async (
+  requestId: string
+): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting wallet request from Firestore: ${requestId}`);
+
+    // Verify the wallet request exists before deleting
+    const requestDocRef = doc(db, "companies-wallets-requests", requestId);
+    const requestDoc = await getDoc(requestDocRef);
+
+    if (!requestDoc.exists()) {
+      throw new Error("Wallet request not found");
+    }
+
+    // Delete the wallet request document
+    await deleteDoc(requestDocRef);
+    console.log(`✅ Successfully deleted wallet request from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting wallet request:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add 8-digit refid to existing wallet requests that don't have one
+ * @returns Promise with number of updated requests
+ */
+export const addRefidToExistingWalletRequests = async (): Promise<number> => {
+  try {
+    console.log(
+      "🔄 Starting migration: Adding refid to existing wallet requests..."
+    );
+
+    const requestsRef = collection(db, "companies-wallets-requests");
+    const requestsSnapshot = await getDocs(requestsRef);
+    console.log(`📦 Found ${requestsSnapshot.size} wallet requests`);
+
+    let updatedCount = 0;
+    const requestsToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    // First pass: Identify requests without refid and generate refids
+    for (const requestDoc of requestsSnapshot.docs) {
+      const requestData = requestDoc.data();
+
+      // Skip if request already has refid
+      if (requestData.refid) {
+        console.log(
+          `⏭️  Wallet request ${requestDoc.id} already has refid: ${requestData.refid}`
+        );
+        continue;
+      }
+
+      // Generate unique 8-digit refid
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Generate 8-digit number (10000000 to 99999999)
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+
+        // Check if refid already exists in Firestore or in our pending updates
+        const requestsRefCheck = collection(db, "companies-wallets-requests");
+        const qCheck = query(requestsRefCheck, where("refid", "==", refid));
+        const querySnapshot = await getDocs(qCheck);
+
+        // Also check if this refid is already in our pending updates
+        const isInPendingUpdates = requestsToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for wallet request ${requestDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      requestsToUpdate.push({
+        docRef: doc(db, "companies-wallets-requests", requestDoc.id),
+        refid: refid,
+      });
+      console.log(
+        `✅ Generated refid ${refid} for wallet request ${requestDoc.id}`
+      );
+    }
+
+    console.log(
+      `📝 Updating ${requestsToUpdate.length} wallet requests with refid...`
+    );
+    for (const { docRef, refid } of requestsToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(
+          `✅ Updated wallet request ${docRef.id} with refid: ${refid}`
+        );
+      } catch (error) {
+        console.error(`❌ Error updating wallet request ${docRef.id}:`, error);
+      }
+    }
+    console.log(
+      `✅ Migration completed: ${updatedCount} wallet requests updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
     throw error;
   }
 };
@@ -3130,7 +4744,6 @@ export const determineUserRoleAndRedirect = async (
     return null;
   }
 };
-
 /**
  * Fetch current company data from Firestore companies collection
  * @returns Promise with the current company data
@@ -3366,6 +4979,818 @@ export const fetchAllOrders = async (): Promise<any[]> => {
   }
 };
 
+export type EssentialCategoryKey =
+  | "batteries"
+  | "wheels"
+  | "oils"
+  | "fuels"
+  | "carCare";
+
+export interface EssentialCategorySalesDataset {
+  key: EssentialCategoryKey;
+  label: string;
+  data: number[];
+}
+
+export interface EssentialCategoryTimeseries {
+  labels: string[];
+  datasets: EssentialCategorySalesDataset[];
+}
+
+export interface EssentialCategorySalesTrends {
+  last12Months: EssentialCategoryTimeseries;
+  last30Days: EssentialCategoryTimeseries;
+  last7Days: EssentialCategoryTimeseries;
+}
+
+export const ESSENTIAL_CATEGORY_LABELS: Record<EssentialCategoryKey, string> = {
+  batteries: "بطاريات",
+  wheels: "إطارات",
+  oils: "زيوت",
+  fuels: "وقـــــــــود",
+  carCare: "غســـــيل",
+};
+
+const ESSENTIAL_CATEGORY_ORDER: EssentialCategoryKey[] = [
+  "batteries",
+  "wheels",
+  "oils",
+  "fuels",
+  "carCare",
+];
+
+const normalizeIdentifier = (value: any): string | null => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }
+  if (typeof value === "number" && !Number.isNaN(value)) {
+    return value.toString();
+  }
+  if (typeof value === "object") {
+    if (typeof value.id === "string" && value.id.trim().length) return value.id;
+    if (typeof value.id === "number" && !Number.isNaN(value.id))
+      return value.id.toString();
+    if (typeof value._keyPath === "string" && value._keyPath.trim().length)
+      return value._keyPath;
+    if (typeof value.path === "string" && value.path.trim().length)
+      return value.path;
+  }
+  return null;
+};
+
+const ARABIC_DIACRITICS_REGEX =
+  /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/g;
+
+const normalizeTextValue = (value: any): string | null => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "object") return null;
+
+  const stringValue = String(value).trim();
+  if (!stringValue.length) return null;
+
+  const lower = stringValue.toLowerCase();
+  const withoutDiacritics = lower
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(ARABIC_DIACRITICS_REGEX, "")
+    .replace(/أ|إ|آ|ٱ/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه");
+
+  const cleaned = withoutDiacritics
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return cleaned.length ? cleaned : null;
+};
+
+const splitAndAppendFragments = (
+  raw: string,
+  target: Set<string>,
+  minLength: number = 2
+) => {
+  const fragments = raw
+    .split(/[/|,؛؛،\-]+/)
+    .map((fragment) => fragment.trim())
+    .filter((fragment) => fragment.length >= minLength);
+
+  fragments.forEach((fragment) => target.add(fragment));
+};
+
+const collectCategoryNames = (category: any): Set<string> => {
+  const names = new Set<string>();
+  const add = (value: any) => {
+    const normalized = normalizeTextValue(value);
+    if (!normalized) return;
+    names.add(normalized);
+    if (normalized.includes(" ")) {
+      splitAndAppendFragments(normalized, names);
+    }
+  };
+
+  add(category?.name);
+  add(category?.name?.ar);
+  add(category?.name?.en);
+  add(category?.englishName);
+  add(category?.arabicName);
+  add(category?.label);
+  add(category?.title);
+  add(category?.title?.ar);
+  add(category?.title?.en);
+  add(category?.categoryTypeEnum);
+  add(category?.majorTypeEnum);
+  add(category?.displayName);
+  add(category?.displayNameAr);
+  add(category?.displayNameEn);
+  add(category?.shortName);
+  add(category?.slug);
+  add(category?.code);
+  add(category?.type);
+  add(category?.serviceType);
+
+  if (Array.isArray(category?.keywords)) {
+    category.keywords.forEach(add);
+  }
+  if (Array.isArray(category?.tags)) {
+    category.tags.forEach(add);
+  }
+
+  return names;
+};
+
+interface EssentialCategoryMeta {
+  label: string;
+  ids: Set<string>;
+  names: Set<string>;
+  synonyms: Set<string>;
+}
+
+const baseEssentialSynonyms: Record<EssentialCategoryKey, string[]> = {
+  batteries: [
+    "battery",
+    "batteries",
+    "battaries",
+    "بطاريه",
+    "بطارية",
+    "بطاريات",
+    "battery change",
+    "battery replacement",
+  ],
+  wheels: [
+    "wheel",
+    "wheels",
+    "tire",
+    "tires",
+    "tyre",
+    "tyres",
+    "كفر",
+    "كفرات",
+    "اطار",
+    "اطارات",
+    "اطار ات",
+    "إطار",
+    "إطارات",
+    "wheel alignment",
+  ],
+  oils: [
+    "oil",
+    "oils",
+    "engine oil",
+    "motor oil",
+    "lubricant",
+    "lubricants",
+    "زيت",
+    "زيوت",
+    "تغيير زيت",
+  ],
+  fuels: [
+    "fuel",
+    "fuels",
+    "gas",
+    "gasoline",
+    "diesel",
+    "بنزين",
+    "محروقات",
+    "وقود",
+    "تعبئة وقود",
+    "fuel delivery",
+  ],
+  carCare: [
+    "car care",
+    "carcare",
+    "car wash",
+    "wash",
+    "washing",
+    "detailing",
+    "cleaning",
+    "غسيل",
+    "تنظيف",
+    "بوليش",
+  ],
+};
+
+const generateMonthRange = (length: number, reference: Date): Date[] => {
+  const months: Date[] = [];
+  for (let offset = length - 1; offset >= 0; offset--) {
+    months.push(
+      new Date(reference.getFullYear(), reference.getMonth() - offset, 1)
+    );
+  }
+  return months;
+};
+
+const generateDayRange = (length: number, reference: Date): Date[] => {
+  const days: Date[] = [];
+  for (let offset = length - 1; offset >= 0; offset--) {
+    const date = new Date(
+      reference.getFullYear(),
+      reference.getMonth(),
+      reference.getDate() - offset
+    );
+    days.push(new Date(date.getFullYear(), date.getMonth(), date.getDate()));
+  }
+  return days;
+};
+
+const formatMonthLabel = (date: Date) =>
+  new Intl.DateTimeFormat("en", { month: "short" }).format(date);
+
+const formatDayLabel = (date: Date) =>
+  new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(
+    date
+  );
+
+const formatMonthKey = (date: Date) =>
+  `${date.getFullYear()}-${date.getMonth()}`;
+
+const formatDayKey = (date: Date) =>
+  `${date.getFullYear()}-${(date.getMonth() + 1)
+    .toString()
+    .padStart(2, "0")}-${date.getDate().toString().padStart(2, "0")}`;
+
+const roundValue = (value: number) =>
+  Math.round((value + Number.EPSILON) * 100) / 100;
+
+const addOrderStringValues = (collector: Set<string>, value: any) => {
+  const normalized = normalizeTextValue(value);
+  if (!normalized) return;
+  collector.add(normalized);
+  if (normalized.includes(" ")) {
+    splitAndAppendFragments(normalized, collector);
+  }
+};
+
+const extractNumericValue = (candidates: any[]): number => {
+  for (const candidate of candidates) {
+    if (candidate === null || candidate === undefined) continue;
+    const parsed = parseFloat(String(candidate).replace(/,/g, ""));
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+  return 0;
+};
+
+const getOrderDate = (order: any): Date | null => {
+  const candidates = [
+    order?.orderDate,
+    order?.createdDate,
+    order?.createdAt,
+    order?.createdTime,
+    order?.date,
+    order?.timestamp,
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (typeof candidate.toDate === "function") {
+      try {
+        const date = candidate.toDate();
+        if (date instanceof Date && !Number.isNaN(date.getTime())) {
+          return date;
+        }
+      } catch (err) {
+        console.warn("⚠️ Failed to convert Firestore timestamp to date:", err);
+      }
+    } else if (candidate instanceof Date) {
+      if (!Number.isNaN(candidate.getTime())) return candidate;
+    } else if (typeof candidate === "number") {
+      const date = new Date(candidate);
+      if (!Number.isNaN(date.getTime())) return date;
+    } else if (typeof candidate === "string") {
+      const date = new Date(candidate);
+      if (!Number.isNaN(date.getTime())) return date;
+    } else if (candidate?.seconds) {
+      const date = new Date(candidate.seconds * 1000);
+      if (!Number.isNaN(date.getTime())) return date;
+    }
+  }
+
+  return null;
+};
+
+export interface EssentialCategorySalesTrendsInput {
+  categories?: any[];
+  orders?: any[];
+}
+
+export const getEssentialCategorySalesTrends = async (
+  input?: EssentialCategorySalesTrendsInput
+): Promise<EssentialCategorySalesTrends> => {
+  const now = new Date();
+  const monthRange = generateMonthRange(12, now);
+  const dayRange30 = generateDayRange(30, now);
+  const dayRange7 = generateDayRange(7, now);
+
+  const emptyTimeseries = (
+    dates: Date[],
+    labelFormatter: (date: Date) => string
+  ): EssentialCategoryTimeseries => ({
+    labels: dates.map(labelFormatter),
+    datasets: ESSENTIAL_CATEGORY_ORDER.map((key) => ({
+      key,
+      label: ESSENTIAL_CATEGORY_LABELS[key],
+      data: new Array(dates.length).fill(0),
+    })),
+  });
+
+  try {
+    const [categories, orders] = await Promise.all([
+      input?.categories
+        ? Promise.resolve(input.categories)
+        : fetchAllCategories(),
+      input?.orders ? Promise.resolve(input.orders) : fetchAllOrders(),
+    ]);
+
+    const categoryInfo = new Map<
+      string,
+      { id: string; parentId: string | null; names: Set<string> }
+    >();
+    const childrenByParent = new Map<string, string[]>();
+
+    categories.forEach((category) => {
+      const id =
+        normalizeIdentifier(category?.id) ??
+        normalizeIdentifier(category?.categoryId) ??
+        normalizeIdentifier(category?.refId);
+      if (!id) return;
+
+      const parentId =
+        normalizeIdentifier(category?.parentId) ??
+        normalizeIdentifier(category?.parentCategoryId) ??
+        normalizeIdentifier(category?.parent?.id) ??
+        normalizeIdentifier(category?.parentCategory?.id) ??
+        normalizeIdentifier(category?.parentRef?.id);
+
+      const names = collectCategoryNames(category);
+
+      categoryInfo.set(id, { id, parentId, names });
+
+      if (parentId) {
+        const existingChildren = childrenByParent.get(parentId) ?? [];
+        existingChildren.push(id);
+        childrenByParent.set(parentId, existingChildren);
+      }
+    });
+
+    const essentialMeta = new Map<
+      EssentialCategoryKey,
+      EssentialCategoryMeta
+    >();
+
+    ESSENTIAL_CATEGORY_ORDER.forEach((key) => {
+      const synonyms = new Set<string>();
+      const names = new Set<string>();
+      const labelNormalized = normalizeTextValue(
+        ESSENTIAL_CATEGORY_LABELS[key]
+      );
+      if (labelNormalized) synonyms.add(labelNormalized);
+      baseEssentialSynonyms[key].forEach((synonym) => {
+        const normalized = normalizeTextValue(synonym);
+        if (normalized) {
+          synonyms.add(normalized);
+          if (normalized.includes(" ")) {
+            splitAndAppendFragments(normalized, synonyms);
+          }
+        }
+      });
+
+      essentialMeta.set(key, {
+        label: ESSENTIAL_CATEGORY_LABELS[key],
+        ids: new Set<string>(),
+        names,
+        synonyms,
+      });
+    });
+
+    const categoryMatchesEssential = (
+      categoryNames: Set<string>,
+      synonyms: Set<string>
+    ): boolean => {
+      for (const name of categoryNames) {
+        if (!name) continue;
+        for (const synonym of synonyms) {
+          if (!synonym) continue;
+          if (
+            name === synonym ||
+            name.includes(synonym) ||
+            synonym.includes(name)
+          ) {
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    categoryInfo.forEach((info) => {
+      ESSENTIAL_CATEGORY_ORDER.forEach((key) => {
+        const meta = essentialMeta.get(key);
+        if (!meta) return;
+        if (categoryMatchesEssential(info.names, meta.synonyms)) {
+          meta.ids.add(info.id);
+        }
+      });
+    });
+
+    ESSENTIAL_CATEGORY_ORDER.forEach((key) => {
+      const meta = essentialMeta.get(key);
+      if (!meta) return;
+      const visited = new Set<string>();
+      const queue = Array.from(meta.ids);
+
+      while (queue.length) {
+        const currentId = queue.shift();
+        if (!currentId || visited.has(currentId)) continue;
+        visited.add(currentId);
+
+        const info = categoryInfo.get(currentId);
+        if (!info) continue;
+
+        info.names.forEach((name) => {
+          meta.names.add(name);
+          meta.synonyms.add(name);
+        });
+
+        const children = childrenByParent.get(currentId) ?? [];
+        children.forEach((childId) => {
+          if (!meta.ids.has(childId)) {
+            meta.ids.add(childId);
+          }
+          queue.push(childId);
+        });
+      }
+    });
+
+    const monthKeyToIndex = new Map<string, number>();
+    monthRange
+      .map(formatMonthKey)
+      .forEach((key, index) => monthKeyToIndex.set(key, index));
+
+    const day30KeyToIndex = new Map<string, number>();
+    dayRange30
+      .map(formatDayKey)
+      .forEach((key, index) => day30KeyToIndex.set(key, index));
+
+    const day7KeyToIndex = new Map<string, number>();
+    dayRange7
+      .map(formatDayKey)
+      .forEach((key, index) => day7KeyToIndex.set(key, index));
+
+    const monthlyTotals = new Map<EssentialCategoryKey, number[]>();
+    const day30Totals = new Map<EssentialCategoryKey, number[]>();
+    const day7Totals = new Map<EssentialCategoryKey, number[]>();
+
+    ESSENTIAL_CATEGORY_ORDER.forEach((key) => {
+      monthlyTotals.set(key, new Array(monthRange.length).fill(0));
+      day30Totals.set(key, new Array(dayRange30.length).fill(0));
+      day7Totals.set(key, new Array(dayRange7.length).fill(0));
+    });
+
+    const determineEssentialCategory = (
+      order: any
+    ): EssentialCategoryKey | null => {
+      const idCandidates = new Set<string>();
+      const nameCandidates = new Set<string>();
+
+      const addIdCandidate = (value: any) => {
+        const normalized = normalizeIdentifier(value);
+        if (normalized) idCandidates.add(normalized);
+      };
+
+      const addNameCandidate = (value: any) =>
+        addOrderStringValues(nameCandidates, value);
+
+      addIdCandidate(order?.categoryId);
+      addIdCandidate(order?.category?.id);
+      addIdCandidate(order?.category?.categoryId);
+      addIdCandidate(order?.category?.refId);
+      addIdCandidate(order?.category?.categoryRefId);
+
+      const categoryIdsArray = Array.isArray(order?.categoryIds)
+        ? order.categoryIds
+        : Array.isArray(order?.categories)
+        ? order.categories
+        : [];
+      categoryIdsArray.forEach(addIdCandidate);
+
+      addIdCandidate(order?.selectedOption?.categoryId);
+      addIdCandidate(order?.selectedOption?.category?.id);
+      addIdCandidate(order?.selectedOption?.category?.categoryId);
+      addIdCandidate(order?.selectedOption?.id);
+
+      addIdCandidate(order?.service?.categoryId);
+      addIdCandidate(order?.service?.category?.id);
+      addIdCandidate(order?.service?.category?.categoryId);
+
+      addIdCandidate(order?.product?.categoryId);
+
+      const addObjectNames = (obj: any) => {
+        if (!obj) return;
+        if (typeof obj === "string" || typeof obj === "number") {
+          addNameCandidate(obj);
+          return;
+        }
+        addNameCandidate(obj?.name);
+        addNameCandidate(obj?.name?.ar);
+        addNameCandidate(obj?.name?.en);
+        addNameCandidate(obj?.label);
+        addNameCandidate(obj?.title);
+        addNameCandidate(obj?.title?.ar);
+        addNameCandidate(obj?.title?.en);
+        addNameCandidate(obj?.category);
+        addNameCandidate(obj?.category?.ar);
+        addNameCandidate(obj?.category?.en);
+        addNameCandidate(obj?.type);
+        addNameCandidate(obj?.serviceType);
+      };
+
+      addObjectNames(order?.category);
+      addObjectNames(order?.category?.name);
+      addObjectNames(order?.service);
+      addObjectNames(order?.service?.category);
+      addObjectNames(order?.service?.title);
+      addObjectNames(order?.selectedOption);
+      addObjectNames(order?.selectedOption?.category);
+      addObjectNames(order?.selectedOption?.title);
+      addObjectNames(order?.selectedOption?.name);
+
+      addNameCandidate(order?.categoryName);
+      addNameCandidate(order?.categoryLabel);
+      addNameCandidate(order?.categoryType);
+      addNameCandidate(order?.type);
+      addNameCandidate(order?.serviceType);
+      addNameCandidate(order?.productType);
+      addNameCandidate(order?.fuelType);
+      addNameCandidate(order?.orderType);
+      addNameCandidate(order?.serviceName);
+      addNameCandidate(order?.selectedOption?.label);
+
+      for (const key of ESSENTIAL_CATEGORY_ORDER) {
+        const meta = essentialMeta.get(key);
+        if (!meta) continue;
+
+        const hasIdMatch = Array.from(idCandidates).some((id) =>
+          meta.ids.has(id)
+        );
+        if (hasIdMatch) return key;
+
+        const hasNameMatch = Array.from(nameCandidates).some((name) => {
+          if (!name) return false;
+          if (meta.names.has(name)) return true;
+          for (const synonym of meta.synonyms) {
+            if (!synonym) continue;
+            if (
+              name === synonym ||
+              name.includes(synonym) ||
+              synonym.includes(name)
+            ) {
+              return true;
+            }
+          }
+          return false;
+        });
+
+        if (hasNameMatch) return key;
+      }
+
+      return null;
+    };
+
+    const startOfDay = (date: Date) =>
+      new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+    orders.forEach((order) => {
+      const essentialKey = determineEssentialCategory(order);
+      if (!essentialKey) {
+        return;
+      }
+
+      const orderDate = getOrderDate(order);
+      if (!orderDate) return;
+
+      const normalizedDate = startOfDay(orderDate);
+      const monthKey = formatMonthKey(normalizedDate);
+      const dayKey = formatDayKey(normalizedDate);
+
+      const monthIndex = monthKeyToIndex.get(monthKey);
+      const day30Index = day30KeyToIndex.get(dayKey);
+      const day7Index = day7KeyToIndex.get(dayKey);
+
+      if (
+        monthIndex === undefined &&
+        day30Index === undefined &&
+        day7Index === undefined
+      ) {
+        return;
+      }
+
+      const amount = extractNumericValue([
+        order?.totalCost,
+        order?.totalPrice,
+        order?.price,
+        order?.amount,
+        order?.grandTotal,
+        order?.total,
+        order?.paymentAmount,
+        order?.paidAmount,
+        order?.totalOrderPrice,
+      ]);
+
+      const fallbackQuantity = extractNumericValue([
+        order?.totalLitre,
+        order?.totalLiter,
+        order?.quantity,
+        order?.selectedOption?.quantity,
+        order?.liters,
+        order?.litres,
+        order?.count,
+      ]);
+
+      const value = amount > 0 ? amount : fallbackQuantity;
+      if (value <= 0) return;
+
+      if (monthIndex !== undefined) {
+        const totals = monthlyTotals.get(essentialKey);
+        if (totals) totals[monthIndex] += value;
+      }
+
+      if (day30Index !== undefined) {
+        const totals = day30Totals.get(essentialKey);
+        if (totals) totals[day30Index] += value;
+      }
+
+      if (day7Index !== undefined) {
+        const totals = day7Totals.get(essentialKey);
+        if (totals) totals[day7Index] += value;
+      }
+    });
+
+    const buildDatasets = (
+      totalsMap: Map<EssentialCategoryKey, number[]>
+    ): EssentialCategorySalesDataset[] =>
+      ESSENTIAL_CATEGORY_ORDER.map((key) => {
+        const data = totalsMap.get(key) ?? [];
+        return {
+          key,
+          label: ESSENTIAL_CATEGORY_LABELS[key],
+          data: data.map(roundValue),
+        };
+      });
+
+    return {
+      last12Months: {
+        labels: monthRange.map(formatMonthLabel),
+        datasets: buildDatasets(monthlyTotals),
+      },
+      last30Days: {
+        labels: dayRange30.map(formatDayLabel),
+        datasets: buildDatasets(day30Totals),
+      },
+      last7Days: {
+        labels: dayRange7.map(formatDayLabel),
+        datasets: buildDatasets(day7Totals),
+      },
+    };
+  } catch (error) {
+    console.error(
+      "❌ Error calculating essential category sales trends:",
+      error
+    );
+    return {
+      last12Months: emptyTimeseries(monthRange, formatMonthLabel),
+      last30Days: emptyTimeseries(dayRange30, formatDayLabel),
+      last7Days: emptyTimeseries(dayRange7, formatDayLabel),
+    };
+  }
+};
+
+export const getCompanyEssentialCategorySalesTrends =
+  async (): Promise<EssentialCategorySalesTrends> => {
+    const [categories, orders] = await Promise.all([
+      fetchAllCategories(),
+      fetchOrders(),
+    ]);
+
+    return getEssentialCategorySalesTrends({
+      categories,
+      orders,
+    });
+  };
+
+export const getServiceDistributerEssentialCategorySalesTrends =
+  async (): Promise<EssentialCategorySalesTrends> => {
+    try {
+      const currentUser = await waitForAuthState();
+      const email = currentUser?.email?.toLowerCase();
+
+      if (!email) {
+        console.warn(
+          "⚠️ No authenticated service distributer email found. Returning empty trends."
+        );
+        const empty = await getEssentialCategorySalesTrends({
+          categories: [],
+          orders: [],
+        });
+        return empty;
+      }
+
+      const [categories, rawOrders] = await Promise.all([
+        fetchAllCategories(),
+        fetchFuelStationRequests(email),
+      ]);
+
+      const flattenedOrders = rawOrders.map((order) => {
+        const base =
+          order?.originalOrder && typeof order.originalOrder === "object"
+            ? order.originalOrder
+            : null;
+
+        if (!base) {
+          return order;
+        }
+
+        const flattened = {
+          ...base,
+          id:
+            base.id ??
+            order.id ??
+            base.refId ??
+            base.orderNumber ??
+            order.refId ??
+            order.orderNumber,
+          category: base.category ?? order.category,
+          categoryId: base.categoryId ?? order.categoryId,
+          categoryIds:
+            base.categoryIds ??
+            base.categories ??
+            order.categoryIds ??
+            order.categories ??
+            [],
+          selectedOption: base.selectedOption ?? order.selectedOption,
+          service: base.service ?? order.service,
+          serviceType: base.serviceType ?? order.serviceType,
+          productType: base.productType ?? order.productType,
+          totalCost:
+            base.totalCost ??
+            order.totalCost ??
+            order.amount ??
+            base.amount ??
+            order.price,
+          totalPrice: base.totalPrice ?? order.totalPrice,
+          totalLitre: base.totalLitre ?? order.totalLitre,
+          totalLiter: base.totalLiter ?? order.totalLiter,
+          quantity: base.quantity ?? order.quantity,
+          liters: base.liters ?? order.liters,
+          litres: base.litres ?? order.litres,
+          count: base.count ?? order.count,
+          orderDate: base.orderDate ?? order.orderDate,
+          createdDate: base.createdDate ?? order.createdDate,
+          createdAt: base.createdAt ?? order.createdAt,
+          createdTime: base.createdTime ?? order.createdTime,
+        };
+
+        return flattened;
+      });
+
+      return getEssentialCategorySalesTrends({
+        categories,
+        orders: flattenedOrders,
+      });
+    } catch (error) {
+      console.error(
+        "❌ Error calculating service distributer essential category sales trends:",
+        error
+      );
+      return getEssentialCategorySalesTrends({
+        categories: [],
+        orders: [],
+      });
+    }
+  };
 /**
  * Calculate total fuel liter usage by type from all orders
  * @returns Promise with fuel usage breakdown
@@ -3451,7 +5876,6 @@ export const getTotalFuelUsageByType = async (): Promise<{
     };
   }
 };
-
 /**
  * Calculate total fuel cost by type from all orders
  * Uses same logic as companies dashboard calculateFuelStatistics but without filtering
@@ -3590,6 +6014,306 @@ export const getCompaniesCountByType = async (): Promise<{
 };
 
 /**
+ * Aggregate drivers count for admin dashboard (delivery + company drivers)
+ */
+export const getDriversSummaryForAdmin =
+  async (): Promise<DriversSummaryData> => {
+    try {
+      const [deliverySnapshot, companyDriversSnapshot] = await Promise.all([
+        getDocs(collection(db, "drivers")),
+        getDocs(collection(db, "companies-drivers")),
+      ]);
+
+      const deliveryCount = deliverySnapshot.size;
+      const companyDriversCount = companyDriversSnapshot.size;
+
+      return {
+        delivery: deliveryCount,
+        company: companyDriversCount,
+        total: deliveryCount + companyDriversCount,
+      };
+    } catch (error) {
+      console.error("❌ Error calculating drivers summary:", error);
+      return { delivery: 0, company: 0, total: 0 };
+    }
+  };
+
+/**
+ * Aggregate cars count by size for admin dashboard
+ */
+export const getCarsSummaryForAdmin = async (): Promise<{
+  small: number;
+  medium: number;
+  large: number;
+  vip: number;
+  total: number;
+}> => {
+  try {
+    const carsSnapshot = await getDocs(collection(db, "companies-cars"));
+
+    const summary = {
+      small: 0,
+      medium: 0,
+      large: 0,
+      vip: 0,
+      total: 0,
+    };
+
+    carsSnapshot.forEach((doc) => {
+      const data = doc.data();
+      const normalizedSize =
+        normalizeCarSize(
+          data.size ||
+            data.category?.name ||
+            data.category ||
+            data.carSize ||
+            data.carCategory
+        ) || "";
+
+      if (normalizedSize === "صغيرة") summary.small++;
+      else if (normalizedSize === "متوسطة") summary.medium++;
+      else if (normalizedSize === "كبيرة") summary.large++;
+      else if (normalizedSize === "VIP") summary.vip++;
+
+      summary.total++;
+    });
+
+    return summary;
+  } catch (error) {
+    console.error("❌ Error calculating cars summary for admin:", error);
+    return { small: 0, medium: 0, large: 0, vip: 0, total: 0 };
+  }
+};
+
+type SubscriptionTier = "basic" | "classic" | "premium";
+
+const createEmptySubscriptionGroup = (): SubscriptionGroupSummary => ({
+  basic: 0,
+  classic: 0,
+  premium: 0,
+  expired: 0,
+  total: 0,
+});
+
+const toDateSafe = (value: any): Date | null => {
+  if (!value) return null;
+
+  try {
+    if (typeof value.toDate === "function") {
+      return value.toDate();
+    }
+  } catch {
+    // Ignore conversion errors
+  }
+
+  const date = new Date(value);
+  return isNaN(date.getTime()) ? null : date;
+};
+
+const normalizeSubscriptionTier = (
+  rawTitle?: string | null
+): SubscriptionTier | null => {
+  if (!rawTitle) return null;
+  const value = rawTitle.toString().toLowerCase();
+
+  if (
+    value.includes("basic") ||
+    value.includes("باسيك") ||
+    value.includes("بيسك") ||
+    value.includes("الأساسية") ||
+    value.includes("basic plan")
+  ) {
+    return "basic";
+  }
+
+  if (
+    value.includes("classic") ||
+    value.includes("كلاسيك") ||
+    value.includes("ستاندرد") ||
+    value.includes("standard")
+  ) {
+    return "classic";
+  }
+
+  if (
+    value.includes("premium") ||
+    value.includes("بريميوم") ||
+    value.includes("بلس") ||
+    value.includes("plus") ||
+    value.includes("vip")
+  ) {
+    return "premium";
+  }
+
+  return null;
+};
+
+const extractSubscriptionDetails = (
+  record: any
+): { tier: SubscriptionTier | null; expired: boolean } | null => {
+  if (!record) return null;
+
+  const candidate =
+    record.selectedSubscription ||
+    record.subscription ||
+    record.subscriptionPlan ||
+    record.currentSubscription ||
+    record.plan ||
+    record.subscriptionDetails ||
+    record.subscriptionData ||
+    {};
+
+  const titleCandidate =
+    candidate?.title?.ar ??
+    candidate?.title?.en ??
+    candidate?.name?.ar ??
+    candidate?.name?.en ??
+    candidate?.title ??
+    candidate?.name ??
+    record.subscriptionType ??
+    record.subscriptionName ??
+    record.planName ??
+    record.planType ??
+    record.packageName ??
+    record.packageType ??
+    record.subscriptionTier ??
+    null;
+
+  const tier = normalizeSubscriptionTier(titleCandidate);
+
+  const expiryValue =
+    candidate?.subscriptionEndDate ??
+    candidate?.endDate ??
+    candidate?.expiryDate ??
+    candidate?.expireDate ??
+    candidate?.expireAt ??
+    candidate?.expiresAt ??
+    candidate?.validTo ??
+    candidate?.validUntil ??
+    record.subscriptionEndDate ??
+    record.subscriptionExpiry ??
+    record.expiryDate ??
+    record.expirationDate ??
+    null;
+
+  const expiryDate = toDateSafe(expiryValue);
+  const expired = expiryDate ? expiryDate.getTime() < Date.now() : false;
+
+  if (!tier && !expired) {
+    return null;
+  }
+
+  return { tier, expired };
+};
+
+const increaseSubscriptionCounters = (
+  group: SubscriptionGroupSummary,
+  tier: SubscriptionTier | null,
+  expired: boolean
+) => {
+  if (expired) {
+    group.expired++;
+  }
+
+  if (tier === "basic") {
+    group.basic++;
+    group.total++;
+    return;
+  }
+
+  if (tier === "classic") {
+    group.classic++;
+    group.total++;
+    return;
+  }
+
+  if (tier === "premium") {
+    group.premium++;
+    group.total++;
+    return;
+  }
+
+  if (expired) {
+    group.total++;
+  }
+};
+
+/**
+ * Aggregate subscriptions summary for admin (companies vs individuals)
+ */
+export const getSubscriptionsSummaryForAdmin =
+  async (): Promise<SubscriptionsSummaryData> => {
+    try {
+      const [companiesSnapshot, clientsSnapshot, subscriptionsSnapshot] =
+        await Promise.all([
+          getDocs(collection(db, "companies")),
+          getDocs(collection(db, "clients")),
+          getDocs(collection(db, "subscriptions-payment")),
+        ]);
+
+      const summary: SubscriptionsSummaryData = {
+        companies: createEmptySubscriptionGroup(),
+        individuals: createEmptySubscriptionGroup(),
+      };
+
+      companiesSnapshot.forEach((doc) => {
+        const info = extractSubscriptionDetails(doc.data());
+        if (!info) return;
+        increaseSubscriptionCounters(
+          summary.companies,
+          info.tier,
+          info.expired
+        );
+      });
+
+      clientsSnapshot.forEach((doc) => {
+        const info = extractSubscriptionDetails(doc.data());
+        if (!info) return;
+        increaseSubscriptionCounters(
+          summary.individuals,
+          info.tier,
+          info.expired
+        );
+      });
+
+      // Fallback to subscriptions-payment collection if no data was found
+      if (
+        summary.companies.total === 0 ||
+        summary.individuals.total === 0 ||
+        (summary.companies.expired === 0 && summary.individuals.expired === 0)
+      ) {
+        subscriptionsSnapshot.forEach((doc) => {
+          const data = doc.data();
+          const info =
+            extractSubscriptionDetails(data.selectedSubscription || data) ||
+            extractSubscriptionDetails(data);
+          if (!info) return;
+
+          const targetGroup =
+            summary.companies.total === 0 && (data.company || data.companyEmail)
+              ? summary.companies
+              : summary.individuals.total === 0 &&
+                (data.client || data.clientEmail)
+              ? summary.individuals
+              : data.company || data.companyEmail
+              ? summary.companies
+              : summary.individuals;
+
+          increaseSubscriptionCounters(targetGroup, info.tier, info.expired);
+        });
+      }
+
+      return summary;
+    } catch (error) {
+      console.error("❌ Error calculating subscriptions summary:", error);
+      return {
+        companies: createEmptySubscriptionGroup(),
+        individuals: createEmptySubscriptionGroup(),
+      };
+    }
+  };
+
+/**
  * Fetch supervisors from users collection
  * Filters users where isAdmin === true OR isSuperAdmin === true
  * @returns Promise with array of supervisor data
@@ -3612,7 +6336,7 @@ export const fetchSupervisorsFromUsers = async (): Promise<any[]> => {
       if (data.isAdmin === true || data.isSuperAdmin === true) {
         supervisors.push({
           id: doc.id,
-          supervisorCode: data.uid || data.id || doc.id || "-",
+          supervisorCode: data.refid || data.uid || data.id || doc.id || "-",
           supervisorName: data.name || data.fullName || data.displayName || "-",
           phone: data.phoneNumber || data.phone || "-",
           email: data.email || "-",
@@ -3729,7 +6453,8 @@ export const fetchAllCompaniesWithCounts = async (): Promise<any[]> => {
 
       companies.push({
         id: companyDoc.id,
-        companyCode: companyData.id || companyDoc.id || "-",
+        companyCode:
+          companyData.refid || companyData.id || companyDoc.id || "-",
         companyName: companyData.name || companyData.brandName || "-",
         phone: companyData.phoneNumber || companyData.phone || "-",
         email: companyData.email || "-",
@@ -4237,7 +6962,6 @@ export const getMostConsumingCompanies = async (): Promise<
     return [];
   }
 };
-
 /**
  * Calculate car wash operations by car size from all orders
  * Uses same logic as companies dashboard calculateCarWashStatistics but without filtering by company
@@ -4698,7 +7422,6 @@ const getDayObject = (dayAr: string): { ar: string; en: string } => {
     en: dayMap[dayAr] || dayAr,
   };
 };
-
 /**
  * Convert Arabic plate letters to English
  */
@@ -4882,6 +7605,813 @@ export const addCompanyDriver = async (driverData: AddDriverData) => {
 };
 
 /**
+ * Fetch all documents from the Firestore "vehicles" collection
+ * @returns Promise with the vehicles data
+ */
+export const fetchVehicles = async () => {
+  try {
+    const vehiclesRef = collection(db, "vehicles");
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(
+      vehiclesRef
+    );
+
+    const vehiclesData: any[] = [];
+
+    querySnapshot.forEach((doc) => {
+      vehiclesData.push({
+        docId: doc.id,
+        ...doc.data(),
+      });
+    });
+
+    return vehiclesData;
+  } catch (error) {
+    console.error("Error fetching vehicles data:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a petrolife car/vehicle from Firestore
+ * @param vehicleId - The vehicle document ID
+ * @returns Promise<boolean> - Returns true if deletion was successful
+ */
+export const deletePetrolifeCar = async (
+  vehicleId: string
+): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting petrolife car from Firestore: ${vehicleId}`);
+
+    // Verify the vehicle exists before deleting
+    const vehicleDocRef = doc(db, "vehicles", vehicleId);
+    const vehicleDoc = await getDoc(vehicleDocRef);
+
+    if (!vehicleDoc.exists()) {
+      throw new Error("Vehicle not found");
+    }
+
+    // Delete the vehicle document
+    await deleteDoc(vehicleDocRef);
+    console.log(`✅ Successfully deleted petrolife car from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting petrolife car:", error);
+    throw error;
+  }
+};
+
+export interface CreateVehicleOptions {
+  chassisNumber: string | null;
+  plateNumber: string | null;
+  name: string | null;
+  imageFile?: File | string | null;
+  driverIdentifiers?: Array<string | null | undefined> | string | null;
+}
+
+export interface UpdateVehicleOptions {
+  vehicleId: string;
+  chassisNumber?: string | null;
+  plateNumber?: string | null;
+  name?: string | null;
+  imageFile?: File | string | null;
+  driverIdentifiers?: Array<string | null | undefined> | string | null;
+}
+
+type VehiclePayloadOverrides = {
+  chassisNumber?: string | null;
+  createdDate?: any;
+  createdUserId?: string | null;
+  driverIds?: string[];
+  name?: string | null;
+  plateNumber?: {
+    ar: string | null;
+    en: string | null;
+  };
+  image?: string | null;
+  workingStatus?: string | null;
+  isActive?: boolean;
+};
+const normalizeDriverIdentifiers = (
+  identifiers: Array<string | null | undefined> | string | null | undefined
+): string[] => {
+  if (!identifiers) {
+    return [];
+  }
+
+  const list = Array.isArray(identifiers) ? identifiers : [identifiers];
+
+  const normalized = list
+    .map((value) => {
+      if (value === null || value === undefined) {
+        return null;
+      }
+
+      const trimmed = String(value).trim();
+      return trimmed.length > 0 ? trimmed : null;
+    })
+    .filter((value): value is string => Boolean(value));
+
+  return Array.from(new Set(normalized));
+};
+const buildVehicleSchemaPayload = (
+  source: Record<string, any> | null | undefined,
+  overrides: VehiclePayloadOverrides = {}
+) => {
+  const basePlateNumber = {
+    ar: source?.plateNumber?.ar ?? null,
+    en: source?.plateNumber?.en ?? null,
+  };
+
+  const payload = {
+    chassisNumber: source?.chassisNumber ?? null,
+    createdDate: source?.createdDate ?? null,
+    createdUserId: source?.createdUserId ?? null,
+    driver: null,
+    driverIds: Array.isArray(source?.driverIds)
+      ? source.driverIds.map((id: any) => String(id))
+      : [],
+    name: source?.name ?? null,
+    plateNumber: basePlateNumber,
+    city: source?.city ?? null,
+    companyUid: source?.companyUid ?? null,
+    email: source?.email ?? null,
+    fuelType: source?.fuelType ?? null,
+    id: source?.id ?? null,
+    image: source?.image ?? null,
+    isActive: typeof source?.isActive === "boolean" ? source.isActive : true,
+    licenceAttachment: source?.licenceAttachment ?? null,
+    location: source?.location ?? null,
+    phoneNumber: source?.phoneNumber ?? null,
+    plan: source?.plan ?? null,
+    uId: source?.uId ?? null,
+    workingStatus:
+      source?.workingStatus !== undefined ? source.workingStatus : "offWorking",
+  };
+
+  if (overrides.chassisNumber !== undefined) {
+    payload.chassisNumber = overrides.chassisNumber ?? null;
+  }
+
+  if (overrides.createdDate !== undefined) {
+    payload.createdDate = overrides.createdDate;
+  }
+
+  if (overrides.createdUserId !== undefined) {
+    payload.createdUserId = overrides.createdUserId ?? null;
+  }
+
+  if (overrides.driverIds !== undefined) {
+    payload.driverIds = overrides.driverIds;
+  }
+
+  if (overrides.name !== undefined) {
+    payload.name = overrides.name ?? null;
+  }
+
+  if (overrides.plateNumber !== undefined) {
+    payload.plateNumber = {
+      ar: overrides.plateNumber?.ar ?? null,
+      en: overrides.plateNumber?.en ?? null,
+    };
+  }
+
+  if (overrides.image !== undefined) {
+    payload.image = overrides.image ?? null;
+  }
+
+  if (overrides.workingStatus !== undefined) {
+    payload.workingStatus = overrides.workingStatus ?? null;
+  }
+
+  if (overrides.isActive !== undefined) {
+    payload.isActive = overrides.isActive ?? false;
+  }
+
+  payload.driver = null;
+
+  return payload;
+};
+
+/**
+ * Create a new vehicle document in Firestore with the standardized schema
+ * observed in existing vehicle documents.
+ */
+export const createVehicleWithSchema = async ({
+  chassisNumber,
+  plateNumber,
+  name,
+  imageFile = null,
+  driverIdentifiers = null,
+}: CreateVehicleOptions) => {
+  try {
+    const currentUser = auth.currentUser;
+
+    if (!currentUser) {
+      throw new Error("No user is currently logged in.");
+    }
+
+    let imageUrl: string | null = null;
+
+    if (imageFile instanceof File) {
+      const timestamp = Date.now();
+      const storagePath = `vehicles/${timestamp}-${imageFile.name}`;
+      imageUrl = await uploadFileToStorage(imageFile, storagePath);
+    } else if (typeof imageFile === "string" && imageFile.trim() !== "") {
+      imageUrl = imageFile;
+    }
+
+    const driverIds = normalizeDriverIdentifiers(driverIdentifiers);
+
+    const vehiclePayload = buildVehicleSchemaPayload(null, {
+      chassisNumber: chassisNumber ?? null,
+      createdDate: serverTimestamp(),
+      createdUserId: currentUser.email ?? null,
+      driverIds,
+      name: name ?? null,
+      plateNumber: {
+        ar: plateNumber ?? null,
+        en: plateNumber ?? null,
+      },
+      image: imageUrl,
+      workingStatus: "offWorking",
+      isActive: true,
+    });
+
+    const vehiclesCollection = collection(db, "vehicles");
+    const vehicleDocRef = doc(vehiclesCollection);
+    await setDoc(vehicleDocRef, vehiclePayload);
+
+    return {
+      id: vehicleDocRef.id,
+      data: vehiclePayload,
+    };
+  } catch (error) {
+    console.error("Error creating vehicle document:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all car-types from Firestore
+ * @returns Promise with array of car-type documents
+ */
+export const fetchCarTypes = async (): Promise<any[]> => {
+  try {
+    const carTypesRef = collection(db, "car-types");
+    const q = query(carTypesRef, orderBy("createdDate", "desc"));
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
+
+    const carTypesData: any[] = [];
+
+    querySnapshot.forEach((doc) => {
+      carTypesData.push({
+        docId: doc.id,
+        id: doc.id,
+        ...doc.data(),
+      });
+    });
+
+    return carTypesData;
+  } catch (error) {
+    console.error("Error fetching car-types data:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all car-models from Firestore
+ * @returns Promise with array of car-model documents
+ */
+export const fetchCarModels = async (): Promise<any[]> => {
+  try {
+    const carModelsRef = collection(db, "car-models");
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(
+      carModelsRef
+    );
+
+    const carModelsData: any[] = [];
+
+    querySnapshot.forEach((doc) => {
+      carModelsData.push({
+        docId: doc.id,
+        id: doc.id,
+        ...doc.data(),
+      });
+    });
+
+    return carModelsData;
+  } catch (error) {
+    console.error("Error fetching car-models data:", error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new car-model document in Firestore
+ * @param carModelData - Car model data including name in Arabic and English
+ * @returns Promise with created document ID and data
+ */
+export const createCarModel = async (carModelData: {
+  name: { ar: string; en?: string };
+  createdUserId?: string | null;
+}): Promise<{ id: string; data: any }> => {
+  try {
+    const currentUser = auth.currentUser;
+    const userEmail = currentUser?.email ?? carModelData.createdUserId ?? null;
+
+    // Get a sample car-model to understand the schema
+    const carModelsCollection = collection(db, "car-models");
+    const sampleQuery = query(carModelsCollection, limit(1));
+    const sampleSnapshot = await getDocs(sampleQuery);
+
+    // Build car-model payload with same structure as existing documents
+    const carModelPayload: any = {
+      name: {
+        ar: carModelData.name.ar,
+        en: carModelData.name.en || carModelData.name.ar,
+      },
+      createdDate: serverTimestamp(),
+      createdUserId: userEmail,
+    };
+
+    // If there's a sample document, copy other fields that might exist
+    if (!sampleSnapshot.empty) {
+      const sampleData = sampleSnapshot.docs[0].data();
+      // Copy fields that should be preserved (excluding name, createdDate, createdUserId)
+      Object.keys(sampleData).forEach((key) => {
+        if (
+          !["name", "createdDate", "createdUserId", "docId", "id"].includes(key)
+        ) {
+          // Set default values for other fields if they exist in sample
+          if (sampleData[key] !== null && sampleData[key] !== undefined) {
+            if (typeof sampleData[key] === "string") {
+              carModelPayload[key] = "";
+            } else if (typeof sampleData[key] === "number") {
+              carModelPayload[key] = 0;
+            } else if (typeof sampleData[key] === "boolean") {
+              carModelPayload[key] = false;
+            } else if (Array.isArray(sampleData[key])) {
+              carModelPayload[key] = [];
+            } else if (typeof sampleData[key] === "object") {
+              carModelPayload[key] = {};
+            } else {
+              carModelPayload[key] = null;
+            }
+          }
+        }
+      });
+    }
+
+    const carModelDocRef = doc(carModelsCollection);
+    await setDoc(carModelDocRef, carModelPayload);
+
+    return {
+      id: carModelDocRef.id,
+      data: carModelPayload,
+    };
+  } catch (error) {
+    console.error("Error creating car-model document:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a single car-type by ID
+ * @param carTypeId - Car type document ID
+ * @returns Promise with car-type data
+ */
+export const fetchCarTypeById = async (carTypeId: string): Promise<any> => {
+  try {
+    const carTypeDocRef = doc(db, "car-types", carTypeId);
+    const carTypeDoc = await getDoc(carTypeDocRef);
+
+    if (!carTypeDoc.exists()) {
+      throw new Error("Car type not found");
+    }
+
+    return {
+      docId: carTypeDoc.id,
+      id: carTypeDoc.id,
+      ...carTypeDoc.data(),
+    };
+  } catch (error) {
+    console.error("Error fetching car-type by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update an existing car-type document in Firestore
+ * @param carTypeId - Car type document ID
+ * @param carTypeData - Updated car type data
+ * @returns Promise with updated document data
+ */
+export const updateCarType = async (
+  carTypeId: string,
+  carTypeData: {
+    name?: { ar: string; en?: string };
+    carModel?: {
+      name?: { ar: string; en?: string };
+      carModelImageUrl?: string | null;
+    };
+    year?: string;
+    fuelType?: string;
+    imageFile?: File | null;
+  }
+): Promise<{ id: string; data: any }> => {
+  try {
+    if (!carTypeId) {
+      throw new Error("Car type ID is required");
+    }
+
+    const carTypeDocRef = doc(db, "car-types", carTypeId);
+    const existingDoc = await getDoc(carTypeDocRef);
+
+    if (!existingDoc.exists()) {
+      throw new Error("Car type not found");
+    }
+
+    const existingData = existingDoc.data();
+    const updatePayload: any = {};
+
+    // Update name if provided
+    if (carTypeData.name) {
+      updatePayload.name = {
+        ar: carTypeData.name.ar,
+        en: carTypeData.name.en || carTypeData.name.ar,
+      };
+    }
+
+    // Update carModel if provided
+    if (carTypeData.carModel) {
+      let imageUrl = existingData.carModel?.carModelImageUrl || null;
+
+      // Upload new image if provided
+      if (carTypeData.imageFile instanceof File) {
+        const timestamp = Date.now();
+        const storagePath = `car-types/${timestamp}-${carTypeData.imageFile.name}`;
+        imageUrl = await uploadFileToStorage(
+          carTypeData.imageFile,
+          storagePath
+        );
+      } else if (carTypeData.carModel.carModelImageUrl !== undefined) {
+        imageUrl = carTypeData.carModel.carModelImageUrl;
+      }
+
+      updatePayload.carModel = {
+        name: {
+          ar:
+            carTypeData.carModel.name?.ar ||
+            existingData.carModel?.name?.ar ||
+            "",
+          en:
+            carTypeData.carModel.name?.en ||
+            carTypeData.carModel.name?.ar ||
+            existingData.carModel?.name?.en ||
+            existingData.carModel?.name?.ar ||
+            "",
+        },
+        carModelImageUrl: imageUrl,
+      };
+    }
+
+    // Update year if provided
+    if (carTypeData.year !== undefined) {
+      updatePayload.year = carTypeData.year;
+    }
+
+    // Update fuelType if provided
+    if (carTypeData.fuelType !== undefined) {
+      updatePayload.fuelType = carTypeData.fuelType;
+    }
+
+    await updateDoc(carTypeDocRef, updatePayload);
+
+    return {
+      id: carTypeId,
+      data: { ...existingData, ...updatePayload },
+    };
+  } catch (error) {
+    console.error("Error updating car-type:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a car-type document from Firestore
+ * @param carTypeId - Car type document ID
+ * @returns Promise<boolean> - true if successful
+ */
+export const deleteCarType = async (carTypeId: string): Promise<boolean> => {
+  try {
+    if (!carTypeId) {
+      throw new Error("Car type ID is required");
+    }
+
+    const carTypeDocRef = doc(db, "car-types", carTypeId);
+    const carTypeDoc = await getDoc(carTypeDocRef);
+
+    if (!carTypeDoc.exists()) {
+      throw new Error("Car type not found");
+    }
+
+    await deleteDoc(carTypeDocRef);
+
+    console.log("✅ Car type deleted successfully:", carTypeId);
+    return true;
+  } catch (error) {
+    console.error("Error deleting car-type:", error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new car-type document in Firestore
+ * @param carTypeData - Car type data including name, carModel, year, fuelType, and optional imageFile
+ * @returns Promise with created document ID and data
+ */
+export const createCarType = async (carTypeData: {
+  name: { ar: string; en?: string };
+  carModel: {
+    name: { ar: string; en?: string };
+    carModelImageUrl?: string | null;
+  };
+  year: string;
+  fuelType: string;
+  imageFile?: File | null;
+  createdUserId?: string | null;
+}): Promise<{ id: string; data: any }> => {
+  try {
+    const currentUser = auth.currentUser;
+    const userEmail = currentUser?.email ?? carTypeData.createdUserId ?? null;
+
+    let imageUrl: string | null = null;
+
+    // Upload image if provided
+    if (carTypeData.imageFile instanceof File) {
+      const timestamp = Date.now();
+      const storagePath = `car-types/${timestamp}-${carTypeData.imageFile.name}`;
+      imageUrl = await uploadFileToStorage(carTypeData.imageFile, storagePath);
+    } else if (carTypeData.carModel.carModelImageUrl) {
+      imageUrl = carTypeData.carModel.carModelImageUrl;
+    }
+
+    // Build car-type payload
+    const carTypePayload: any = {
+      name: {
+        ar: carTypeData.name.ar,
+        en: carTypeData.name.en || carTypeData.name.ar,
+      },
+      carModel: {
+        name: {
+          ar: carTypeData.carModel.name.ar,
+          en: carTypeData.carModel.name.en || carTypeData.carModel.name.ar,
+        },
+        carModelImageUrl: imageUrl,
+      },
+      year: carTypeData.year,
+      fuelType: carTypeData.fuelType,
+      createdDate: serverTimestamp(),
+      createdUserId: userEmail,
+    };
+
+    const carTypesCollection = collection(db, "car-types");
+    const carTypeDocRef = doc(carTypesCollection);
+    await setDoc(carTypeDocRef, carTypePayload);
+
+    return {
+      id: carTypeDocRef.id,
+      data: carTypePayload,
+    };
+  } catch (error) {
+    console.error("Error creating car-type document:", error);
+    throw error;
+  }
+};
+
+export const updateVehicleWithSchema = async ({
+  vehicleId,
+  chassisNumber,
+  plateNumber,
+  name,
+  imageFile = undefined,
+  driverIdentifiers,
+}: UpdateVehicleOptions) => {
+  try {
+    if (!vehicleId) {
+      throw new Error("Vehicle ID is required to update a vehicle.");
+    }
+
+    const vehicleDocRef = doc(db, "vehicles", vehicleId);
+    const snapshot = await getDoc(vehicleDocRef);
+
+    if (!snapshot.exists()) {
+      throw new Error("Vehicle not found.");
+    }
+
+    const existingData = snapshot.data() ?? {};
+
+    let resolvedImage: string | null | undefined = undefined;
+
+    if (imageFile !== undefined) {
+      if (imageFile instanceof File) {
+        const timestamp = Date.now();
+        const storagePath = `vehicles/${timestamp}-${imageFile.name}`;
+        resolvedImage = await uploadFileToStorage(imageFile, storagePath);
+      } else if (typeof imageFile === "string") {
+        const trimmed = imageFile.trim();
+        resolvedImage = trimmed.length > 0 ? trimmed : null;
+      } else {
+        resolvedImage = null;
+      }
+    }
+
+    const normalizedDriverIds =
+      driverIdentifiers !== undefined
+        ? normalizeDriverIdentifiers(driverIdentifiers)
+        : undefined;
+
+    const payload = buildVehicleSchemaPayload(existingData, {
+      chassisNumber:
+        chassisNumber !== undefined ? chassisNumber ?? null : undefined,
+      name: name !== undefined ? name ?? null : undefined,
+      plateNumber:
+        plateNumber !== undefined
+          ? {
+              ar: plateNumber ?? null,
+              en: plateNumber ?? null,
+            }
+          : undefined,
+      image: resolvedImage,
+      driverIds: normalizedDriverIds,
+    });
+
+    if (!payload.createdDate) {
+      payload.createdDate = serverTimestamp();
+    }
+
+    if (payload.createdUserId === null && existingData?.createdUserId) {
+      payload.createdUserId = existingData.createdUserId;
+    }
+
+    await setDoc(vehicleDocRef, payload, { merge: false });
+
+    return {
+      id: vehicleId,
+      data: payload,
+    };
+  } catch (error) {
+    console.error("Error updating vehicle document:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a single vehicle document from Firestore
+ * @param vehicleId - Vehicle document ID
+ * @returns Promise with the vehicle data
+ */
+export const fetchVehicleById = async (vehicleId: string) => {
+  try {
+    const vehicleDocRef = doc(db, "vehicles", vehicleId);
+    const vehicleDoc = await getDoc(vehicleDocRef);
+
+    if (!vehicleDoc.exists()) {
+      throw new Error("Vehicle not found");
+    }
+
+    return {
+      docId: vehicleDoc.id,
+      ...vehicleDoc.data(),
+    };
+  } catch (error) {
+    console.error("Error fetching vehicle by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a driver document from Firestore by document ID or email fallback
+ * @param identifier - Driver document ID or email
+ * @returns Promise with the driver data or null if not found
+ */
+export const fetchDriverByIdentifier = async (
+  identifier: string
+): Promise<Record<string, any> | null> => {
+  try {
+    const trimmedIdentifier = identifier?.trim?.() ?? identifier;
+    const candidateIds = [
+      identifier,
+      trimmedIdentifier,
+      trimmedIdentifier?.toLowerCase?.(),
+      trimmedIdentifier?.toUpperCase?.(),
+    ];
+
+    for (const candidate of candidateIds) {
+      if (!candidate) continue;
+      const driverDocRef = doc(db, "drivers", candidate);
+      const driverDoc = await getDoc(driverDocRef);
+      if (driverDoc.exists()) {
+        return {
+          docId: driverDoc.id,
+          ...driverDoc.data(),
+        };
+      }
+    }
+
+    const emailCandidates = Array.from(
+      new Set(
+        [
+          identifier,
+          trimmedIdentifier,
+          trimmedIdentifier?.toLowerCase?.(),
+        ].filter(
+          (value) =>
+            value !== null && value !== undefined && String(value).trim() !== ""
+        )
+      )
+    );
+
+    if (emailCandidates.length === 0) {
+      return null;
+    }
+
+    const driversRef = collection(db, "drivers");
+    for (const emailCandidate of emailCandidates) {
+      const emailQuerySnapshot = await getDocs(
+        query(driversRef, where("email", "==", emailCandidate))
+      );
+
+      if (!emailQuerySnapshot.empty) {
+        const driverDoc = emailQuerySnapshot.docs[0];
+        return {
+          docId: driverDoc.id,
+          ...driverDoc.data(),
+        };
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Error fetching driver by identifier:", error);
+    throw error;
+  }
+};
+
+export const assignVehicleToDriver = async ({
+  driverIdentifier,
+  vehicleId,
+  vehicleName,
+  plateNumber,
+}: {
+  driverIdentifier: string;
+  vehicleId: string;
+  vehicleName: string;
+  plateNumber: string;
+}) => {
+  const driverRecord = await fetchDriverByIdentifier(driverIdentifier);
+
+  if (!driverRecord || !driverRecord.docId) {
+    throw new Error("Driver not found for the provided identifier.");
+  }
+
+  const driverDocRef = doc(db, "drivers", driverRecord.docId);
+
+  await updateDoc(driverDocRef, {
+    vehicle: {
+      id: vehicleId,
+      name: vehicleName ?? null,
+      plateNumber: plateNumber ?? null,
+    },
+    driverIds: arrayUnion(vehicleId),
+  });
+};
+
+/**
+ * Add driver reference to a vehicle document (driverIds array)
+ * @param vehicleId - Vehicle document ID
+ * @param driverIdentifier - Driver identifier (document ID or legacy identifier)
+ */
+export const addDriverToVehicle = async (
+  vehicleId: string,
+  driverIdentifier: string
+) => {
+  try {
+    if (!vehicleId || !driverIdentifier) {
+      throw new Error("Vehicle ID and Driver identifier are required");
+    }
+
+    const vehicleDocRef = doc(db, "vehicles", vehicleId);
+    await updateDoc(vehicleDocRef, {
+      driverIds: arrayUnion(driverIdentifier),
+    });
+  } catch (error) {
+    console.error("Error adding driver to vehicle:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetch a single driver by ID from Firestore
  * @param driverId - Driver document ID
  * @returns Promise with the driver data
@@ -5054,7 +8584,6 @@ export interface AddCompanyData {
   taxCertificateFile?: File | null;
   commercialRegistrationFile?: File | null;
 }
-
 export interface AddServiceProviderData {
   // Basic fields
   name: string;
@@ -5300,7 +8829,6 @@ export const fetchCompaniesCars = async () => {
     throw error;
   }
 };
-
 /**
  * Fetch notifications from Firestore notifications collection
  * Filtered by current company ID in the companies array
@@ -5425,6 +8953,475 @@ export const fetchSupervisorById = async (supervisorId: string) => {
     return supervisor;
   } catch (error) {
     console.error("Error fetching supervisor by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update supervisor isActive status in users collection
+ * @param supervisorId - The ID of the supervisor (user document ID)
+ * @param isActive - The new isActive status (true or false)
+ * @returns Promise<boolean> - Returns true if update was successful
+ */
+export const updateSupervisorIsActive = async (
+  supervisorId: string,
+  isActive: boolean
+): Promise<boolean> => {
+  try {
+    console.log(
+      `📝 Updating supervisor isActive status: ${supervisorId} -> ${isActive}`
+    );
+
+    const userDocRef = doc(db, "users", supervisorId);
+    await updateDoc(userDocRef, {
+      isActive: isActive,
+    });
+
+    console.log(`✅ Successfully updated supervisor isActive status`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating supervisor isActive status:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete supervisor from users collection
+ * @param supervisorId - The ID of the supervisor (user document ID)
+ * @returns Promise<boolean> - Returns true if deletion was successful
+ */
+export const deleteSupervisor = async (
+  supervisorId: string
+): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting supervisor from Firestore: ${supervisorId}`);
+
+    // Verify the user is a supervisor/admin before deleting
+    const userDocRef = doc(db, "users", supervisorId);
+    const userDoc = await getDoc(userDocRef);
+
+    if (!userDoc.exists()) {
+      throw new Error("Supervisor not found");
+    }
+
+    const data = userDoc.data();
+    if (data.isAdmin !== true && data.isSuperAdmin !== true) {
+      throw new Error("User is not a supervisor/admin");
+    }
+
+    // Delete the user document
+    await deleteDoc(userDocRef);
+    console.log(`✅ Successfully deleted supervisor from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting supervisor:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add refid to existing supervisors that don't have one
+ * Generates unique 8-digit codes for all supervisors without refid
+ * @returns Promise with the number of supervisors updated
+ */
+export const addRefidToExistingSupervisors = async (): Promise<number> => {
+  try {
+    console.log(
+      "🔄 Starting migration: Adding refid to existing supervisors..."
+    );
+
+    // Fetch all users
+    const usersRef = collection(db, "users");
+    const q = query(usersRef, orderBy("createdDate", "desc"));
+    const usersSnapshot = await getDocs(q);
+    console.log(`📦 Found ${usersSnapshot.size} users`);
+
+    let updatedCount = 0;
+    const supervisorsToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    // First pass: Identify supervisors without refid and generate refids
+    for (const userDoc of usersSnapshot.docs) {
+      const userData = userDoc.data();
+
+      // Only process supervisors/admins
+      if (userData.isAdmin !== true && userData.isSuperAdmin !== true) {
+        continue;
+      }
+
+      // Skip if supervisor already has refid
+      if (userData.refid) {
+        console.log(
+          `⏭️  Supervisor ${userDoc.id} already has refid: ${userData.refid}`
+        );
+        continue;
+      }
+
+      // Generate unique 8-digit refid
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Generate 8-digit number (10000000 to 99999999)
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+
+        // Check if refid already exists in Firestore or in our pending updates
+        const usersRefCheck = collection(db, "users");
+        const qCheck = query(usersRefCheck, where("refid", "==", refid));
+        const querySnapshot = await getDocs(qCheck);
+
+        // Also check if this refid is already in our pending updates
+        const isInPendingUpdates = supervisorsToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for supervisor ${userDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      supervisorsToUpdate.push({
+        docRef: doc(db, "users", userDoc.id),
+        refid: refid,
+      });
+
+      console.log(`✅ Generated refid ${refid} for supervisor ${userDoc.id}`);
+    }
+
+    console.log(
+      `📝 Updating ${supervisorsToUpdate.length} supervisors with refid...`
+    );
+
+    // Second pass: Update all supervisors in batch
+    for (const { docRef, refid } of supervisorsToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(`✅ Updated supervisor ${docRef.id} with refid: ${refid}`);
+      } catch (error) {
+        console.error(`❌ Error updating supervisor ${docRef.id}:`, error);
+      }
+    }
+
+    console.log(
+      `✅ Migration completed: ${updatedCount} supervisors updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a client by its ID
+ * @param clientId - The ID of the client to fetch
+ * @returns Promise with the client data
+ */
+export const fetchClientById = async (clientId: string) => {
+  try {
+    console.log("Fetching client by ID:", clientId);
+
+    // Fetch the specific client document from Firestore
+    const clientDocRef = doc(db, "clients", clientId);
+    const clientDoc = await getDoc(clientDocRef);
+
+    if (!clientDoc.exists()) {
+      throw new Error("Client not found");
+    }
+
+    const clientData = clientDoc.data();
+
+    const client = {
+      id: clientDoc.id,
+      ...clientData,
+    };
+
+    console.log("Client data fetched:", client);
+
+    return client;
+  } catch (error) {
+    console.error("Error fetching client by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update client isActive status in clients collection
+ * @param clientId - The ID of the client (document ID)
+ * @param isActive - The new isActive status (true or false)
+ * @returns Promise<boolean> - Returns true if update was successful
+ */
+export const updateClientIsActive = async (
+  clientId: string,
+  isActive: boolean
+): Promise<boolean> => {
+  try {
+    console.log(
+      `📝 Updating client isActive status: ${clientId} -> ${isActive}`
+    );
+
+    const clientDocRef = doc(db, "clients", clientId);
+    await updateDoc(clientDocRef, {
+      isActive: isActive,
+    });
+
+    console.log(`✅ Successfully updated client isActive status`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating client isActive status:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete client from clients collection
+ * @param clientId - The ID of the client (document ID)
+ * @returns Promise<boolean> - Returns true if deletion was successful
+ */
+export const deleteClient = async (clientId: string): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting client from Firestore: ${clientId}`);
+
+    // Verify the client exists before deleting
+    const clientDocRef = doc(db, "clients", clientId);
+    const clientDoc = await getDoc(clientDocRef);
+
+    if (!clientDoc.exists()) {
+      throw new Error("Client not found");
+    }
+
+    // Delete the client document
+    await deleteDoc(clientDocRef);
+    console.log(`✅ Successfully deleted client from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting client:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add refid to existing clients that don't have one
+ * Generates unique 8-digit codes for all clients without refid
+ * @returns Promise with the number of clients updated
+ */
+export const addRefidToExistingClients = async (): Promise<number> => {
+  try {
+    console.log("🔄 Starting migration: Adding refid to existing clients...");
+
+    // Fetch all clients
+    const clientsRef = collection(db, "clients");
+    const q = query(clientsRef, orderBy("createdDate", "desc"));
+    const clientsSnapshot = await getDocs(q);
+    console.log(`📦 Found ${clientsSnapshot.size} clients`);
+
+    let updatedCount = 0;
+    const clientsToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    // First pass: Identify clients without refid and generate refids
+    for (const clientDoc of clientsSnapshot.docs) {
+      const clientData = clientDoc.data();
+
+      // Skip if client already has refid
+      if (clientData.refid) {
+        console.log(
+          `⏭️  Client ${clientDoc.id} already has refid: ${clientData.refid}`
+        );
+        continue;
+      }
+
+      // Generate unique 8-digit refid
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Generate 8-digit number (10000000 to 99999999)
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+
+        // Check if refid already exists in Firestore or in our pending updates
+        const clientsRefCheck = collection(db, "clients");
+        const qCheck = query(clientsRefCheck, where("refid", "==", refid));
+        const querySnapshot = await getDocs(qCheck);
+
+        // Also check if this refid is already in our pending updates
+        const isInPendingUpdates = clientsToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for client ${clientDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      clientsToUpdate.push({
+        docRef: doc(db, "clients", clientDoc.id),
+        refid: refid,
+      });
+
+      console.log(`✅ Generated refid ${refid} for client ${clientDoc.id}`);
+    }
+
+    console.log(`📝 Updating ${clientsToUpdate.length} clients with refid...`);
+
+    // Second pass: Update all clients in batch
+    for (const { docRef, refid } of clientsToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(`✅ Updated client ${docRef.id} with refid: ${refid}`);
+      } catch (error) {
+        console.error(`❌ Error updating client ${docRef.id}:`, error);
+      }
+    }
+
+    console.log(
+      `✅ Migration completed: ${updatedCount} clients updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
+    throw error;
+  }
+};
+
+export const deleteCompany = async (companyId: string): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting company from Firestore: ${companyId}`);
+
+    // Verify the company exists before deleting
+    const companyDocRef = doc(db, "companies", companyId);
+    const companyDoc = await getDoc(companyDocRef);
+
+    if (!companyDoc.exists()) {
+      throw new Error("Company not found");
+    }
+
+    // Delete the company document
+    await deleteDoc(companyDocRef);
+    console.log(`✅ Successfully deleted company from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting company:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add refid to existing companies that don't have one
+ * Generates unique 8-digit codes for all companies without refid
+ * @returns Promise with the number of companies updated
+ */
+export const addRefidToExistingCompanies = async (): Promise<number> => {
+  try {
+    console.log("🔄 Starting migration: Adding refid to existing companies...");
+
+    // Fetch all companies
+    const companiesSnapshot = await getDocs(collection(db, "companies"));
+    console.log(`📦 Found ${companiesSnapshot.size} companies`);
+
+    let updatedCount = 0;
+    const companiesToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    // First pass: Identify companies without refid and generate refids
+    for (const companyDoc of companiesSnapshot.docs) {
+      const companyData = companyDoc.data();
+
+      // Skip if company already has refid
+      if (companyData.refid) {
+        console.log(
+          `⏭️  Company ${companyDoc.id} already has refid: ${companyData.refid}`
+        );
+        continue;
+      }
+
+      // Generate unique 8-digit refid
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Generate 8-digit number (10000000 to 99999999)
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+
+        // Check if refid already exists in Firestore or in our pending updates
+        const companiesRef = collection(db, "companies");
+        const q = query(companiesRef, where("refid", "==", refid));
+        const querySnapshot = await getDocs(q);
+
+        // Also check if this refid is already in our pending updates
+        const isInPendingUpdates = companiesToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for company ${companyDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      companiesToUpdate.push({
+        docRef: doc(db, "companies", companyDoc.id),
+        refid: refid,
+      });
+
+      console.log(`✅ Generated refid ${refid} for company ${companyDoc.id}`);
+    }
+
+    console.log(
+      `📝 Updating ${companiesToUpdate.length} companies with refid...`
+    );
+
+    // Second pass: Update all companies in batch
+    for (const { docRef, refid } of companiesToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(`✅ Updated company ${docRef.id} with refid: ${refid}`);
+      } catch (error) {
+        console.error(`❌ Error updating company ${docRef.id}:`, error);
+      }
+    }
+
+    console.log(
+      `✅ Migration completed: ${updatedCount} companies updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
     throw error;
   }
 };
@@ -5825,6 +9822,186 @@ export const fetchUserFuelStations = async (): Promise<FuelStation[]> => {
 };
 
 /**
+ * Advertisement type as stored in Firestore "ads" collection
+ */
+export interface Advertisement {
+  id: string; // Firestore document id
+  refid: string; // 8-digit reference id used as الرقم
+  adImageUrl?: string | null; // التصميم
+  title?: { ar?: string | null } | string | null;
+  description?: { ar?: string | null } | string | null;
+  createdUserId?: string | null; // المنشئ (email)
+  creatorDisplayName?: string | null; // المنشئ (display_name from users collection)
+  type?: string | null; // العرض
+  status?: boolean | string | null; // حالة الاعلان
+  [key: string]: any;
+}
+
+/**
+ * Fetch user display_name from users collection by email
+ * @param email - User email to search for
+ * @returns Promise with display_name or null if not found
+ */
+export const fetchUserDisplayNameByEmail = async (
+  email: string | null | undefined
+): Promise<string | null> => {
+  if (!email) return null;
+
+  try {
+    const usersRef = collection(db, "users");
+    const q = query(usersRef, where("email", "==", email));
+    const snapshot = await getDocs(q);
+
+    if (!snapshot.empty) {
+      const userData = snapshot.docs[0].data();
+      // Try different possible field names for display name
+      return (
+        userData.display_name ||
+        userData.displayName ||
+        userData.name ||
+        userData.fullName ||
+        null
+      );
+    }
+
+    return null;
+  } catch (error) {
+    console.error(
+      `❌ Error fetching user display_name for email ${email}:`,
+      error
+    );
+    return null;
+  }
+};
+
+/**
+ * Generate an 8-digit numeric reference id
+ */
+export const generateRefId = (): string => {
+  // Simple 8-digit random number as string (00000000 - 99999999)
+  const num = Math.floor(Math.random() * 100000000);
+  return num.toString().padStart(8, "0");
+};
+
+/**
+ * Fetch advertisements from Firestore "ads" collection
+ * - Ensures each document has an 8-digit refid (creates and persists one if missing)
+ * - Normalizes title/description to use Arabic fields when structured as objects
+ */
+export const fetchAdvertisements = async (): Promise<Advertisement[]> => {
+  try {
+    console.log("📢 Fetching advertisements from Firestore (ads)...");
+
+    const adsRef = collection(db, "ads");
+    let snapshot: QuerySnapshot<DocumentData>;
+
+    // Try to order by createdDate desc, but fallback to simple query if it fails
+    // (e.g., if some documents don't have createdDate field or index is missing)
+    try {
+      const q = query(adsRef, orderBy("createdDate", "desc"));
+      snapshot = await getDocs(q);
+    } catch (orderError) {
+      console.warn(
+        "⚠️ Could not order by 'createdDate', fetching without order:",
+        orderError
+      );
+      // Fallback: fetch without ordering
+      snapshot = await getDocs(adsRef);
+    }
+
+    const ads: Advertisement[] = [];
+    const updatePromises: Promise<void>[] = [];
+
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data() || {};
+
+      let refid: string | undefined = data.refid;
+      if (!refid || typeof refid !== "string" || refid.trim() === "") {
+        refid = generateRefId();
+        const adDocRef = doc(db, "ads", docSnap.id);
+        updatePromises.push(
+          updateDoc(adDocRef, {
+            refid,
+          }).catch((error) => {
+            console.error(
+              "❌ Error updating refid for ad document:",
+              docSnap.id,
+              error
+            );
+          }) as Promise<void>
+        );
+      }
+
+      // Normalize title / description to be easy to consume on the UI
+      const rawTitle = data.title;
+      const rawDescription = data.description;
+
+      const normalizedTitle =
+        typeof rawTitle === "string"
+          ? rawTitle
+          : rawTitle && typeof rawTitle === "object"
+          ? rawTitle.ar ?? ""
+          : "";
+
+      const normalizedDescription =
+        typeof rawDescription === "string"
+          ? rawDescription
+          : rawDescription && typeof rawDescription === "object"
+          ? rawDescription.ar ?? ""
+          : "";
+
+      ads.push({
+        ...data,
+        id: docSnap.id,
+        refid,
+        adImageUrl: data.adImageUrl ?? null,
+        title: normalizedTitle, // Override with normalized string
+        description: normalizedDescription, // Override with normalized string
+        createdUserId: data.createdUserId ?? null,
+        type: data.type ?? null,
+        status: data.status ?? null,
+      });
+    });
+
+    if (updatePromises.length > 0) {
+      console.log(
+        `📝 Updating refid for ${updatePromises.length} advertisement(s) missing refid...`
+      );
+      await Promise.all(updatePromises);
+    }
+
+    // Fetch display_name for each createdUserId from users collection
+    console.log("👤 Fetching creator display names from users collection...");
+    const uniqueEmails = [
+      ...new Set(ads.map((ad) => ad.createdUserId).filter(Boolean)),
+    ] as string[];
+    const displayNameMap = new Map<string, string | null>();
+
+    // Fetch display names for all unique emails in parallel
+    const displayNamePromises = uniqueEmails.map(async (email) => {
+      const displayName = await fetchUserDisplayNameByEmail(email);
+      displayNameMap.set(email, displayName);
+    });
+
+    await Promise.all(displayNamePromises);
+
+    // Add creatorDisplayName to each ad
+    ads.forEach((ad) => {
+      if (ad.createdUserId) {
+        ad.creatorDisplayName = displayNameMap.get(ad.createdUserId) || null;
+      }
+    });
+
+    console.log(`✅ Fetched ${ads.length} advertisements from Firestore (ads)`);
+
+    return ads;
+  } catch (error) {
+    console.error("❌ Error fetching advertisements:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetch invoices data from Firestore
  * Filtered by current user's company
  * @returns Promise with array of invoice data
@@ -6109,7 +10286,6 @@ export const addCarStation = async (stationData: AddStationData) => {
     throw error;
   }
 };
-
 /**
  * Add a new company to Firestore companies collection
  * 1. Uploads files to Firebase Storage
@@ -6218,13 +10394,42 @@ export const addCompany = async (companyData: AddCompanyData) => {
     const companyUid = result.data.uid;
     console.log("✅ Firebase Auth account created:", companyUid);
 
-    // 4. Build formattedLocation object
+    // 4. Generate unique 8-digit refid
+    let refid: string = "";
+    let isUnique = false;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    while (!isUnique && attempts < maxAttempts) {
+      // Generate 8-digit number (10000000 to 99999999)
+      const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+      refid = randomCode.toString();
+
+      // Check if refid already exists
+      const companiesRef = collection(db, "companies");
+      const q = query(companiesRef, where("refid", "==", refid));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        isUnique = true;
+      } else {
+        attempts++;
+      }
+    }
+
+    if (!isUnique || !refid) {
+      throw new Error("فشل في إنشاء كود الشركة. يرجى المحاولة مرة أخرى.");
+    }
+
+    console.log("✅ Generated unique refid:", refid);
+
+    // 5. Build formattedLocation object
     const formattedLocation = {
       "address.city": companyData.city,
       country: "Saudi Arabia",
     };
 
-    // 5. Prepare company document
+    // 6. Prepare company document
     const companyDocument = {
       // Basic info
       name: companyData.name.trim(),
@@ -6255,6 +10460,9 @@ export const addCompany = async (companyData: AddCompanyData) => {
       status: "approved",
       balance: 0,
 
+      // Company code (8-digit refid)
+      refid: refid,
+
       // Timestamps and user info
       createdDate: serverTimestamp(),
       createdUserId: adminEmail,
@@ -6268,7 +10476,7 @@ export const addCompany = async (companyData: AddCompanyData) => {
 
     console.log("📄 Company document prepared:", companyDocument);
 
-    // 6. Add document to Firestore companies collection
+    // 7. Add document to Firestore companies collection
     console.log("💾 Adding company document to companies collection...");
     const companyDocRef = doc(db, "companies", companyData.email);
     await setDoc(companyDocRef, companyDocument);
@@ -6426,7 +10634,37 @@ export const addServiceProvider = async (
     const providerUid = result.data.uid;
     console.log("✅ Firebase Auth account created:", providerUid);
 
-    // 4. Build formattedLocation object with nested Address structure
+    // 4. Generate unique 8-digit refid for service provider
+    console.log("🔢 Generating unique 8-digit refid for service provider...");
+    let refid: string = "";
+    let isUnique = false;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    while (!isUnique && attempts < maxAttempts) {
+      const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+      refid = randomCode.toString();
+      const stationsCompanyRefCheck = collection(db, "stationscompany");
+      const qCheck = query(
+        stationsCompanyRefCheck,
+        where("refid", "==", refid)
+      );
+      const querySnapshot = await getDocs(qCheck);
+
+      if (querySnapshot.empty) {
+        isUnique = true;
+      } else {
+        attempts++;
+      }
+    }
+
+    if (!isUnique || !refid) {
+      throw new Error("فشل في إنشاء كود العميل. يرجى المحاولة مرة أخرى.");
+    }
+
+    console.log(`✅ Generated unique refid: ${refid}`);
+
+    // 5. Build formattedLocation object with nested Address structure
     const formattedLocation = {
       address: {
         city: providerData.city,
@@ -6440,7 +10678,7 @@ export const addServiceProvider = async (
       },
     };
 
-    // 5. Prepare service provider document
+    // 6. Prepare service provider document
     const providerDocument = {
       // Basic info
       name: providerData.name.trim(),
@@ -6466,6 +10704,9 @@ export const addServiceProvider = async (
       // Auth UID
       uId: providerUid,
 
+      // 8-digit refid
+      refid: refid,
+
       // Default values
       isActive: false,
       status: "pending",
@@ -6484,7 +10725,7 @@ export const addServiceProvider = async (
 
     console.log("📄 Service provider document prepared:", providerDocument);
 
-    // 6. Add document to Firestore stationscompany collection
+    // 7. Add document to Firestore stationscompany collection
     console.log(
       "💾 Adding service provider document to stationscompany collection..."
     );
@@ -6649,7 +10890,6 @@ export const fetchInvoices = async (): Promise<any[]> => {
     throw error;
   }
 };
-
 /**
  * Fetch comprehensive statistics for a specific company
  * @param companyId - The ID of the company to get statistics for
@@ -7017,6 +11257,7 @@ export interface ServiceProviderData {
   phoneNumber: string;
   email: string;
   status: string;
+  isActive?: boolean | null;
   stationsCount: number;
   ordersCount: number;
   uId?: string;
@@ -7095,13 +11336,19 @@ export const fetchStationsCompanyData = async (): Promise<
 
       // Create service provider data object
       const serviceProvider: ServiceProviderData = {
-        id: data.id || doc.id,
-        clientCode: data.id || data.uId || doc.id,
+        id: doc.id, // Always use Firestore document ID for consistency
+        clientCode: data.refid || data.id || data.uId || doc.id, // Use refid as primary source
         providerName: data.name || "غير محدد",
         type: data.type || "غير محدد",
         phoneNumber: data.phoneNumber || data.phone || "-",
         email: data.email || "-",
         status: data.status || "نشط",
+        isActive:
+          data.isActive !== undefined
+            ? data.isActive
+            : data.status === "نشط" || data.status === "active"
+            ? true
+            : false,
         stationsCount,
         ordersCount,
         uId: companyUid,
@@ -7125,6 +11372,161 @@ export const fetchStationsCompanyData = async (): Promise<
     return serviceProvidersData;
   } catch (error) {
     console.error("❌ Error fetching stations company data:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add 8-digit refid to existing service providers that don't have one
+ * @returns Promise with the number of updated service providers
+ */
+export const addRefidToExistingServiceProviders = async (): Promise<number> => {
+  try {
+    console.log(
+      "🔄 Starting migration: Adding refid to existing service providers..."
+    );
+    const stationsCompanyRef = collection(db, "stationscompany");
+    // Fetch all documents without orderBy to avoid errors if some don't have createdDate
+    const stationsCompanySnapshot = await getDocs(stationsCompanyRef);
+    console.log(`📦 Found ${stationsCompanySnapshot.size} service providers`);
+
+    let updatedCount = 0;
+    const serviceProvidersToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    for (const providerDoc of stationsCompanySnapshot.docs) {
+      const providerData = providerDoc.data();
+      if (providerData.refid) {
+        console.log(
+          `⏭️  Service provider ${providerDoc.id} already has refid: ${providerData.refid}`
+        );
+        continue;
+      }
+
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+        const stationsCompanyRefCheck = collection(db, "stationscompany");
+        const qCheck = query(
+          stationsCompanyRefCheck,
+          where("refid", "==", refid)
+        );
+        const querySnapshot = await getDocs(qCheck);
+        const isInPendingUpdates = serviceProvidersToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for service provider ${providerDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      serviceProvidersToUpdate.push({
+        docRef: doc(db, "stationscompany", providerDoc.id),
+        refid: refid,
+      });
+      console.log(
+        `✅ Generated refid ${refid} for service provider ${providerDoc.id}`
+      );
+    }
+
+    console.log(
+      `📝 Updating ${serviceProvidersToUpdate.length} service providers with refid...`
+    );
+    for (const { docRef, refid } of serviceProvidersToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(
+          `✅ Updated service provider ${docRef.id} with refid: ${refid}`
+        );
+      } catch (error) {
+        console.error(
+          `❌ Error updating service provider ${docRef.id}:`,
+          error
+        );
+      }
+    }
+    console.log(
+      `✅ Migration completed: ${updatedCount} service providers updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a service provider document by ID (for getting raw data like isActive)
+ * @param serviceProviderId - The service provider document ID
+ * @returns Promise with service provider document data
+ */
+export const fetchServiceProviderById = async (serviceProviderId: string) => {
+  try {
+    console.log("Fetching service provider by ID:", serviceProviderId);
+
+    // Fetch the specific service provider document from Firestore
+    const serviceProviderDocRef = doc(db, "stationscompany", serviceProviderId);
+    const serviceProviderDoc = await getDoc(serviceProviderDocRef);
+
+    if (!serviceProviderDoc.exists()) {
+      throw new Error("Service provider not found");
+    }
+
+    const serviceProviderData = serviceProviderDoc.data();
+
+    const serviceProvider = {
+      id: serviceProviderDoc.id,
+      ...serviceProviderData,
+    };
+
+    console.log("Service provider data fetched:", serviceProvider);
+
+    return serviceProvider;
+  } catch (error) {
+    console.error("Error fetching service provider by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update service provider isActive status in Firestore
+ * @param serviceProviderId - The service provider document ID
+ * @param isActive - The new isActive status
+ * @returns Promise<boolean> - Returns true if update was successful
+ */
+export const updateServiceProviderIsActive = async (
+  serviceProviderId: string,
+  isActive: boolean
+): Promise<boolean> => {
+  try {
+    console.log(
+      `📝 Updating service provider isActive status: ${serviceProviderId} -> ${isActive}`
+    );
+
+    const serviceProviderDocRef = doc(db, "stationscompany", serviceProviderId);
+    await updateDoc(serviceProviderDocRef, {
+      isActive: isActive,
+    });
+
+    console.log(`✅ Successfully updated service provider isActive status`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating service provider isActive status:", error);
     throw error;
   }
 };
@@ -7176,12 +11578,18 @@ export const fetchStationsCompanyById = async (
 
       return {
         id: data.id || docSnap.id,
-        clientCode: data.id || data.uId || docSnap.id,
+        clientCode: data.refid || data.id || data.uId || docSnap.id, // Use refid as primary source
         providerName: data.name || "غير محدد",
         type: data.type || "غير محدد",
         phoneNumber: data.phoneNumber || data.phone || "-",
         email: data.email || "-",
         status: data.status || "نشط",
+        isActive:
+          data.isActive !== undefined
+            ? data.isActive
+            : data.status === "نشط" || data.status === "active"
+            ? true
+            : false,
         stationsCount,
         ordersCount,
         uId: companyUid,
@@ -7225,12 +11633,18 @@ export const fetchStationsCompanyById = async (
 
       return {
         id: data.id || doc.id,
-        clientCode: data.id || data.uId || doc.id,
+        clientCode: data.refid || data.id || data.uId || doc.id, // Use refid as primary source
         providerName: data.name || "غير محدد",
         type: data.type || "غير محدد",
         phoneNumber: data.phoneNumber || data.phone || "-",
         email: data.email || "-",
         status: data.status || "نشط",
+        isActive:
+          data.isActive !== undefined
+            ? data.isActive
+            : data.status === "نشط" || data.status === "active"
+            ? true
+            : false,
         stationsCount,
         ordersCount,
         uId: companyUid,
@@ -7608,7 +12022,68 @@ export const fetchProviderStations = async (
     return stations;
   } catch (error) {
     console.error("❌ Error fetching provider stations:", error);
-    return [];
+    throw error;
+  }
+};
+
+/**
+ * Fetch a station document by ID (for getting raw data like isActive)
+ * @param stationId - The station document ID
+ * @returns Promise with station document data
+ */
+export const fetchStationById = async (stationId: string) => {
+  try {
+    console.log("Fetching station by ID:", stationId);
+
+    // Fetch the specific station document from Firestore
+    const stationDocRef = doc(db, "carstations", stationId);
+    const stationDoc = await getDoc(stationDocRef);
+
+    if (!stationDoc.exists()) {
+      throw new Error("Station not found");
+    }
+
+    const stationData = stationDoc.data();
+
+    const station = {
+      id: stationDoc.id,
+      ...stationData,
+    };
+
+    console.log("Station data fetched:", station);
+
+    return station;
+  } catch (error) {
+    console.error("Error fetching station by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update station isActive status in Firestore
+ * @param stationId - The station document ID
+ * @param isActive - The new isActive status
+ * @returns Promise<boolean> - Returns true if update was successful
+ */
+export const updateStationIsActive = async (
+  stationId: string,
+  isActive: boolean
+): Promise<boolean> => {
+  try {
+    console.log(
+      `📝 Updating station isActive status: ${stationId} -> ${isActive}`
+    );
+
+    const stationDocRef = doc(db, "carstations", stationId);
+    await updateDoc(stationDocRef, {
+      isActive: isActive,
+    });
+
+    console.log(`✅ Successfully updated station isActive status`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating station isActive status:", error);
+    throw error;
   }
 };
 
@@ -7687,7 +12162,6 @@ export const declineStationsCompanyRequest = async (
     throw error;
   }
 };
-
 export const fetchFuelStationRequests = async (
   currentUserEmail: string
 ): Promise<any[]> => {
@@ -8755,6 +13229,480 @@ export const fetchTopStationsByConsumption = async (): Promise<any[]> => {
     return topStations;
   } catch (error) {
     console.error("❌ Error fetching top stations by consumption:", error);
+    throw error;
+  }
+};
+
+/**
+ * Interface for communication policies data
+ */
+export interface CommunicationPoliciesData {
+  platformPolicy: string;
+  whatsappLink: string;
+  instagramLink: string;
+  tiktokLink: string;
+  facebookLink: string;
+  xPlatformLink: string;
+  emailLink: string;
+}
+
+/**
+ * Default dummy data for communication policies
+ */
+const defaultCommunicationPoliciesData: CommunicationPoliciesData = {
+  platformPolicy: `نحن نجمع المعلومات لتقديم خدمات ذات مستوى أفضل المستخدمينا جميعًا. نحن نستخدم المعلومات التي نجمعها من جميع خدماتنا (مثل تطبيقاتك ومتصفحاتك وأجهزتك) لتقديم خدماتنا وصيانتها وتحسينها وتطوير خدمات جديدة وقياس الأداء والتواصل معك.
+
+المعلومات التي تجمعها Google
+نستخدم المعلومات التي نجمعها من جميع خدماتنا لتقديم خدماتنا وصيانتها وتحسينها وتطوير خدمات جديدة وقياس الأداء والتواصل معك.
+
+عناصر تنشئها أو تقدمها لنا
+عندما تنشئ حساب Google أو تضيف معلومات إلى حسابك، فإنك تزودنا بمعلومات شخصية تتضمن اسمك وكلمة المرور.
+
+المعلومات التي تجمعها أثناء استخدامك لخدماتنا
+نحن نجمع المعلومات حول الطريقة التي تستخدم بها خدماتنا، مثل نوع المحتوى الذي تبحث عنه أو تعرضه أو تشتريه، والمواقع التي تزورها، والتفاعلات مع المحتوى والخدمات.
+
+تطبيقاتك ومتصفحاتك وأجهزتك
+نحن نجمع معلومات محددة حول تطبيقاتك ومتصفحاتك وأجهزتك التي تستخدمها للوصول إلى خدمات Google، والتي تساعدنا في توفير ميزات مثل تحديثات المنتج تلقائيًا وتقليل معدل الأعطال.`,
+  whatsappLink: "https://wa.me/966500000000",
+  instagramLink: "https://www.instagram.com/petrolife",
+  tiktokLink: "https://www.tiktok.com/@petrolife",
+  facebookLink: "https://www.facebook.com/petrolife",
+  xPlatformLink: "https://www.x.com/petrolife",
+  emailLink: "info@petrolife.com",
+};
+
+/**
+ * Fetch communication policies data from Firestore
+ * Returns default dummy data if document doesn't exist
+ * @returns Promise with communication policies data
+ */
+export const fetchCommunicationPolicies =
+  async (): Promise<CommunicationPoliciesData> => {
+    try {
+      console.log("📋 Fetching communication policies from Firestore...");
+
+      const docRef = doc(db, "communication-policies", "settings");
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        console.log("✅ Communication policies data fetched successfully");
+        return {
+          platformPolicy:
+            data.platformPolicy ||
+            defaultCommunicationPoliciesData.platformPolicy,
+          whatsappLink:
+            data.whatsappLink || defaultCommunicationPoliciesData.whatsappLink,
+          instagramLink:
+            data.instagramLink ||
+            defaultCommunicationPoliciesData.instagramLink,
+          tiktokLink:
+            data.tiktokLink || defaultCommunicationPoliciesData.tiktokLink,
+          facebookLink:
+            data.facebookLink || defaultCommunicationPoliciesData.facebookLink,
+          xPlatformLink:
+            data.xPlatformLink ||
+            defaultCommunicationPoliciesData.xPlatformLink,
+          emailLink:
+            data.emailLink || defaultCommunicationPoliciesData.emailLink,
+        };
+      } else {
+        console.log(
+          "⚠️ Communication policies document not found, using default data"
+        );
+        // Create document with default data
+        await setDoc(docRef, defaultCommunicationPoliciesData);
+        return defaultCommunicationPoliciesData;
+      }
+    } catch (error) {
+      console.error("❌ Error fetching communication policies:", error);
+      // Return default data on error
+      return defaultCommunicationPoliciesData;
+    }
+  };
+
+/**
+ * Save communication policies data to Firestore
+ * @param data - Communication policies data to save
+ * @returns Promise<boolean> - Success status
+ */
+export const saveCommunicationPolicies = async (
+  data: CommunicationPoliciesData
+): Promise<boolean> => {
+  try {
+    console.log("💾 Saving communication policies to Firestore...");
+
+    const docRef = doc(db, "communication-policies", "settings");
+    await setDoc(docRef, {
+      ...data,
+      updatedAt: serverTimestamp(),
+    });
+
+    console.log("✅ Communication policies saved successfully");
+    return true;
+  } catch (error) {
+    console.error("❌ Error saving communication policies:", error);
+    throw error;
+  }
+};
+
+// FAQ Types
+export interface FAQQuestion {
+  id?: string;
+  question: string;
+  answer: string;
+  userType:
+    | "company"
+    | "user"
+    | "distributer"
+    | "driver"
+    | "all"
+    | "admin"
+    | "superAdmin";
+  createdBy: string;
+  createdAt?: any;
+}
+
+/**
+ * Fetch user data from users collection by email
+ * @param email - User email address
+ * @returns Promise with user data including user_type, or null if not found
+ */
+export const fetchUserByEmail = async (email: string): Promise<any | null> => {
+  try {
+    if (!email) return null;
+
+    const usersRef = collection(db, "users");
+    const q = query(usersRef, where("email", "==", email));
+    const querySnapshot = await getDocs(q);
+
+    if (!querySnapshot.empty) {
+      const userData = querySnapshot.docs[0].data();
+      return {
+        id: querySnapshot.docs[0].id,
+        ...userData,
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error("❌ Error fetching user by email:", error);
+    return null;
+  }
+};
+
+/**
+ * Map user_type from users collection to FAQ userType
+ * @param userType - user_type from users collection
+ * @returns Mapped FAQ userType
+ */
+const mapUserTypeToFAQType = (
+  userType: string | undefined | null
+): FAQQuestion["userType"] => {
+  if (!userType) return "all";
+
+  const typeMap: Record<string, FAQQuestion["userType"]> = {
+    company: "company",
+    "service-provider": "distributer",
+    "service-distributer": "distributer",
+    station: "distributer",
+    driver: "driver",
+    user: "user",
+    individual: "user",
+    admin: "admin",
+    superadmin: "superAdmin",
+  };
+
+  return typeMap[userType.toLowerCase()] || "all";
+};
+
+/**
+ * Fetch all FAQ questions from Firestore
+ * @returns Promise with array of FAQ questions
+ */
+export const fetchFAQQuestions = async (): Promise<FAQQuestion[]> => {
+  try {
+    console.log("📋 Fetching FAQ questions from Firestore...");
+
+    const faqRef = collection(db, "faq");
+    const q = query(faqRef, orderBy("createdAt", "desc"));
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
+
+    const faqData: FAQQuestion[] = [];
+
+    querySnapshot.forEach((doc) => {
+      faqData.push({
+        id: doc.id,
+        ...doc.data(),
+      } as FAQQuestion);
+    });
+
+    console.log(
+      `✅ FAQ questions fetched successfully: ${faqData.length} questions`
+    );
+    return faqData;
+  } catch (error) {
+    console.error("❌ Error fetching FAQ questions:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get FAQ userType from user data
+ * Checks isAdmin/isSuperAdmin first, then falls back to user_type
+ * @param userData - User data from users collection
+ * @returns FAQ userType
+ */
+const getUserTypeFromUserData = (userData: any): FAQQuestion["userType"] => {
+  if (!userData) {
+    return "all";
+  }
+
+  // First check for admin flags
+  if (userData.isSuperAdmin === true) {
+    return "superAdmin";
+  }
+
+  if (userData.isAdmin === true) {
+    return "admin";
+  }
+
+  // If not admin, check user_type field
+  const userTypeFromDB = userData.user_type;
+  if (userTypeFromDB) {
+    return mapUserTypeToFAQType(userTypeFromDB);
+  }
+
+  // Default fallback
+  return "all";
+};
+
+/**
+ * Add a new FAQ question to Firestore
+ * @param data - FAQ question data (userType will be overridden by logged-in user's type)
+ * @returns Promise with the created FAQ question including document ID
+ */
+export const addFAQQuestion = async (
+  data: Omit<FAQQuestion, "id" | "createdAt" | "userType" | "createdBy"> & {
+    userType?: string;
+  }
+): Promise<FAQQuestion> => {
+  try {
+    console.log("💾 Adding new FAQ question to Firestore...");
+
+    const currentUser = auth.currentUser;
+    const userEmail = currentUser?.email;
+
+    if (!userEmail) {
+      throw new Error("No logged-in user found");
+    }
+
+    // Fetch user data from users collection
+    const userData = await fetchUserByEmail(userEmail);
+
+    if (!userData) {
+      console.warn(
+        "⚠️ User not found in users collection, using default values"
+      );
+    }
+
+    // Get userType from user data (checks isAdmin/isSuperAdmin first, then user_type)
+    const finalUserType = getUserTypeFromUserData(userData);
+
+    const createdBy = userEmail;
+
+    console.log("📋 User data:", {
+      email: userEmail,
+      isAdmin: userData?.isAdmin,
+      isSuperAdmin: userData?.isSuperAdmin,
+      user_type: userData?.user_type,
+      finalUserType: finalUserType,
+    });
+
+    const faqRef = collection(db, "faq");
+    const docRef = await addDoc(faqRef, {
+      question: data.question,
+      answer: data.answer,
+      userType: finalUserType,
+      createdBy: createdBy,
+      createdAt: serverTimestamp(),
+    });
+
+    const newQuestion: FAQQuestion = {
+      id: docRef.id,
+      question: data.question,
+      answer: data.answer,
+      userType: finalUserType,
+      createdBy: createdBy,
+    };
+
+    console.log("✅ FAQ question added successfully:", docRef.id);
+    console.log(`   User: ${createdBy}, FAQ Type: ${finalUserType}`);
+    return newQuestion;
+  } catch (error) {
+    console.error("❌ Error adding FAQ question:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update an existing FAQ question in Firestore
+ * @param id - Document ID of the FAQ question
+ * @param data - Updated FAQ question data
+ * @returns Promise<boolean> - Success status
+ */
+export const updateFAQQuestion = async (
+  id: string,
+  data: Partial<Omit<FAQQuestion, "id" | "createdAt" | "createdBy">>
+): Promise<boolean> => {
+  try {
+    console.log("💾 Updating FAQ question in Firestore...", id);
+
+    const docRef = doc(db, "faq", id);
+    await updateDoc(docRef, {
+      ...data,
+      updatedAt: serverTimestamp(),
+    });
+
+    console.log("✅ FAQ question updated successfully:", id);
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating FAQ question:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete an FAQ question from Firestore
+ * @param id - Document ID of the FAQ question
+ * @returns Promise<boolean> - Success status
+ */
+export const deleteFAQQuestion = async (id: string): Promise<boolean> => {
+  try {
+    console.log("🗑️ Deleting FAQ question from Firestore...", id);
+
+    const docRef = doc(db, "faq", id);
+    await deleteDoc(docRef);
+
+    console.log("✅ FAQ question deleted successfully:", id);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting FAQ question:", error);
+    throw error;
+  }
+};
+
+/**
+ * Seed dummy FAQ questions to Firestore
+ * This function can be called once to populate initial data
+ */
+export const seedFAQQuestions = async (): Promise<void> => {
+  try {
+    console.log("🌱 Seeding FAQ questions to Firestore...");
+
+    const currentUser = auth.currentUser;
+    const userEmail = currentUser?.email;
+
+    if (!userEmail) {
+      throw new Error("No logged-in user found for seeding");
+    }
+
+    // Fetch user data to get user_type
+    const userData = await fetchUserByEmail(userEmail);
+    const userTypeFromDB = userData?.user_type || "all";
+    const createdBy = userEmail;
+
+    const dummyQuestions: Omit<FAQQuestion, "id" | "createdAt">[] = [
+      {
+        question: "كيف يمكنني التسجيل في المنصة؟",
+        answer:
+          "يمكنك التسجيل في المنصة من خلال الضغط على زر التسجيل وإدخال بياناتك الشخصية مثل الاسم والبريد الإلكتروني ورقم الهاتف. بعد إتمام التسجيل، ستحصل على رسالة تأكيد عبر البريد الإلكتروني.",
+        userType: "all",
+        createdBy: createdBy,
+      },
+      {
+        question: "ما هي طرق الدفع المتاحة؟",
+        answer:
+          "نوفر عدة طرق للدفع تشمل الدفع النقدي عند الاستلام، والدفع عبر البطاقات الائتمانية، والدفع الإلكتروني عبر المحفظة الرقمية. يمكنك اختيار الطريقة التي تناسبك أثناء إتمام الطلب.",
+        userType: "all",
+        createdBy: createdBy,
+      },
+      {
+        question: "كيف يمكن للشركات التسجيل في النظام؟",
+        answer:
+          "يمكن للشركات التسجيل من خلال قسم الشركات في الموقع. ستحتاج إلى تقديم الوثائق القانونية للشركة مثل السجل التجاري ورخصة العمل. بعد مراجعة الطلب، سيتم تفعيل حساب الشركة.",
+        userType: "company",
+        createdBy: createdBy,
+      },
+      {
+        question: "ما هي متطلبات التسجيل للشركات؟",
+        answer:
+          "للشركات، نحتاج إلى السجل التجاري، رخصة العمل، هوية المدير المسؤول، وبطاقة ضريبية. يجب أن تكون جميع الوثائق سارية المفعول.",
+        userType: "company",
+        createdBy: createdBy,
+      },
+      {
+        question: "كيف يمكن للأفراد استخدام الخدمة؟",
+        answer:
+          "يمكن للأفراد التسجيل بسهولة من خلال التطبيق أو الموقع. بعد التسجيل، يمكنك طلب الخدمات المتاحة مثل توصيل الوقود أو الصيانة. يمكنك تتبع طلباتك من خلال لوحة التحكم.",
+        userType: "user",
+        createdBy: createdBy,
+      },
+      {
+        question: "ما هي الخدمات المتاحة للأفراد؟",
+        answer:
+          "نوفر للأفراد خدمات متعددة تشمل توصيل الوقود، صيانة المركبات، تغيير الزيوت، وخدمات الطوارئ على الطريق. يمكنك طلب أي خدمة من خلال التطبيق.",
+        userType: "user",
+        createdBy: createdBy,
+      },
+      {
+        question: "كيف يمكن لمزودي الخدمة التسجيل؟",
+        answer:
+          "يمكن لمزودي الخدمة التسجيل من خلال قسم مزودي الخدمة. يجب تقديم الوثائق المطلوبة مثل رخصة مزود الخدمة، شهادات التأهيل، وبطاقة الهوية. بعد الموافقة، سيتم تفعيل الحساب.",
+        userType: "distributer",
+        createdBy: createdBy,
+      },
+      {
+        question: "ما هي متطلبات مزودي الخدمة؟",
+        answer:
+          "يجب أن يكون مزود الخدمة حاصلاً على رخصة مزاولة المهنة، شهادات التأهيل المطلوبة، ووثائق التأمين. كما يجب أن يكون لديه فريق عمل مدرب ومعدات مناسبة.",
+        userType: "distributer",
+        createdBy: createdBy,
+      },
+      {
+        question: "كيف يمكن للسائقين استخدام التطبيق؟",
+        answer:
+          "يمكن للسائقين تحميل تطبيق السائق من متجر التطبيقات. بعد التسجيل وإدخال بيانات المركبة ورخصة القيادة، سيتم تفعيل الحساب. يمكن للسائقين بعد ذلك استقبال الطلبات وتنفيذها.",
+        userType: "driver",
+        createdBy: createdBy,
+      },
+      {
+        question: "ما هي متطلبات التسجيل للسائقين؟",
+        answer:
+          "يجب أن يكون السائق حاصلاً على رخصة قيادة سارية المفعول، وثيقة تأمين المركبة، وبطاقة الهوية. كما يجب أن تكون المركبة في حالة جيدة ومطابقة للمواصفات المطلوبة.",
+        userType: "driver",
+        createdBy: createdBy,
+      },
+    ];
+
+    const faqRef = collection(db, "faq");
+    const promises = dummyQuestions.map((question) =>
+      addDoc(faqRef, {
+        ...question,
+        createdBy: createdBy, // Override with actual user email
+        createdAt: serverTimestamp(),
+      })
+    );
+
+    await Promise.all(promises);
+    console.log(
+      `✅ Successfully seeded ${dummyQuestions.length} FAQ questions`
+    );
+    console.log(
+      `   Seeded by: ${createdBy} (user_type from users collection: ${userTypeFromDB})`
+    );
+  } catch (error) {
+    console.error("❌ Error seeding FAQ questions:", error);
     throw error;
   }
 };

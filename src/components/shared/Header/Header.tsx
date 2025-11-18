@@ -1,11 +1,13 @@
 import React, { ReactNode, useState, useRef, useEffect } from "react";
-import { Sun, Search, User, LogOut } from "lucide-react";
+import { Sun, Moon, Search, User, LogOut, Settings } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { auth } from "../../../config/firebase";
 import { signOutUser } from "../../../services/auth";
 import { useGlobalState } from "../../../context/GlobalStateContext";
+import { useUI } from "../../../hooks/useGlobalState";
 import { NotificationDropdown } from "../Notification";
 import { CartDropdown } from "../Cart";
+import { ROUTES } from "../../../constants/routes";
 
 // Breadcrumb route mapping
 const breadcrumbRoutes: Record<string, string> = {
@@ -55,7 +57,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
   return (
     <form
       onSubmit={handleSearchSubmit}
-      className={`flex items-center h-[46px] w-full min-w-[300px] sm:min-w-[400px] lg:min-w-[500px] rounded-full border border-gray-300 bg-white px-4 shadow-sm ${className}`}
+      className={`flex items-center h-[46px] w-full min-w-[300px] sm:min-w-[400px] lg:min-w-[500px] rounded-full border border-[color:var(--border-subtle)] bg-[var(--surface-control)] px-4 shadow-sm transition-colors duration-300 ${className}`}
       role="search"
     >
       {/* Input */}
@@ -65,12 +67,12 @@ const SearchBar: React.FC<SearchBarProps> = ({
         onChange={handleSearchChange}
         placeholder={placeholder}
         dir="rtl"
-        className="flex-1 text-sm text-color-mode-text-icons-t-primary-gray bg-transparent border-none outline-none placeholder-color-mode-text-icons-t-placeholder text-right pr-2"
+        className="flex-1 text-sm text-[var(--text-primary)] bg-transparent border-none outline-none placeholder:text-[var(--text-placeholder)] text-right pr-2 transition-colors duration-300"
       />
       {/* Icon */}
       <button
         type="submit"
-        className="flex items-center justify-center text-gray-500 hover:opacity-70 focus:outline-none focus:ring-2 focus:ring-color-mode-surface-primary-blue rounded-full transition-opacity p-1"
+        className="flex items-center justify-center text-[var(--text-secondary)] hover:opacity-70 focus:outline-none focus:ring-2 focus:ring-[var(--ring-primary)] rounded-full transition-opacity p-1"
         aria-label="Submit search"
       >
         <Search className="w-4 h-4" />
@@ -126,7 +128,7 @@ const ProfileDropdown: React.FC = () => {
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-center w-10 h-10 bg-color-mode-surface-primary-blue rounded-full border-2 border-white hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200"
+        className="flex items-center justify-center w-10 h-10 bg-color-mode-surface-primary-blue rounded-full border-2 border-[var(--surface-navbar)] hover:border-[var(--border-medium)] focus:outline-none focus:ring-2 focus:ring-[var(--ring-primary)] transition-all duration-200"
         aria-label="User profile menu"
       >
         {currentUser.photoURL ? (
@@ -142,20 +144,30 @@ const ProfileDropdown: React.FC = () => {
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute left-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-          <div className="p-4 border-b border-gray-200">
-            <p className="text-sm font-semibold text-gray-700 text-right">
+        <div className="absolute left-0 mt-2 w-64 bg-[var(--surface-popover)] rounded-lg shadow-lg border border-[color:var(--border-subtle)] z-50 transition-colors duration-300">
+          <div className="p-4 border-b border-[color:var(--border-subtle)]">
+            <p className="text-sm font-semibold text-[var(--text-primary)] text-right transition-colors duration-300">
               {currentUser.displayName || "مستخدم"}
             </p>
-            <p className="text-xs text-gray-500 text-right truncate">
+            <p className="text-xs text-[var(--text-tertiary)] text-right truncate transition-colors duration-300">
               {currentUser.email}
             </p>
           </div>
 
           <div className="py-2">
             <button
+              onClick={() => {
+                navigate(ROUTES.PROFILE);
+                setIsOpen(false);
+              }}
+              className="w-full px-4 py-2 text-right text-sm text-[var(--text-primary)] hover:bg-[var(--surface-control-muted)] transition-colors duration-150 flex items-center justify-end gap-2"
+            >
+              <span>الملف الشخصي</span>
+              <Settings className="w-4 h-4" />
+            </button>
+            <button
               onClick={handleLogout}
-              className="w-full px-4 py-2 text-right text-sm text-red-600 hover:bg-red-50 transition-colors duration-150 flex items-center justify-end gap-2"
+              className="w-full px-4 py-2 text-right text-sm text-red-500 hover:bg-red-500/10 transition-colors duration-150 flex items-center justify-end gap-2"
             >
               <span>تسجيل الخروج</span>
               <LogOut className="w-4 h-4" />
@@ -193,13 +205,15 @@ const Breadcrumb: React.FC<{ title: string; titleIconSrc?: ReactNode }> = ({
       {titleIconSrc && <span>{titleIconSrc}</span>}
       {parts.map((part, index) => (
         <React.Fragment key={index}>
-          {index > 0 && <span className="text-[#5B738B]">/</span>}
+          {index > 0 && (
+            <span className="text-[var(--header-breadcrumb-color)]">/</span>
+          )}
           <button
             onClick={() => handleBreadcrumbClick(part, index)}
             className={`text-lg font-normal ${
               index === parts.length - 1
-                ? "text-[#5B738B] cursor-default"
-                : "text-[#5B738B] hover:text-blue-600 cursor-pointer transition-colors"
+                ? "text-[var(--header-breadcrumb-active)] cursor-default"
+                : "text-[var(--header-breadcrumb-color)] hover:text-color-mode-text-icons-t-blue cursor-pointer transition-colors"
             }`}
             disabled={index === parts.length - 1}
           >
@@ -222,9 +236,16 @@ export const Header: React.FC<HeaderProps> = ({
   serviceDistributer = false,
   
 }) => {
+  const { theme, setTheme } = useUI();
+  const isDark = theme === "dark";
+
+  const handleThemeToggle = () => {
+    setTheme(isDark ? "light" : "dark");
+  };
+
   return (
     <header
-      className={`w-full bg-white shadow-sm border-b border-gray-200 ${className}`}
+      className={`w-full bg-[var(--surface-navbar)] shadow-sm border-b border-[color:var(--border-subtle)] transition-colors duration-300 ${className}`}
       role="banner"
     >
       <div className="flex flex-wrap w-full max-w-7xl mx-auto items-center justify-between px-4 lg:px-8 md:px-4 sm:px-2 py-4 gap-3">
@@ -243,12 +264,27 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Cart Dropdown - Hide for admin or service distributer */}
           {!admin && !serviceDistributer && <CartDropdown />}
 
-          <button className="flex items-center justify-center w-10 h-10 bg-gray-100 rounded-md border border-gray-300 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200">
-            <Sun className="w-4 h-4 text-gray-600" />
+          <button
+            onClick={handleThemeToggle}
+            className={`flex items-center justify-center w-10 h-10 rounded-md border transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[var(--ring-primary)] ${
+              isDark
+                ? "bg-[var(--surface-control)] border-[color:var(--border-medium)] hover:bg-[var(--surface-control-hover)]"
+                : "bg-[var(--surface-control)] border-[color:var(--border-subtle)] hover:bg-[var(--surface-control-hover)]"
+            }`}
+            aria-pressed={isDark}
+            aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {isDark ? (
+              <Sun className="w-4 h-4 text-[var(--text-secondary)]" />
+            ) : (
+              <Moon className="w-4 h-4 text-[var(--text-secondary)]" />
+            )}
           </button>
 
-          <button className="flex items-center justify-center w-10 h-10 bg-gray-100 rounded-md border border-gray-300 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200">
-            <span className="font-medium text-gray-600 text-sm">EN</span>
+          <button className="flex items-center justify-center w-10 h-10 rounded-md border bg-[var(--surface-control)] border-[color:var(--border-subtle)] hover:bg-[var(--surface-control-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--ring-primary)] transition-colors duration-200">
+            <span className="font-medium text-[var(--text-secondary)] text-sm transition-colors duration-300">
+              EN
+            </span>
           </button>
         </nav>
 

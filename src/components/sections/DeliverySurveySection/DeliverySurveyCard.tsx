@@ -1,4 +1,8 @@
-export const DeliverySurveyCard = (): JSX.Element => {
+interface DeliverySurveyCardProps {
+  title?: string;
+}
+
+export const DeliverySurveyCard = ({ title = "تقرير طلبات التوصيل" }: DeliverySurveyCardProps): JSX.Element => {
     const fuelData = [
       {
         id: 1,
@@ -35,7 +39,7 @@ export const DeliverySurveyCard = (): JSX.Element => {
             </div>
   
             <h1 className="mt-[-0.20px] [font-family:'Tajawal-Bold',Helvetica] font-bold text-[#5a66c1] text-xl text-left tracking-[0] leading-7 relative w-fit whitespace-nowrap [direction:rtl]">
-              تقرير طلبات التوصيل
+              {title}
             </h1>
           </div>
   

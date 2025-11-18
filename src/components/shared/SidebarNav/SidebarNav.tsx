@@ -72,7 +72,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
 
   return (
     <nav
-      className={`flex flex-col h-full bg-white border-l border-gray-200 transition-all duration-300 ${
+      className={`flex flex-col h-full bg-[var(--surface-sidebar)] border-l border-[color:var(--border-subtle)] transition-all duration-300 ${
         sidebarCollapsed ? "w-16" : "w-72 md:w-60 sm:w-52"
       } ${className}`}
       role="navigation"
@@ -114,11 +114,15 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
             section.title === "";
 
           if (isDropdownSection) {
+            const enhancedItems = section.items.map((item) => ({
+              ...item,
+              isActive: isItemActive(item),
+            }));
             return (
               <DropdownSection
                 key={sectionIndex}
                 title={section.title}
-                items={section.items}
+                items={enhancedItems}
                 isOpen={isDropdownOpen(section.title)}
                 onToggle={() => toggleDropdown(section.title)}
                 onItemClick={handleMenuItemClick}
@@ -179,11 +183,15 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
             section.title === "";
 
           if (isDropdownSection) {
+            const enhancedItems = section.items.map((item) => ({
+              ...item,
+              isActive: isItemActive(item),
+            }));
             return (
               <DropdownSection
                 key={`another-${sectionIndex}`}
                 title={section.title}
-                items={section.items}
+                items={enhancedItems}
                 isOpen={isDropdownOpen(section.title)}
                 onToggle={() => toggleDropdown(section.title)}
                 onItemClick={handleMenuItemClick}

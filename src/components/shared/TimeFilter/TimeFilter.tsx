@@ -261,19 +261,36 @@ export const TimeFilter: React.FC<TimeFilterProps> = ({
           <button
             type="button"
             onClick={() => setIsCalendarOpen(!isCalendarOpen)}
-            className="p-0 transition-all hover:opacity-70"
+            className="flex items-center justify-center w-10 h-10 rounded-[8px] border transition-all duration-200"
             aria-label="عرض التقويم"
+            style={{
+              borderColor: "var(--time-filter-border)",
+              backgroundColor: isCalendarOpen
+                ? "var(--time-filter-active-bg)"
+                : "var(--time-filter-default-bg)",
+            }}
           >
             <img
               src="/src/assets/imgs/icons/calendar.svg"
               alt="Calendar"
               className="w-5 h-5"
+              style={{
+                filter: "invert(80%)",
+                opacity: isCalendarOpen ? 1 : 0.85,
+              }}
             />
           </button>
 
           {/* Calendar Dropdown */}
           {isCalendarOpen && (
-            <div className="absolute top-full left-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 p-4 z-50 min-w-[280px]">
+            <div
+              className="absolute top-full left-0 mt-2 rounded-lg shadow-xl border p-4 z-50 min-w-[280px]"
+              style={{
+                backgroundColor: "var(--surface-card)",
+                borderColor: "var(--border-strong)",
+                boxShadow: "0px 12px 32px rgba(0,0,0,0.45)",
+              }}
+            >
               <CalendarPicker
                 onDateSelect={handleDateSelect}
                 startDate={startDate}
@@ -291,15 +308,24 @@ export const TimeFilter: React.FC<TimeFilterProps> = ({
         <button
           key={filter}
           onClick={() => onFilterChange(filter)}
-          className="px-4 py-2 text-sm rounded-lg transition-all"
+          className="px-4 py-2 text-sm rounded-lg transition-all border"
           style={{
-            backgroundColor: "white",
-            color: selectedFilter === filter ? "#5A66C1" : "#6B7280",
-            border:
+            backgroundColor:
               selectedFilter === filter
-                ? "2px solid #5A66C1"
-                : "2px solid #9CA3AF",
-            borderRadius: "8px",
+                ? "var(--time-filter-active-bg)"
+                : "var(--time-filter-default-bg)",
+            color:
+              selectedFilter === filter
+                ? "var(--time-filter-active-text)"
+                : "var(--time-filter-default-text)",
+            borderColor:
+              selectedFilter === filter
+                ? "var(--time-filter-active-bg)"
+                : "var(--time-filter-border)",
+            boxShadow:
+              selectedFilter === filter
+                ? "0 0 0 1px rgba(48,22,75,0.35)"
+                : "none",
           }}
           type="button"
           aria-pressed={selectedFilter === filter}

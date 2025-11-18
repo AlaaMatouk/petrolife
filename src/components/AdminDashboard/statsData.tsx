@@ -4,9 +4,9 @@ import {
   DollarSign,
   Fuel,
   Wallet,
-  ShoppingBag,
-  CheckCircle,
-  XCircle,
+  Truck,
+  Rocket,
+  Building2,
 } from "lucide-react";
 import { StatData } from "./StatsCardsSection";
 
@@ -19,17 +19,93 @@ export const formatNumber = (num: number) => {
 const walletBalance = 720250;
 
 export const statsData: StatData[] = [
+  // Row 1
   {
-    title: "رصيد المحفظة",
+    title: "المستخدمين",
+    categories: [
+      { name: "مزودي الخدمة", count: 0 },
+      { name: "افراد", count: 0 },
+      { name: "شركات", count: 0 },
+      { name: "مشرفين", count: 0 },
+    ],
+    icon: <Users className="w-5 h-5" style={{ color: "#E76500" }} />,
+  },
+  {
+    title: "الشركات",
+    categories: [
+      { name: "حسابات بواسطة المناديب", count: 0 },
+      { name: "حسابات مباشرة", count: 0 },
+    ],
+    total: { name: "الاجمالي", count: 0 },
+    icon: <Building2 className="w-5 h-5" style={{ color: "#E76500" }} />,
+  },
+  {
+    title: "السائقين",
+    categories: [
+      { name: "سائقونا بتوصيل الوقود", count: 0 },
+      { name: "سائقي الشركات", count: 0 },
+    ],
+    total: { name: "الاجمالي", count: 0 },
+    icon: <Truck className="w-5 h-5" style={{ color: "#E76500" }} />,
+  },
+
+  // Row 2
+  {
+    title: "اجمالي السيارات",
+    categories: [
+      { name: "صغيرة", count: 0 },
+      { name: "متوسطة", count: 0 },
+      { name: "كبيرة", count: 0 },
+      { name: "VIP", count: 0 },
+    ],
+    total: { name: "الاجمالي", count: 0 },
+    icon: <Car className="w-5 h-5" style={{ color: "#E76500" }} />,
+  },
+  {
+    title: "السيارات المشتركة",
+    categories: [
+      { name: "صغيرة", count: 0 },
+      { name: "متوسطة", count: 0 },
+      { name: "كبيرة", count: 0 },
+      { name: "VIP", count: 0 },
+    ],
+    total: { name: "الاجمالي", count: 0 },
+    icon: <Car className="w-5 h-5" style={{ color: "#E76500" }} />,
+  },
+  {
+    title: "الاشتراكات",
+    categories: [
+      { name: "Premium", count: 0 },
+      { name: "Classic", count: 0 },
+      { name: "Basic", count: 0 },
+    ],
+    total: { name: "الاشتراكات المنتهية", count: 0 },
+    options: ["الأفراد", "الشركات"],
+    optionCategories: {
+      الأفراد: [
+        { name: "Premium", count: 0 },
+        { name: "Classic", count: 0 },
+        { name: "Basic", count: 0 },
+      ],
+      الشركات: [
+        { name: "Premium", count: 0 },
+        { name: "Classic", count: 0 },
+        { name: "Basic", count: 0 },
+      ],
+    },
+    optionTotals: {
+      الأفراد: { name: "الاشتراكات المنتهية", count: 0 },
+      الشركات: { name: "الاشتراكات المنتهية", count: 0 },
+    },
+    icon: <Rocket className="w-5 h-5" style={{ color: "#E76500" }} />,
+  },
+
+  // Row 3
+  {
+    title: "رصيد محافظ العملاء",
     amount: formatNumber(walletBalance),
     icon: <Wallet className="w-5 h-5" style={{ color: "#E76500" }} />,
     type: "wallet",
-  },
-  {
-    title: "التكلفة الإجمالية للمشتريات",
-    amount: "14,254 ر.س",
-    icon: <ShoppingBag className="w-5 h-5" style={{ color: "#E76500" }} />,
-    type: "purchaseCost",
   },
   {
     title: "اجمالي اللترات",
@@ -53,32 +129,29 @@ export const statsData: StatData[] = [
     icon: <Fuel className="w-5 h-5" style={{ color: "#E76500" }} />,
   },
   {
-    title: "السائقين النشطين / المعطلين",
-    categories: [
-      { name: "نشطين", count: 14 },
-      { name: "معطلين", count: 54 },
+    title: "اجمالي تكلفة الوقود",
+    breakdown: [
+      {
+        type: "ديزل",
+        amount: "0 ر.س",
+        color: "text-color-mode-text-icons-t-orange",
+      },
+      {
+        type: "بنزين 95",
+        amount: "0 ر.س",
+        color: "text-color-mode-text-icons-t-red",
+      },
+      {
+        type: "بنزين 91",
+        amount: "0 ر.س",
+        color: "text-color-mode-text-icons-t-green",
+      },
     ],
-    icon: <Users className="w-5 h-5" style={{ color: "#E76500" }} />,
+    total: { name: "الاجمالي", count: 0 },
+    icon: <DollarSign className="w-5 h-5" style={{ color: "#E76500" }} />,
   },
-  {
-    title: "السيارات",
-    categories: [
-      { name: "صغيرة", count: 20 },
-      { name: "متوسطة", count: 25 },
-      { name: "كبيرة", count: 30 },
-      { name: "VIP", count: 10 },
-    ],
-    total: { name: "الاجمالي", count: 85 },
-    icon: <Car className="w-5 h-5" style={{ color: "#E76500" }} />,
-  },
-  {
-    title: "الطلبات المكتملة / الملغية",
-    categories: [
-      { name: "مكتملة", count: 12 },
-      { name: "ملغية", count: 10 },
-    ],
-    icon: <CheckCircle className="w-5 h-5" style={{ color: "#E76500" }} />,
-  },
+
+  // Row 4
   {
     title: "عمليات تغيير الزيوت",
     categories: [

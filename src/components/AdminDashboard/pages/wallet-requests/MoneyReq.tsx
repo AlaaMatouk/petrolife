@@ -1,5 +1,6 @@
 import { DataTableSection } from "../../../sections/DataTableSection";
-import { DollarSign } from "lucide-react";
+import { DollarSign, ArrowLeft } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 type MoneyRefundRequest = {
   id: number;
@@ -110,21 +111,38 @@ const fetchMoneyRefundRequests = async (): Promise<MoneyRefundRequest[]> => {
 };
 
 export const MoneyReq = () => {
+  const navigate = useNavigate();
+
   return (
-    <DataTableSection<MoneyRefundRequest>
-      title="طلبات استرداد الأموال"
-      entityName="طلب"
-      entityNamePlural="طلبات"
-      icon={DollarSign}
-      columns={columns}
-      fetchData={fetchMoneyRefundRequests}
-      addNewRoute="/moneyrefundrequests"
-      viewDetailsRoute={(id) => `/wallet-requests/moneyrefundrequests/${id}`}
-      loadingMessage="جاري تحميل طلبات استرداد الأموال..."
-      itemsPerPage={10}
-      showTimeFilter={false}
-      showAddButton={false}
-    />
+    <>
+      {/* Back Arrow */}
+      <div className="mb-4">
+        <button
+          onClick={() => navigate("/wallet-requests")}
+          aria-label="رجوع"
+          className="inline-flex h-10 items-center gap-[var(--corner-radius-medium)] relative flex-[0_0_auto]"
+        >
+          <div className="flex flex-col w-10 items-center justify-center gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative self-stretch bg-color-mode-surface-bg-icon-gray rounded-[var(--corner-radius-small)]">
+            <ArrowLeft className="w-4 h-4 text-gray-600" />
+          </div>
+        </button>
+      </div>
+
+      <DataTableSection<MoneyRefundRequest>
+        title="طلبات استرداد الأموال"
+        entityName="طلب"
+        entityNamePlural="طلبات"
+        icon={DollarSign}
+        columns={columns}
+        fetchData={fetchMoneyRefundRequests}
+        addNewRoute="/moneyrefundrequests"
+        viewDetailsRoute={(id) => `/wallet-requests/moneyrefundrequests/${id}`}
+        loadingMessage="جاري تحميل طلبات استرداد الأموال..."
+        itemsPerPage={10}
+        showTimeFilter={false}
+        showAddButton={false}
+      />
+    </>
   );
 };
 

@@ -96,7 +96,7 @@ export const navigationMenuData = {
       id: "refund-requests",
       label: "طلبات الاسترداد",
       icon: "/img/side-icons-10.svg",
-      href: ROUTES.REFUND_REQUESTS,
+      href: ROUTES.MONEY_REFUND_REQUESTS,
     },
     {
       id: "charge-requests",
@@ -230,7 +230,7 @@ export const adminNavigationMenuData = {
           id: "petrolife-representatives",
           label: "مندوبو بترولايف",
           icon: "/img/side-icons-7.svg",
-          href: ROUTES.PETROLIFE_REPRESENTATIVES,
+          href: ROUTES.PETROLIFE_AGENTS,
         },
         {
           id: "petrolife-cars",

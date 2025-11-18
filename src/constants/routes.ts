@@ -25,6 +25,7 @@ export const ROUTES = {
   USED_STATIONS: "/used-stations",
   CHARGE_REQUESTS: "/walletchargerequests",
   PEROLIFE_STATION_LOCATIONS: "/perolifestationlocations",
+  MONEY_REFUND_REQUESTS: "/moneyrefundrequests",
 
   // Store and Subscriptions
   STORE: "/store",
@@ -38,6 +39,7 @@ export const ROUTES = {
 
   // Test
   TEST: "/test",
+  TEST_CHART: "/test-chart",
 
   // Service Distributer Dashboard
   SERVICE_DISTRIBUTER_DASHBOARD: "/service-distributer",
@@ -72,10 +74,19 @@ export const ROUTES = {
   ADD_SERVICE_PROVIDER: "/service-providers/add",
   SERVICE_PROVIDER_JOIN_REQUESTS: "/service-providers/join-requests",
   PETROLIFE_DRIVERS: "/petrolife-drivers",
+  PETROLIFE_AGENTS: "/petrolife-agents",
+  ADD_PETROLIFE_AGENT: "/petrolife-agents/add",
+  PETROLIFE_AGENT_DETAILS: "/petrolife-agents/:id",
   PETROLIFE_REPRESENTATIVES: "/petrolife-representatives",
   PETROLIFE_CARS: "/petrolife-cars",
+  ADD_PETROLIFE_CAR: "/petrolife-cars/add",
+  PETROLIFE_CAR_DETAILS: "/petrolife-cars/:id",
   PETROLIFE_PRODUCTS: "/petrolife-products",
+  ADD_PETROLIFE_PRODUCT: "/petrolife-products/add",
+  PETROLIFE_PRODUCT_DETAILS: "/petrolife-products/:id",
   PETROLIFE_COUPONS: "/petrolife-coupons",
+  ADD_PETROLIFE_COUPON: "/petrolife-coupons/add",
+  PETROLIFE_COUPON_DETAILS: "/petrolife-coupons/:id",
   WALLET_REQUESTS: "/wallet-requests",
   WALLET_REQUEST_DETAILS: "/wallet-requests/:id",
   REFUND_REQUESTS: "/wallet-requests/moneyrefundrequests",
@@ -91,19 +102,32 @@ export const ROUTES = {
   ADMIN_REPRESENTATIVE_REPORTS: "/admin-representative-reports",
   ADMIN_WALLET_REPORTS: "/admin-wallet-reports",
   ADMIN_COUNTRIES: "/admin-countries",
+  ADD_COUNTRY: "/admin-countries/add",
+  COUNTRY_DETAILS: "/admin-countries/:id",
+  ADD_CITY: "/admin-countries/:countryId/add-city",
+  ADD_REGION: "/admin-countries/:countryId/add-region",
   ADMIN_CARS: "/admin-cars",
   ADMIN_CATEGORIES: "/admin-categories",
+  ADD_CLASSIFICATION: "/admin-categories/add",
+  CLASSIFICATION_DETAILS: "/admin-categories/:id",
   APPLICATION_SERVICES: "/application-services",
   APPLICATION_SERVICE_DETAILS: "/application-services/:id",
   ADD_SERVICE: "/application-services/add",
   ADD_CHOICE: "/application-services/add-choice",
   DEFAULT_ACCOUNTS: "/default-accounts",
   ADVERTISEMENTS: "/advertisements",
+  ADD_ADVERTISEMENT: "/advertisements/add",
+  ADVERTISEMENT_DETAILS: "/advertisements/:id",
   SPECIAL_NOTIFICATIONS: "/special-notifications",
+  ADD_SPECIAL_NOTIFICATION: "/special-notifications/add",
+  SPECIAL_NOTIFICATION_DETAILS: "/special-notifications/:id",
   ADMIN_SUBSCRIPTIONS: "/admin-subscriptions",
+  ADD_SUBSCRIPTION: "/admin-subscriptions/add",
+  SUBSCRIPTION_DETAILS: "/admin-subscriptions/:id",
   ADMIN_COMMUNICATION_POLICIES: "/admin-communication-policies",
   FAQ: "/faq",
   CUSTOMER_MESSAGES: "/customer-messages",
+  PROFILE: "/profile",
 } as const;
 
 // Helper function to generate dynamic routes

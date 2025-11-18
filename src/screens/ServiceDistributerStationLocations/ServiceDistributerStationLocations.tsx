@@ -81,7 +81,7 @@ function ServiceDistributerStationLocations() {
   return (
     <div className="flex flex-col w-full items-start gap-5">
       <div className="w-full">
-        <StationLocationsMap title="مواقع المحطات"/>
+        <StationLocationsMap title="مواقع المحطات" filterByUser={true} />
       </div>
       <DataTableSection<Station>
         title="المحطات"

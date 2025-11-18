@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, UserRound } from "lucide-react";
 import { useToast } from "../../../../context/ToastContext";
 import {
@@ -9,9 +9,12 @@ import {
   query,
   where,
   getDocs,
+  doc,
+  updateDoc,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, auth, storage } from "../../../../config/firebase";
+import { fetchSupervisorById } from "../../../../services/firestore";
 
 // Permission mapping for Arabic labels
 const PERMISSION_LABELS: Record<string, string> = {
@@ -47,6 +50,9 @@ const PERMISSION_LABELS: Record<string, string> = {
 export const AddSupervisor = () => {
   const navigate = useNavigate();
   const { addToast } = useToast();
+  const [searchParams] = useSearchParams();
+  const editId = searchParams.get("edit");
+  const isEditMode = !!editId;
 
   const [formData, setFormData] = useState({
     name: "",
@@ -58,7 +64,9 @@ export const AddSupervisor = () => {
   });
 
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [existingImageUrl, setExistingImageUrl] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [permissions, setPermissions] = useState<Record<string, boolean>>({
     individualsManagement: false,
     serviceProvidersManagement: false,
@@ -103,6 +111,101 @@ export const AddSupervisor = () => {
     }));
   };
 
+  // Reverse permission mapping: Arabic label to key
+  const getPermissionKeyFromLabel = (label: string): string | null => {
+    for (const [key, value] of Object.entries(PERMISSION_LABELS)) {
+      if (value === label) {
+        return key;
+      }
+    }
+    return null;
+  };
+
+  // Load supervisor data when in edit mode
+  useEffect(() => {
+    const loadSupervisorData = async () => {
+      if (!isEditMode || !editId) return;
+
+      try {
+        setIsLoading(true);
+        const supervisorData = await fetchSupervisorById(editId);
+
+        // Populate form data
+        setFormData({
+          name: supervisorData.name || supervisorData.supervisorName || "",
+          email: supervisorData.email || "",
+          phoneNumber: supervisorData.phone || supervisorData.phoneNumber || "",
+          city: supervisorData.city || "",
+          address: supervisorData.address || "",
+          employeeNumber:
+            supervisorData.supervisorCode ||
+            supervisorData.employeeNumber ||
+            supervisorData.code ||
+            "",
+        });
+
+        // Set existing image URL
+        if (supervisorData.image) {
+          setExistingImageUrl(supervisorData.image);
+        }
+
+        // Populate permissions
+        if (supervisorData.permissions && Array.isArray(supervisorData.permissions)) {
+          const newPermissions: Record<string, boolean> = {
+            individualsManagement: false,
+            serviceProvidersManagement: false,
+            serviceProvidersReportsManagement: false,
+            salesReportsManagement: false,
+            fuelDeliveryRequestsManagement: false,
+            vehicleConstantsManagement: false,
+            applicationServicesManagement: false,
+            applicationDefaultAccountsManagement: false,
+            subscriptionsManagement: false,
+            advertisementsManagement: false,
+            technicalSupportManagement: false,
+            stationsManagement: false,
+            driversManagement: false,
+            financialReportsManagement: false,
+            walletManagement: false,
+            companiesManagement: false,
+            supervisorsManagement: false,
+            petrolifeDriversManagement: false,
+            petrolifeRepresentativesManagement: false,
+            petrolifeVehiclesManagement: false,
+            petrolifeProductsManagement: false,
+            governorRequestsManagement: false,
+            invoicesReportsManagement: false,
+            countriesConstantsManagement: false,
+            categoriesConstantsManagement: false,
+            discountCouponsManagement: false,
+            customNotificationsManagement: false,
+          };
+
+          supervisorData.permissions.forEach((permissionLabel: string) => {
+            const key = getPermissionKeyFromLabel(permissionLabel);
+            if (key) {
+              newPermissions[key] = true;
+            }
+          });
+
+          setPermissions(newPermissions);
+        }
+      } catch (error) {
+        console.error("Error loading supervisor data:", error);
+        addToast({
+          title: "خطأ",
+          message: "فشل في تحميل بيانات المشرف",
+          type: "error",
+        });
+        navigate("/supervisors");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadSupervisorData();
+  }, [isEditMode, editId, navigate, addToast]);
+
   // Validate form data
   const validateForm = (): string[] => {
     const errors: string[] = [];
@@ -121,20 +224,34 @@ export const AddSupervisor = () => {
       errors.push("رقم الهاتف مطلوب");
     }
 
-    if (!imageFile) {
+    // Image is only required when adding new supervisor
+    if (!isEditMode && !imageFile) {
       errors.push("صورة المشرف مطلوبة");
     }
 
     return errors;
   };
 
-  // Check if email already exists
+  // Check if email already exists (excluding current supervisor in edit mode)
   const checkEmailExists = async (email: string): Promise<boolean> => {
     try {
       const usersRef = collection(db, "users");
       const q = query(usersRef, where("email", "==", email));
       const querySnapshot = await getDocs(q);
-      return !querySnapshot.empty;
+      
+      if (querySnapshot.empty) {
+        return false;
+      }
+      
+      // In edit mode, check if the email belongs to another user
+      if (isEditMode && editId) {
+        const emailBelongsToCurrentUser = querySnapshot.docs.some(
+          (doc) => doc.id === editId
+        );
+        return !emailBelongsToCurrentUser;
+      }
+      
+      return true;
     } catch (error) {
       console.error("Error checking email:", error);
       return false;
@@ -182,8 +299,8 @@ export const AddSupervisor = () => {
         throw new Error("لا يوجد مستخدم مسجل الدخول حالياً");
       }
 
-      // Upload image to Firebase Storage
-      let imageUrl = "";
+      // Upload image to Firebase Storage (only if new image is provided)
+      let imageUrl = existingImageUrl;
       if (imageFile) {
         imageUrl = await uploadImage(imageFile);
       }
@@ -193,92 +310,157 @@ export const AddSupervisor = () => {
         .filter(([_, isSelected]) => isSelected)
         .map(([key, _]) => PERMISSION_LABELS[key]);
 
-      // Create supervisor document
-      const supervisorData = {
-        // Basic info
-        name: formData.name.trim(),
-        email: formData.email.trim(),
-        phoneNumber: formData.phoneNumber.trim(),
-        city: formData.city,
-        address: formData.address.trim(),
-        employeeNumber: formData.employeeNumber.trim(),
-        image: imageUrl,
-        permissions: selectedPermissions,
+      if (isEditMode && editId) {
+        // Update existing supervisor
+        const supervisorData = {
+          // Basic info
+          name: formData.name.trim(),
+          email: formData.email.trim(),
+          phoneNumber: formData.phoneNumber.trim(),
+          city: formData.city,
+          address: formData.address.trim(),
+          employeeNumber: formData.employeeNumber.trim(),
+          image: imageUrl,
+          permissions: selectedPermissions,
+        };
 
-        // Default values
-        isSupervisor: false,
-        isAdmin: true,
-        isSuperAdmin: false,
-        isActive: true,
+        // Update document in Firestore
+        const userDocRef = doc(db, "users", editId);
+        await updateDoc(userDocRef, supervisorData);
 
-        // Timestamps and user info
-        createdDate: serverTimestamp(),
-        createdUserId: currentUser.email || currentUser.uid,
+        // Success message
+        addToast({
+          title: "تم بنجاح",
+          message: "تم تحديث بيانات المشرف بنجاح",
+          type: "success",
+        });
+      } else {
+        // Generate unique 8-digit refid for new supervisor
+        let refid: string = "";
+        let isUnique = false;
+        let attempts = 0;
+        const maxAttempts = 10;
 
-        // Account status for display
-        accountStatus: {
-          active: true,
-          text: "مفعل",
-        },
-      };
+        while (!isUnique && attempts < maxAttempts) {
+          // Generate 8-digit number (10000000 to 99999999)
+          const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+          refid = randomCode.toString();
 
-      // Add document to Firestore
-      await addDoc(collection(db, "users"), supervisorData);
+          // Check if refid already exists
+          const usersRef = collection(db, "users");
+          const q = query(usersRef, where("refid", "==", refid));
+          const querySnapshot = await getDocs(q);
 
-      // Success message
-      addToast({
-        title: "تم بنجاح",
-        message: "تم إضافة المشرف بنجاح",
-        type: "success",
-      });
+          if (querySnapshot.empty) {
+            isUnique = true;
+          } else {
+            attempts++;
+          }
+        }
 
-      // Clear form
-      setFormData({
-        name: "",
-        email: "",
-        phoneNumber: "",
-        city: "",
-        address: "",
-        employeeNumber: "",
-      });
-      setImageFile(null);
-      setPermissions({
-        individualsManagement: false,
-        serviceProvidersManagement: false,
-        serviceProvidersReportsManagement: false,
-        salesReportsManagement: false,
-        fuelDeliveryRequestsManagement: false,
-        vehicleConstantsManagement: false,
-        applicationServicesManagement: false,
-        applicationDefaultAccountsManagement: false,
-        subscriptionsManagement: false,
-        advertisementsManagement: false,
-        technicalSupportManagement: false,
-        stationsManagement: false,
-        driversManagement: false,
-        financialReportsManagement: false,
-        walletManagement: false,
-        companiesManagement: false,
-        supervisorsManagement: false,
-        petrolifeDriversManagement: false,
-        petrolifeRepresentativesManagement: false,
-        petrolifeVehiclesManagement: false,
-        petrolifeProductsManagement: false,
-        governorRequestsManagement: false,
-        invoicesReportsManagement: false,
-        countriesConstantsManagement: false,
-        categoriesConstantsManagement: false,
-        discountCouponsManagement: false,
-        customNotificationsManagement: false,
-      });
+        if (!isUnique || !refid) {
+          throw new Error("فشل في إنشاء كود المشرف. يرجى المحاولة مرة أخرى.");
+        }
 
-      // Navigate back to supervisors list
-      navigate("/supervisors");
+        // Create new supervisor document
+        const supervisorData = {
+          // Basic info
+          name: formData.name.trim(),
+          email: formData.email.trim(),
+          phoneNumber: formData.phoneNumber.trim(),
+          city: formData.city,
+          address: formData.address.trim(),
+          employeeNumber: formData.employeeNumber.trim(),
+          image: imageUrl,
+          permissions: selectedPermissions,
+
+          // Supervisor code (8-digit refid)
+          refid: refid,
+
+          // Default values
+          isSupervisor: false,
+          isAdmin: true,
+          isSuperAdmin: false,
+          isActive: true,
+
+          // Timestamps and user info
+          createdDate: serverTimestamp(),
+          createdUserId: currentUser.email || currentUser.uid,
+
+          // Account status for display
+          accountStatus: {
+            active: true,
+            text: "مفعل",
+          },
+        };
+
+        // Add document to Firestore
+        await addDoc(collection(db, "users"), supervisorData);
+
+        // Success message
+        addToast({
+          title: "تم بنجاح",
+          message: "تم إضافة المشرف بنجاح",
+          type: "success",
+        });
+      }
+
+      // Clear form only if not in edit mode
+      if (!isEditMode) {
+        setFormData({
+          name: "",
+          email: "",
+          phoneNumber: "",
+          city: "",
+          address: "",
+          employeeNumber: "",
+        });
+        setImageFile(null);
+        setExistingImageUrl("");
+        setPermissions({
+          individualsManagement: false,
+          serviceProvidersManagement: false,
+          serviceProvidersReportsManagement: false,
+          salesReportsManagement: false,
+          fuelDeliveryRequestsManagement: false,
+          vehicleConstantsManagement: false,
+          applicationServicesManagement: false,
+          applicationDefaultAccountsManagement: false,
+          subscriptionsManagement: false,
+          advertisementsManagement: false,
+          technicalSupportManagement: false,
+          stationsManagement: false,
+          driversManagement: false,
+          financialReportsManagement: false,
+          walletManagement: false,
+          companiesManagement: false,
+          supervisorsManagement: false,
+          petrolifeDriversManagement: false,
+          petrolifeRepresentativesManagement: false,
+          petrolifeVehiclesManagement: false,
+          petrolifeProductsManagement: false,
+          governorRequestsManagement: false,
+          invoicesReportsManagement: false,
+          countriesConstantsManagement: false,
+          categoriesConstantsManagement: false,
+          discountCouponsManagement: false,
+          customNotificationsManagement: false,
+        });
+      }
+
+      // Navigate back to supervisors list or details page
+      if (isEditMode && editId) {
+        navigate(`/supervisors/${editId}`);
+      } else {
+        navigate("/supervisors");
+      }
     } catch (error) {
-      console.error("Error adding supervisor:", error);
+      console.error("Error saving supervisor:", error);
       addToast({
         title: "خطأ",
-        message: "فشل في إضافة المشرف. يرجى المحاولة مرة أخرى.",
+        message: isEditMode
+          ? "فشل في تحديث بيانات المشرف. يرجى المحاولة مرة أخرى."
+          : "فشل في إضافة المشرف. يرجى المحاولة مرة أخرى.",
         type: "error",
       });
     } finally {
@@ -299,7 +481,7 @@ export const AddSupervisor = () => {
       <header className="flex flex-col items-end gap-[var(--corner-radius-extra-large)] relative self-stretch w-full flex-[0_0_auto]">
         <nav className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
           <button
-            onClick={() => navigate(-1)}
+            onClick={() => navigate("/supervisors")}
             className="inline-flex h-10 items-center gap-[var(--corner-radius-medium)] relative flex-[0_0_auto] hover:bg-gray-100 rounded-lg transition-colors"
             aria-label="العودة"
             type="button"
@@ -311,7 +493,7 @@ export const AddSupervisor = () => {
 
           <div className="flex items-center justify-end gap-1.5 relative">
             <h1 className="mt-[-1.00px] font-bold text-[var(--form-section-title-color)] text-[length:var(--subtitle-subtitle-2-font-size)] tracking-[var(--subtitle-subtitle-2-letter-spacing)] leading-[var(--subtitle-subtitle-2-line-height)] relative [direction:rtl] [font-style:var(--subtitle-subtitle-2-font-style)]">
-              إضافة مشرف جديد
+              {isEditMode ? "تعديل بيانات المشرف" : "إضافة مشرف جديد"}
             </h1>
             <UserRound className="w-5 h-5 text-gray-500" />
           </div>
@@ -320,8 +502,16 @@ export const AddSupervisor = () => {
 
       {/* Form Content */}
       <div className="w-full">
-        <form onSubmit={handleSubmit} className="space-y-6" dir="rtl">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+              <p className="text-gray-600">جاري تحميل بيانات المشرف...</p>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-6" dir="rtl">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {/* Supervisor Name */}
             <div>
               <label
@@ -438,14 +628,28 @@ export const AddSupervisor = () => {
                 className="block text-sm font-normal text-[#5B738B] mb-1"
               >
                 صوره المشرف
+                {isEditMode && existingImageUrl && (
+                  <span className="text-xs text-gray-500 mr-2">
+                    (اختياري - سيتم الاحتفاظ بالصورة الحالية إذا لم تقم برفع صورة جديدة)
+                  </span>
+                )}
               </label>
+              {existingImageUrl && !imageFile && (
+                <div className="mb-2">
+                  <img
+                    src={existingImageUrl}
+                    alt="صورة المشرف الحالية"
+                    className="w-24 h-24 object-cover rounded-lg border border-gray-300"
+                  />
+                </div>
+              )}
               <input
                 type="file"
                 id="supervisorImage"
                 name="supervisorImage"
                 accept="image/*"
                 onChange={(e) => setImageFile(e.target.files?.[0] || null)}
-                required
+                required={!isEditMode}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-right"
               />
             </div>
@@ -1840,14 +2044,15 @@ export const AddSupervisor = () => {
               {isSubmitting ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  جاري الإضافة...
+                  {isEditMode ? "جاري التحديث..." : "جاري الإضافة..."}
                 </>
               ) : (
-                "إضافة المشرف"
+                isEditMode ? "تحديث البيانات" : "إضافة المشرف"
               )}
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>
   );

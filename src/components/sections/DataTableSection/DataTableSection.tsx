@@ -34,8 +34,10 @@ export interface DataTableSectionProps<T> {
   columns: any[];
   fetchData: () => Promise<T[]>;
   onToggleStatus?: (id: number | string) => void;
-  onDelete?: (id: string | number) => Promise<void>; // New prop for delete handler
+  onDelete?: (id: number | string) => void;
   addNewRoute: string;
+  onAddClick?: () => void; // Custom handler for add button click
+  customAddButtonRef?: React.RefObject<HTMLButtonElement>; // Ref for custom add button
   viewDetailsRoute: (id: string | number | string) => string;
   loadingMessage?: string;
   errorMessage?: string;
@@ -63,7 +65,7 @@ interface ActionMenuProps<
   viewDetailsRoute: (id: string | number | string) => string;
   customActionButtons?: boolean;
   showModifyButton?: boolean;
-  onDelete?: (id: string | number) => Promise<void>;
+  onDelete?: (id: number | string) => void;
 }
 
 const ActionMenu = <
@@ -117,8 +119,12 @@ const ActionMenu = <
       } finally {
         setIsProcessing(false);
       }
+    } else if (action === "delete" && onDelete) {
+      onDelete(item.id);
+      setIsOpen(false);
+    } else {
+      setIsOpen(false);
     }
-    setIsOpen(false);
   };
 
   const handleAcceptRequest = async () => {
@@ -473,6 +479,8 @@ export const DataTableSection = <
   fetchData,
   onToggleStatus,
   addNewRoute,
+  onAddClick,
+  customAddButtonRef,
   viewDetailsRoute,
   errorMessage,
   itemsPerPage = 10,
@@ -662,7 +670,8 @@ export const DataTableSection = <
                   !showMoneyRefundButton &&
                   !showFuelDeliveryButton && (
                     <button
-                      onClick={() => navigate(addNewRoute)}
+                      ref={customAddButtonRef}
+                      onClick={onAddClick || (() => navigate(addNewRoute))}
                       className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray transition-colors"
                     >
                       <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
@@ -834,6 +843,8 @@ export const DataTableSection = <
               <Table
                 columns={enhancedColumns}
                 data={paginatedData}
+                loading={isLoading}
+                emptyMessage="لا توجد بيانات"
                 className="relative self-stretch w-full flex-[0_0_auto]"
               />
             </div>
