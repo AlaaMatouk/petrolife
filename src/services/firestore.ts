@@ -4202,7 +4202,7 @@ export const fetchAllAdminWalletRequests = async () => {
       const data = doc.data();
       allRequestsData.push({
         id: doc.id,
-        requestNumber: doc.id, // رقم العملية
+        requestNumber: data.refid || doc.id, // رقم العملية - use refid if available, otherwise fall back to doc.id
         clientName: data.requestedUser?.name || "-", // العميل
         orderType: "-", // نوع الشحن
         oldBalance: data.requestedUser?.balance || "-", // الرصيد القديم
@@ -4219,6 +4219,132 @@ export const fetchAllAdminWalletRequests = async () => {
     return allRequestsData;
   } catch (error) {
     console.error("❌ Error fetching admin wallet requests:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a wallet request from Firestore
+ * @param requestId - The wallet request document ID
+ * @returns Promise with boolean indicating success
+ */
+export const deleteWalletRequest = async (
+  requestId: string
+): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting wallet request from Firestore: ${requestId}`);
+
+    // Verify the wallet request exists before deleting
+    const requestDocRef = doc(db, "companies-wallets-requests", requestId);
+    const requestDoc = await getDoc(requestDocRef);
+
+    if (!requestDoc.exists()) {
+      throw new Error("Wallet request not found");
+    }
+
+    // Delete the wallet request document
+    await deleteDoc(requestDocRef);
+    console.log(`✅ Successfully deleted wallet request from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting wallet request:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add 8-digit refid to existing wallet requests that don't have one
+ * @returns Promise with number of updated requests
+ */
+export const addRefidToExistingWalletRequests = async (): Promise<number> => {
+  try {
+    console.log(
+      "🔄 Starting migration: Adding refid to existing wallet requests..."
+    );
+
+    const requestsRef = collection(db, "companies-wallets-requests");
+    const requestsSnapshot = await getDocs(requestsRef);
+    console.log(`📦 Found ${requestsSnapshot.size} wallet requests`);
+
+    let updatedCount = 0;
+    const requestsToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    // First pass: Identify requests without refid and generate refids
+    for (const requestDoc of requestsSnapshot.docs) {
+      const requestData = requestDoc.data();
+
+      // Skip if request already has refid
+      if (requestData.refid) {
+        console.log(
+          `⏭️  Wallet request ${requestDoc.id} already has refid: ${requestData.refid}`
+        );
+        continue;
+      }
+
+      // Generate unique 8-digit refid
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Generate 8-digit number (10000000 to 99999999)
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+
+        // Check if refid already exists in Firestore or in our pending updates
+        const requestsRefCheck = collection(db, "companies-wallets-requests");
+        const qCheck = query(requestsRefCheck, where("refid", "==", refid));
+        const querySnapshot = await getDocs(qCheck);
+
+        // Also check if this refid is already in our pending updates
+        const isInPendingUpdates = requestsToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for wallet request ${requestDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      requestsToUpdate.push({
+        docRef: doc(db, "companies-wallets-requests", requestDoc.id),
+        refid: refid,
+      });
+      console.log(
+        `✅ Generated refid ${refid} for wallet request ${requestDoc.id}`
+      );
+    }
+
+    console.log(
+      `📝 Updating ${requestsToUpdate.length} wallet requests with refid...`
+    );
+    for (const { docRef, refid } of requestsToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(
+          `✅ Updated wallet request ${docRef.id} with refid: ${refid}`
+        );
+      } catch (error) {
+        console.error(`❌ Error updating wallet request ${docRef.id}:`, error);
+      }
+    }
+    console.log(
+      `✅ Migration completed: ${updatedCount} wallet requests updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
     throw error;
   }
 };
