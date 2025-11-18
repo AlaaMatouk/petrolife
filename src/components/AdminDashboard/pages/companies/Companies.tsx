@@ -1,6 +1,12 @@
 import { DataTableSection } from "../../../sections/DataTableSection";
 import { Building2 } from "lucide-react";
-import { fetchAllCompaniesWithCounts } from "../../../../services/firestore";
+import {
+  fetchAllCompaniesWithCounts,
+  deleteCompany,
+} from "../../../../services/firestore";
+import { useToast } from "../../../../context/ToastContext";
+import { useState } from "react";
+import { ConfirmDialog } from "../../../shared/ConfirmDialog/ConfirmDialog";
 
 // Define the Company data type
 export interface Company {
@@ -216,28 +222,129 @@ const fetchCompanies = async (): Promise<Company[]> => {
   return await fetchAllCompaniesWithCounts();
 };
 
-// Handle status toggle
-const handleToggleStatus = (id: string) => {
-  console.log(`Toggle status for company with id: ${id}`);
-  // Add your status toggle logic here
-};
-
 export const Companies = () => {
+  const { addToast } = useToast();
+  const [companiesData, setCompaniesData] = useState<Company[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    companyId: string | null;
+    companyName: string;
+  }>({
+    isOpen: false,
+    companyId: null,
+    companyName: "",
+  });
+
+  // Handle status toggle
+  const handleToggleStatus = (id: string | number) => {
+    console.log(`Toggle status for company with id: ${id}`);
+    // Add your status toggle logic here
+  };
+
+  // Handle delete company - open confirmation popup
+  const handleDelete = (id: string | number) => {
+    const companyId = String(id);
+
+    // Find company name for confirmation message
+    const company = companiesData.find((c) => c.id === companyId);
+    const companyName = company?.companyName || "الشركة";
+
+    // Open confirmation dialog
+    setDeleteConfirm({
+      isOpen: true,
+      companyId,
+      companyName,
+    });
+  };
+
+  // Confirm and delete company
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirm.companyId) return;
+
+    try {
+      setDeletingId(deleteConfirm.companyId);
+
+      // Delete from Firestore
+      await deleteCompany(deleteConfirm.companyId);
+
+      // Show success message
+      addToast({
+        type: "success",
+        message: `تم حذف ${deleteConfirm.companyName} بنجاح`,
+        duration: 3000,
+      });
+
+      // Refresh the companies list
+      const updatedData = await fetchCompanies();
+      setCompaniesData(updatedData);
+
+      // Close confirmation popup
+      setDeleteConfirm({
+        isOpen: false,
+        companyId: null,
+        companyName: "",
+      });
+
+      // Reload the page to refresh the table
+      window.location.reload();
+    } catch (error: any) {
+      console.error("Error deleting company:", error);
+      addToast({
+        type: "error",
+        message: error.message || "فشل في حذف الشركة",
+        duration: 3000,
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  // Cancel delete
+  const handleDeleteCancel = () => {
+    setDeleteConfirm({
+      isOpen: false,
+      companyId: null,
+      companyName: "",
+    });
+  };
+
+  // Fetch companies and store in state
+  const fetchCompaniesWithState = async (): Promise<Company[]> => {
+    const data = await fetchCompanies();
+    setCompaniesData(data);
+    return data;
+  };
+
   return (
-    <DataTableSection<Company>
-      title="قائمة الشركات"
-      entityName="شركة"
-      entityNamePlural="شركات"
-      icon={Building2}
-      columns={companyColumns}
-      fetchData={fetchCompanies}
-      onToggleStatus={handleToggleStatus}
-      addNewRoute="/companies/add"
-      viewDetailsRoute={(id) => `/companies/${id}`}
-      loadingMessage="جاري تحميل بيانات الشركات..."
-      itemsPerPage={10}
-      showTimeFilter={false}
-      showAddButton={true}
-    />
+    <>
+      <DataTableSection<Company>
+        title="قائمة الشركات"
+        entityName="شركة"
+        entityNamePlural="شركات"
+        icon={Building2}
+        columns={companyColumns}
+        fetchData={fetchCompaniesWithState}
+        onToggleStatus={handleToggleStatus}
+        onDelete={handleDelete}
+        addNewRoute="/companies/add"
+        viewDetailsRoute={(id) => `/companies/${id}`}
+        loadingMessage="جاري تحميل بيانات الشركات..."
+        itemsPerPage={10}
+        showTimeFilter={false}
+        showAddButton={true}
+      />
+
+      {/* Delete Confirmation Popup */}
+      <ConfirmDialog
+        open={deleteConfirm.isOpen}
+        title="تأكيد الحذف"
+        message={`هل أنت متأكد من حذف ${deleteConfirm.companyName}؟\n\nهذه العملية لا يمكن التراجع عنها.`}
+        confirmText="حذف"
+        cancelText="إلغاء"
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+      />
+    </>
   );
 };

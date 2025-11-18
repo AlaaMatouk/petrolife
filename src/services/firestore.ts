@@ -8472,11 +8472,32 @@ export const deleteSupervisor = async (
 
     // Delete the user document
     await deleteDoc(userDocRef);
-
     console.log(`✅ Successfully deleted supervisor from Firestore`);
     return true;
   } catch (error) {
     console.error("❌ Error deleting supervisor:", error);
+    throw error;
+  }
+};
+
+export const deleteCompany = async (companyId: string): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting company from Firestore: ${companyId}`);
+
+    // Verify the company exists before deleting
+    const companyDocRef = doc(db, "companies", companyId);
+    const companyDoc = await getDoc(companyDocRef);
+
+    if (!companyDoc.exists()) {
+      throw new Error("Company not found");
+    }
+
+    // Delete the company document
+    await deleteDoc(companyDocRef);
+    console.log(`✅ Successfully deleted company from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting company:", error);
     throw error;
   }
 };

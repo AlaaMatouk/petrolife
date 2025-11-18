@@ -813,6 +813,8 @@ export const DataTableSection = <
               <Table
                 columns={enhancedColumns}
                 data={paginatedData}
+                loading={isLoading}
+                emptyMessage="لا توجد بيانات"
                 className="relative self-stretch w-full flex-[0_0_auto]"
               />
             </div>
