@@ -335,6 +335,33 @@ export const AddSupervisor = () => {
           type: "success",
         });
       } else {
+        // Generate unique 8-digit refid for new supervisor
+        let refid: string = "";
+        let isUnique = false;
+        let attempts = 0;
+        const maxAttempts = 10;
+
+        while (!isUnique && attempts < maxAttempts) {
+          // Generate 8-digit number (10000000 to 99999999)
+          const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+          refid = randomCode.toString();
+
+          // Check if refid already exists
+          const usersRef = collection(db, "users");
+          const q = query(usersRef, where("refid", "==", refid));
+          const querySnapshot = await getDocs(q);
+
+          if (querySnapshot.empty) {
+            isUnique = true;
+          } else {
+            attempts++;
+          }
+        }
+
+        if (!isUnique || !refid) {
+          throw new Error("فشل في إنشاء كود المشرف. يرجى المحاولة مرة أخرى.");
+        }
+
         // Create new supervisor document
         const supervisorData = {
           // Basic info
@@ -346,6 +373,9 @@ export const AddSupervisor = () => {
           employeeNumber: formData.employeeNumber.trim(),
           image: imageUrl,
           permissions: selectedPermissions,
+
+          // Supervisor code (8-digit refid)
+          refid: refid,
 
           // Default values
           isSupervisor: false,

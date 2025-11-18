@@ -5,6 +5,7 @@ import {
   updateSupervisorIsActive,
   fetchSupervisorById,
   deleteSupervisor,
+  addRefidToExistingSupervisors,
 } from "../../../../services/firestore";
 import { useToast } from "../../../../context/ToastContext";
 import { useState, useRef, useEffect } from "react";
@@ -178,6 +179,7 @@ export const Supervisors = () => {
   const { addToast } = useToast();
   const [supervisorsData, setSupervisorsData] = useState<Supervisor[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isMigrating, setIsMigrating] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{
     isOpen: boolean;
     supervisorId: string | null;
@@ -297,6 +299,31 @@ export const Supervisors = () => {
     });
   };
 
+  // Handle migration: Add refid to existing supervisors
+  const handleAddRefidToExisting = async () => {
+    setIsMigrating(true);
+    try {
+      const updatedCount = await addRefidToExistingSupervisors();
+      addToast({
+        type: "success",
+        message: `تم إضافة كود المشرف لـ ${updatedCount} مشرف بنجاح`,
+        duration: 5000,
+      });
+      // Refresh the supervisors list
+      const updatedData = await fetchSupervisors();
+      setSupervisorsData(updatedData);
+    } catch (error: any) {
+      console.error("Error migrating supervisors:", error);
+      addToast({
+        type: "error",
+        message: error.message || "فشل في إضافة كود المشرف للمشرفين الموجودين",
+        duration: 5000,
+      });
+    } finally {
+      setIsMigrating(false);
+    }
+  };
+
   // Handle add menu toggle
   const handleAddMenuToggle = () => {
     if (addButtonRef.current) {
@@ -364,24 +391,57 @@ export const Supervisors = () => {
 
   return (
     <>
-      <DataTableSection<Supervisor>
-        title="قائمة المشرفين"
-        entityName="مشرف"
-        entityNamePlural="مشرفين"
-        icon={Users}
-        columns={supervisorColumns}
-        fetchData={fetchSupervisorsWithState}
-        onToggleStatus={handleToggleStatus}
-        onDelete={handleDelete}
-        addNewRoute="/supervisors/add"
-        onAddClick={handleAddMenuToggle}
-        viewDetailsRoute={(id) => `/supervisors/${id}`}
-        loadingMessage="جاري تحميل بيانات المشرفين..."
-        itemsPerPage={10}
-        showTimeFilter={false}
-        showAddButton={true}
-        customAddButtonRef={addButtonRef}
-      />
+      <div className="flex flex-col items-start gap-5 w-full">
+        {/* Migration Button - Only show if there are supervisors without refid */}
+        {supervisorsData.length > 0 && supervisorsData.some(s => !s.supervisorCode || s.supervisorCode === s.id) && (
+          <div className="w-full">
+            <div className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder">
+              <div className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={handleAddRefidToExisting}
+                    disabled={isMigrating}
+                    className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
+                      <div className="inline-flex items-center justify-center gap-2.5 pt-1 pb-0 px-0 relative flex-[0_0_auto]">
+                        <span className="w-fit mt-[-1.00px] font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-sec text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] relative font-body-body-2 text-[length:var(--body-body-2-font-size)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
+                          {isMigrating ? "جاري إضافة كود المشرف..." : "إضافة كود المشرف للمشرفين الموجودين"}
+                        </span>
+                      </div>
+                      {isMigrating && (
+                        <div className="w-4 h-4 border-2 border-gray-500 border-t-transparent rounded-full animate-spin"></div>
+                      )}
+                    </div>
+                  </button>
+                  <p className="text-sm text-gray-600 [direction:rtl]">
+                    هذا الزر يضيف كود مشرف (8 أرقام) للمشرفين الذين لا يملكون كود
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <DataTableSection<Supervisor>
+          title="قائمة المشرفين"
+          entityName="مشرف"
+          entityNamePlural="مشرفين"
+          icon={Users}
+          columns={supervisorColumns}
+          fetchData={fetchSupervisorsWithState}
+          onToggleStatus={handleToggleStatus}
+          onDelete={handleDelete}
+          addNewRoute="/supervisors/add"
+          onAddClick={handleAddMenuToggle}
+          viewDetailsRoute={(id) => `/supervisors/${id}`}
+          loadingMessage="جاري تحميل بيانات المشرفين..."
+          itemsPerPage={10}
+          showTimeFilter={false}
+          showAddButton={true}
+          customAddButtonRef={addButtonRef}
+        />
+      </div>
 
       {/* Add Menu Popup */}
       {isAddMenuOpen && (

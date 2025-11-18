@@ -5827,7 +5827,7 @@ export const fetchSupervisorsFromUsers = async (): Promise<any[]> => {
       if (data.isAdmin === true || data.isSuperAdmin === true) {
         supervisors.push({
           id: doc.id,
-          supervisorCode: data.uid || data.id || doc.id || "-",
+          supervisorCode: data.refid || data.uid || data.id || doc.id || "-",
           supervisorName: data.name || data.fullName || data.displayName || "-",
           phone: data.phoneNumber || data.phone || "-",
           email: data.email || "-",
@@ -8477,6 +8477,111 @@ export const deleteSupervisor = async (
     return true;
   } catch (error) {
     console.error("❌ Error deleting supervisor:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add refid to existing supervisors that don't have one
+ * Generates unique 8-digit codes for all supervisors without refid
+ * @returns Promise with the number of supervisors updated
+ */
+export const addRefidToExistingSupervisors = async (): Promise<number> => {
+  try {
+    console.log(
+      "🔄 Starting migration: Adding refid to existing supervisors..."
+    );
+
+    // Fetch all users
+    const usersRef = collection(db, "users");
+    const q = query(usersRef, orderBy("createdDate", "desc"));
+    const usersSnapshot = await getDocs(q);
+    console.log(`📦 Found ${usersSnapshot.size} users`);
+
+    let updatedCount = 0;
+    const supervisorsToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    // First pass: Identify supervisors without refid and generate refids
+    for (const userDoc of usersSnapshot.docs) {
+      const userData = userDoc.data();
+
+      // Only process supervisors/admins
+      if (userData.isAdmin !== true && userData.isSuperAdmin !== true) {
+        continue;
+      }
+
+      // Skip if supervisor already has refid
+      if (userData.refid) {
+        console.log(
+          `⏭️  Supervisor ${userDoc.id} already has refid: ${userData.refid}`
+        );
+        continue;
+      }
+
+      // Generate unique 8-digit refid
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Generate 8-digit number (10000000 to 99999999)
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+
+        // Check if refid already exists in Firestore or in our pending updates
+        const usersRefCheck = collection(db, "users");
+        const qCheck = query(usersRefCheck, where("refid", "==", refid));
+        const querySnapshot = await getDocs(qCheck);
+
+        // Also check if this refid is already in our pending updates
+        const isInPendingUpdates = supervisorsToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for supervisor ${userDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      supervisorsToUpdate.push({
+        docRef: doc(db, "users", userDoc.id),
+        refid: refid,
+      });
+
+      console.log(`✅ Generated refid ${refid} for supervisor ${userDoc.id}`);
+    }
+
+    console.log(
+      `📝 Updating ${supervisorsToUpdate.length} supervisors with refid...`
+    );
+
+    // Second pass: Update all supervisors in batch
+    for (const { docRef, refid } of supervisorsToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(`✅ Updated supervisor ${docRef.id} with refid: ${refid}`);
+      } catch (error) {
+        console.error(`❌ Error updating supervisor ${docRef.id}:`, error);
+      }
+    }
+
+    console.log(
+      `✅ Migration completed: ${updatedCount} supervisors updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
     throw error;
   }
 };
