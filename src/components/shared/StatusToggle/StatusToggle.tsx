@@ -40,14 +40,7 @@ export const StatusToggle: React.FC<StatusToggleProps> = ({
 }) => {
   return (
     <div className={`flex items-center justify-center ${className}`}>
-      <div className="flex items-center gap-2">
-        <ToggleButton
-          isOn={isActive}
-          onToggle={onToggle}
-          color="green"
-          size="md"
-          disabled={disabled}
-        />
+      <div className="flex items-center gap-2" dir="ltr">
         {statusText && (
           <span
             className={`text-sm font-medium ${
@@ -57,6 +50,13 @@ export const StatusToggle: React.FC<StatusToggleProps> = ({
             {statusText}
           </span>
         )}
+        <ToggleButton
+          isOn={isActive}
+          onToggle={onToggle}
+          color="green"
+          size="md"
+          disabled={disabled}
+        />
       </div>
     </div>
   );
