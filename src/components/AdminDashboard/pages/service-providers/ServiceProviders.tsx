@@ -5,8 +5,12 @@ import {
   fetchStationsCompanyData,
   ServiceProviderData,
   fetchPendingRequestsCount,
+  addRefidToExistingServiceProviders,
+  updateServiceProviderIsActive,
+  fetchServiceProviderById,
 } from "../../../../services/firestore";
 import { useState, useEffect } from "react";
+import { useToast } from "../../../../context/ToastContext";
 
 // Define the ServiceProvider data type (compatible with existing interface)
 export interface ServiceProvider {
@@ -218,21 +222,31 @@ const fetchServiceProviders = async (): Promise<ServiceProvider[]> => {
 
     // Transform Firestore data to match the existing ServiceProvider interface
     const transformedData: ServiceProvider[] = firestoreData.map(
-      (item, index) => ({
-        id: item.id || item.uId || `sp-${index + 1}`, // Use actual Firestore ID or fallback
-        clientCode: item.clientCode,
-        providerName: item.providerName,
-        type: item.type,
-        phone: item.phoneNumber,
-        email: item.email,
-        stations: item.stationsCount,
-        sales: item.ordersCount.toString(), // Convert to string as expected by interface
-        accountStatus: {
-          active: item.status === "نشط" || item.status === "active",
-          text:
-            item.status === "نشط" || item.status === "active" ? "مفعل" : "معطل",
-        },
-      })
+      (item, index) => {
+        // Determine active status: prioritize isActive field, fallback to status
+        let isActive: boolean;
+        if (item.isActive !== undefined && item.isActive !== null) {
+          isActive = item.isActive === true;
+        } else {
+          // Fallback to status field if isActive is not set
+          isActive = item.status === "نشط" || item.status === "active";
+        }
+
+        return {
+          id: item.id, // Use the ID from ServiceProviderData (which is doc.id from Firestore)
+          clientCode: item.clientCode,
+          providerName: item.providerName,
+          type: item.type,
+          phone: item.phoneNumber,
+          email: item.email,
+          stations: item.stationsCount,
+          sales: item.ordersCount.toString(), // Convert to string as expected by interface
+          accountStatus: {
+            active: isActive,
+            text: isActive ? "مفعل" : "معطل",
+          },
+        };
+      }
     );
 
     console.log(
@@ -246,15 +260,23 @@ const fetchServiceProviders = async (): Promise<ServiceProvider[]> => {
   }
 };
 
-// Handle status toggle
-const handleToggleStatus = (id: string | number) => {
-  console.log(`Toggle status for service provider with id: ${id}`);
-  // Add your status toggle logic here
-};
-
 export const ServiceProviders = () => {
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [pendingCount, setPendingCount] = useState<number>(0);
+  const [serviceProvidersData, setServiceProvidersData] = useState<
+    ServiceProvider[]
+  >([]);
+  const [isMigrating, setIsMigrating] = useState(false);
+
+  // Fetch service providers with state update
+  const fetchServiceProvidersWithState = async (): Promise<
+    ServiceProvider[]
+  > => {
+    const data = await fetchServiceProviders();
+    setServiceProvidersData(data);
+    return data;
+  };
 
   // Fetch the actual count of pending requests
   useEffect(() => {
@@ -279,26 +301,129 @@ export const ServiceProviders = () => {
     navigate("/service-providers/join-requests");
   };
 
+  const handleAddRefidToExisting = async () => {
+    setIsMigrating(true);
+    try {
+      const updatedCount = await addRefidToExistingServiceProviders();
+      addToast({
+        type: "success",
+        message: `تم إضافة كود العميل لـ ${updatedCount} مزود خدمة بنجاح`,
+        duration: 5000,
+      });
+      const updatedData = await fetchServiceProviders();
+      setServiceProvidersData(updatedData);
+    } catch (error: any) {
+      console.error("Error migrating service providers:", error);
+      addToast({
+        type: "error",
+        message: error.message || "فشل في إضافة كود العميل لمزودي الخدمة الموجودين",
+        duration: 5000,
+      });
+    } finally {
+      setIsMigrating(false);
+    }
+  };
+
+  // Handle status toggle
+  const handleToggleStatus = async (id: string | number) => {
+    try {
+      const serviceProviderId = String(id);
+      
+      // Fetch current service provider data from Firestore to get the current isActive status
+      const currentServiceProviderData = await fetchServiceProviderById(serviceProviderId);
+      
+      // Get current isActive status
+      // Handle null, undefined, or missing values - treat as false/inactive
+      let currentIsActive: boolean;
+      if (currentServiceProviderData.isActive === null || currentServiceProviderData.isActive === undefined) {
+        // If isActive is null/undefined, check status field as fallback
+        if (currentServiceProviderData.status === "نشط" || currentServiceProviderData.status === "active") {
+          currentIsActive = true;
+        } else {
+          // If both are null/undefined/false, treat as inactive
+          currentIsActive = false;
+        }
+      } else {
+        currentIsActive = currentServiceProviderData.isActive === true;
+      }
+      
+      const newIsActive = !currentIsActive;
+      await updateServiceProviderIsActive(serviceProviderId, newIsActive);
+      addToast({
+        type: "success",
+        message: newIsActive
+          ? "تم تفعيل حساب مزود الخدمة بنجاح"
+          : "تم تعطيل حساب مزود الخدمة بنجاح",
+        duration: 3000,
+      });
+      const updatedData = await fetchServiceProviders();
+      setServiceProvidersData(updatedData);
+    } catch (error) {
+      console.error("Error toggling service provider status:", error);
+      addToast({
+        type: "error",
+        message: "فشل في تحديث حالة الحساب",
+        duration: 3000,
+      });
+    }
+  };
+
   return (
-    <DataTableSection<ServiceProvider>
-      title="مزودي الخدمة"
-      entityName="مزود الخدمة"
-      entityNamePlural="مزودي الخدمة"
-      icon={Truck}
-      columns={serviceProviderColumns}
-      fetchData={fetchServiceProviders}
-      onToggleStatus={handleToggleStatus}
-      addNewRoute="/service-providers/add"
-      viewDetailsRoute={(id) => `/service-providers/${id}`}
-      loadingMessage="جاري تحميل بيانات مزودي الخدمة"
-      itemsPerPage={10}
-      showTimeFilter={false}
-      showAddButton={true}
-      customFilterButton={{
-        label: "سجل طلبات الانضمام",
-        count: pendingCount,
-        onClick: handleJoinRequestsClick,
-      }}
-    />
+    <div className="flex flex-col items-start gap-5 relative w-full">
+      {serviceProvidersData.length > 0 &&
+        serviceProvidersData.some(
+          (sp) => !sp.clientCode || sp.clientCode === sp.id
+        ) && (
+          <div className="w-full">
+            <div className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder">
+              <div className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={handleAddRefidToExisting}
+                    disabled={isMigrating}
+                    className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
+                      <div className="inline-flex items-center justify-center gap-2.5 pt-1 pb-0 px-0 relative flex-[0_0_auto]">
+                        <span className="w-fit mt-[-1.00px] font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-sec text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] relative font-body-body-2 text-[length:var(--body-body-2-font-size)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
+                          {isMigrating
+                            ? "جاري إضافة كود العميل..."
+                            : "إضافة كود العميل لمزودي الخدمة الموجودين"}
+                        </span>
+                      </div>
+                      {isMigrating && (
+                        <div className="w-4 h-4 border-2 border-gray-500 border-t-transparent rounded-full animate-spin"></div>
+                      )}
+                    </div>
+                  </button>
+                  <p className="text-sm text-gray-600 [direction:rtl]">
+                    هذا الزر يضيف كود عميل (8 أرقام) لمزودي الخدمة الذين لا يملكون كود
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      <DataTableSection<ServiceProvider>
+        title="مزودي الخدمة"
+        entityName="مزود الخدمة"
+        entityNamePlural="مزودي الخدمة"
+        icon={Truck}
+        columns={serviceProviderColumns}
+        fetchData={fetchServiceProvidersWithState}
+        onToggleStatus={handleToggleStatus}
+        addNewRoute="/service-providers/add"
+        viewDetailsRoute={(id) => `/service-providers/${id}`}
+        loadingMessage="جاري تحميل بيانات مزودي الخدمة"
+        itemsPerPage={10}
+        showTimeFilter={false}
+        showAddButton={true}
+        customFilterButton={{
+          label: "سجل طلبات الانضمام",
+          count: pendingCount,
+          onClick: handleJoinRequestsClick,
+        }}
+      />
+    </div>
   );
 };

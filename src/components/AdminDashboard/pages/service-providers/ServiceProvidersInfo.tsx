@@ -2,7 +2,12 @@ import { Truck, ArrowLeft, MapPin } from "lucide-react";
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { DataTableSection } from "../../../sections/DataTableSection";
-import { fetchProviderStations } from "../../../../services/firestore";
+import {
+  fetchProviderStations,
+  updateStationIsActive,
+  fetchStationById,
+} from "../../../../services/firestore";
+import { useToast } from "../../../../context/ToastContext";
 
 interface ServiceProvidersInfoProps {
   providerData: any;
@@ -124,9 +129,11 @@ export const ServiceProvidersInfo = ({
   providerData,
 }: ServiceProvidersInfoProps): JSX.Element => {
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [stationsFetchFunction, setStationsFetchFunction] = useState<
     () => Promise<StationLocation[]>
   >(() => async () => []);
+  const [stationsData, setStationsData] = useState<StationLocation[]>([]);
 
   // Set up the fetch function when component mounts or providerData changes
   useEffect(() => {
@@ -137,16 +144,57 @@ export const ServiceProvidersInfo = ({
     if (providerEmail) {
       // Create a fetch function that uses the provider's email
       const fetchStations = async (): Promise<StationLocation[]> => {
-        return await fetchStationLocations(providerEmail);
+        const data = await fetchStationLocations(providerEmail);
+        setStationsData(data);
+        return data;
       };
       setStationsFetchFunction(() => fetchStations);
     }
   }, [providerData]);
 
   // Handler for toggling station status
-  const handleToggleStatus = (stationId: number) => {
-    console.log(`Toggling status for station ID: ${stationId}`);
-    // In a real application, this would make an API call to update the station status
+  const handleToggleStatus = async (stationId: string | number) => {
+    try {
+      const stationIdStr = String(stationId);
+      
+      // Fetch current station data from Firestore to get the current isActive status
+      const currentStationData = await fetchStationById(stationIdStr);
+      
+      // Get current isActive status
+      // Handle null, undefined, or missing values - treat as true/active (matching fetchProviderStations logic: isActive !== false)
+      let currentIsActive: boolean;
+      if (currentStationData.isActive === null || currentStationData.isActive === undefined) {
+        // If isActive is null/undefined, treat as active (matching fetchProviderStations: isActive !== false means active)
+        currentIsActive = true;
+      } else {
+        currentIsActive = currentStationData.isActive === true;
+      }
+      
+      const newIsActive = !currentIsActive;
+      await updateStationIsActive(stationIdStr, newIsActive);
+      addToast({
+        type: "success",
+        message: newIsActive
+          ? "تم تفعيل المحطة بنجاح"
+          : "تم تعطيل المحطة بنجاح",
+        duration: 3000,
+      });
+      
+      // Refresh the stations list
+      const providerEmail =
+        providerData.email || providerData.uId || providerData.uid || "";
+      if (providerEmail) {
+        const updatedData = await fetchStationLocations(providerEmail);
+        setStationsData(updatedData);
+      }
+    } catch (error) {
+      console.error("Error toggling station status:", error);
+      addToast({
+        type: "error",
+        message: "فشل في تحديث حالة المحطة",
+        duration: 3000,
+      });
+    }
   };
 
   // Helper function to get value or dash

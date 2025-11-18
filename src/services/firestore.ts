@@ -10048,7 +10048,37 @@ export const addServiceProvider = async (
     const providerUid = result.data.uid;
     console.log("✅ Firebase Auth account created:", providerUid);
 
-    // 4. Build formattedLocation object with nested Address structure
+    // 4. Generate unique 8-digit refid for service provider
+    console.log("🔢 Generating unique 8-digit refid for service provider...");
+    let refid: string = "";
+    let isUnique = false;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    while (!isUnique && attempts < maxAttempts) {
+      const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+      refid = randomCode.toString();
+      const stationsCompanyRefCheck = collection(db, "stationscompany");
+      const qCheck = query(
+        stationsCompanyRefCheck,
+        where("refid", "==", refid)
+      );
+      const querySnapshot = await getDocs(qCheck);
+
+      if (querySnapshot.empty) {
+        isUnique = true;
+      } else {
+        attempts++;
+      }
+    }
+
+    if (!isUnique || !refid) {
+      throw new Error("فشل في إنشاء كود العميل. يرجى المحاولة مرة أخرى.");
+    }
+
+    console.log(`✅ Generated unique refid: ${refid}`);
+
+    // 5. Build formattedLocation object with nested Address structure
     const formattedLocation = {
       address: {
         city: providerData.city,
@@ -10062,7 +10092,7 @@ export const addServiceProvider = async (
       },
     };
 
-    // 5. Prepare service provider document
+    // 6. Prepare service provider document
     const providerDocument = {
       // Basic info
       name: providerData.name.trim(),
@@ -10088,6 +10118,9 @@ export const addServiceProvider = async (
       // Auth UID
       uId: providerUid,
 
+      // 8-digit refid
+      refid: refid,
+
       // Default values
       isActive: false,
       status: "pending",
@@ -10106,7 +10139,7 @@ export const addServiceProvider = async (
 
     console.log("📄 Service provider document prepared:", providerDocument);
 
-    // 6. Add document to Firestore stationscompany collection
+    // 7. Add document to Firestore stationscompany collection
     console.log(
       "💾 Adding service provider document to stationscompany collection..."
     );
@@ -10638,6 +10671,7 @@ export interface ServiceProviderData {
   phoneNumber: string;
   email: string;
   status: string;
+  isActive?: boolean | null;
   stationsCount: number;
   ordersCount: number;
   uId?: string;
@@ -10716,13 +10750,19 @@ export const fetchStationsCompanyData = async (): Promise<
 
       // Create service provider data object
       const serviceProvider: ServiceProviderData = {
-        id: data.id || doc.id,
-        clientCode: data.id || data.uId || doc.id,
+        id: doc.id, // Always use Firestore document ID for consistency
+        clientCode: data.refid || data.id || data.uId || doc.id, // Use refid as primary source
         providerName: data.name || "غير محدد",
         type: data.type || "غير محدد",
         phoneNumber: data.phoneNumber || data.phone || "-",
         email: data.email || "-",
         status: data.status || "نشط",
+        isActive:
+          data.isActive !== undefined
+            ? data.isActive
+            : data.status === "نشط" || data.status === "active"
+            ? true
+            : false,
         stationsCount,
         ordersCount,
         uId: companyUid,
@@ -10746,6 +10786,161 @@ export const fetchStationsCompanyData = async (): Promise<
     return serviceProvidersData;
   } catch (error) {
     console.error("❌ Error fetching stations company data:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add 8-digit refid to existing service providers that don't have one
+ * @returns Promise with the number of updated service providers
+ */
+export const addRefidToExistingServiceProviders = async (): Promise<number> => {
+  try {
+    console.log(
+      "🔄 Starting migration: Adding refid to existing service providers..."
+    );
+    const stationsCompanyRef = collection(db, "stationscompany");
+    // Fetch all documents without orderBy to avoid errors if some don't have createdDate
+    const stationsCompanySnapshot = await getDocs(stationsCompanyRef);
+    console.log(`📦 Found ${stationsCompanySnapshot.size} service providers`);
+
+    let updatedCount = 0;
+    const serviceProvidersToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    for (const providerDoc of stationsCompanySnapshot.docs) {
+      const providerData = providerDoc.data();
+      if (providerData.refid) {
+        console.log(
+          `⏭️  Service provider ${providerDoc.id} already has refid: ${providerData.refid}`
+        );
+        continue;
+      }
+
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+        const stationsCompanyRefCheck = collection(db, "stationscompany");
+        const qCheck = query(
+          stationsCompanyRefCheck,
+          where("refid", "==", refid)
+        );
+        const querySnapshot = await getDocs(qCheck);
+        const isInPendingUpdates = serviceProvidersToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for service provider ${providerDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      serviceProvidersToUpdate.push({
+        docRef: doc(db, "stationscompany", providerDoc.id),
+        refid: refid,
+      });
+      console.log(
+        `✅ Generated refid ${refid} for service provider ${providerDoc.id}`
+      );
+    }
+
+    console.log(
+      `📝 Updating ${serviceProvidersToUpdate.length} service providers with refid...`
+    );
+    for (const { docRef, refid } of serviceProvidersToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(
+          `✅ Updated service provider ${docRef.id} with refid: ${refid}`
+        );
+      } catch (error) {
+        console.error(
+          `❌ Error updating service provider ${docRef.id}:`,
+          error
+        );
+      }
+    }
+    console.log(
+      `✅ Migration completed: ${updatedCount} service providers updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a service provider document by ID (for getting raw data like isActive)
+ * @param serviceProviderId - The service provider document ID
+ * @returns Promise with service provider document data
+ */
+export const fetchServiceProviderById = async (serviceProviderId: string) => {
+  try {
+    console.log("Fetching service provider by ID:", serviceProviderId);
+
+    // Fetch the specific service provider document from Firestore
+    const serviceProviderDocRef = doc(db, "stationscompany", serviceProviderId);
+    const serviceProviderDoc = await getDoc(serviceProviderDocRef);
+
+    if (!serviceProviderDoc.exists()) {
+      throw new Error("Service provider not found");
+    }
+
+    const serviceProviderData = serviceProviderDoc.data();
+
+    const serviceProvider = {
+      id: serviceProviderDoc.id,
+      ...serviceProviderData,
+    };
+
+    console.log("Service provider data fetched:", serviceProvider);
+
+    return serviceProvider;
+  } catch (error) {
+    console.error("Error fetching service provider by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update service provider isActive status in Firestore
+ * @param serviceProviderId - The service provider document ID
+ * @param isActive - The new isActive status
+ * @returns Promise<boolean> - Returns true if update was successful
+ */
+export const updateServiceProviderIsActive = async (
+  serviceProviderId: string,
+  isActive: boolean
+): Promise<boolean> => {
+  try {
+    console.log(
+      `📝 Updating service provider isActive status: ${serviceProviderId} -> ${isActive}`
+    );
+
+    const serviceProviderDocRef = doc(db, "stationscompany", serviceProviderId);
+    await updateDoc(serviceProviderDocRef, {
+      isActive: isActive,
+    });
+
+    console.log(`✅ Successfully updated service provider isActive status`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating service provider isActive status:", error);
     throw error;
   }
 };
@@ -10797,12 +10992,18 @@ export const fetchStationsCompanyById = async (
 
       return {
         id: data.id || docSnap.id,
-        clientCode: data.id || data.uId || docSnap.id,
+        clientCode: data.refid || data.id || data.uId || docSnap.id, // Use refid as primary source
         providerName: data.name || "غير محدد",
         type: data.type || "غير محدد",
         phoneNumber: data.phoneNumber || data.phone || "-",
         email: data.email || "-",
         status: data.status || "نشط",
+        isActive:
+          data.isActive !== undefined
+            ? data.isActive
+            : data.status === "نشط" || data.status === "active"
+            ? true
+            : false,
         stationsCount,
         ordersCount,
         uId: companyUid,
@@ -10846,12 +11047,18 @@ export const fetchStationsCompanyById = async (
 
       return {
         id: data.id || doc.id,
-        clientCode: data.id || data.uId || doc.id,
+        clientCode: data.refid || data.id || data.uId || doc.id, // Use refid as primary source
         providerName: data.name || "غير محدد",
         type: data.type || "غير محدد",
         phoneNumber: data.phoneNumber || data.phone || "-",
         email: data.email || "-",
         status: data.status || "نشط",
+        isActive:
+          data.isActive !== undefined
+            ? data.isActive
+            : data.status === "نشط" || data.status === "active"
+            ? true
+            : false,
         stationsCount,
         ordersCount,
         uId: companyUid,
@@ -11229,7 +11436,68 @@ export const fetchProviderStations = async (
     return stations;
   } catch (error) {
     console.error("❌ Error fetching provider stations:", error);
-    return [];
+    throw error;
+  }
+};
+
+/**
+ * Fetch a station document by ID (for getting raw data like isActive)
+ * @param stationId - The station document ID
+ * @returns Promise with station document data
+ */
+export const fetchStationById = async (stationId: string) => {
+  try {
+    console.log("Fetching station by ID:", stationId);
+
+    // Fetch the specific station document from Firestore
+    const stationDocRef = doc(db, "carstations", stationId);
+    const stationDoc = await getDoc(stationDocRef);
+
+    if (!stationDoc.exists()) {
+      throw new Error("Station not found");
+    }
+
+    const stationData = stationDoc.data();
+
+    const station = {
+      id: stationDoc.id,
+      ...stationData,
+    };
+
+    console.log("Station data fetched:", station);
+
+    return station;
+  } catch (error) {
+    console.error("Error fetching station by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update station isActive status in Firestore
+ * @param stationId - The station document ID
+ * @param isActive - The new isActive status
+ * @returns Promise<boolean> - Returns true if update was successful
+ */
+export const updateStationIsActive = async (
+  stationId: string,
+  isActive: boolean
+): Promise<boolean> => {
+  try {
+    console.log(
+      `📝 Updating station isActive status: ${stationId} -> ${isActive}`
+    );
+
+    const stationDocRef = doc(db, "carstations", stationId);
+    await updateDoc(stationDocRef, {
+      isActive: isActive,
+    });
+
+    console.log(`✅ Successfully updated station isActive status`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating station isActive status:", error);
+    throw error;
   }
 };
 
