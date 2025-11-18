@@ -1,6 +1,16 @@
 import { DataTableSection } from "../../../sections/DataTableSection";
-import { Users } from "lucide-react";
-import { fetchSupervisorsFromUsers } from "../../../../services/firestore";
+import { Users, CirclePlus, Upload, Download, FileSpreadsheet } from "lucide-react";
+import {
+  fetchSupervisorsFromUsers,
+  updateSupervisorIsActive,
+  fetchSupervisorById,
+  deleteSupervisor,
+} from "../../../../services/firestore";
+import { useToast } from "../../../../context/ToastContext";
+import { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { createPortal } from "react-dom";
+import { ConfirmDialog } from "../../../shared/ConfirmDialog/ConfirmDialog";
 
 // Define the Supervisor data type
 export interface Supervisor {
@@ -163,28 +173,270 @@ const fetchSupervisors = async (): Promise<Supervisor[]> => {
   return await fetchSupervisorsFromUsers();
 };
 
-// Handle status toggle
-const handleToggleStatus = (id: string) => {
-  console.log(`Toggle status for supervisor with id: ${id}`);
-  // Add your status toggle logic here
-};
-
 export const Supervisors = () => {
+  const navigate = useNavigate();
+  const { addToast } = useToast();
+  const [supervisorsData, setSupervisorsData] = useState<Supervisor[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    supervisorId: string | null;
+    supervisorName: string;
+  }>({
+    isOpen: false,
+    supervisorId: null,
+    supervisorName: "",
+  });
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Handle status toggle
+  const handleToggleStatus = async (id: string | number) => {
+    try {
+      const supervisorId = String(id);
+      
+      // Fetch current supervisor data from Firestore to get the current isActive status
+      const currentSupervisorData = await fetchSupervisorById(supervisorId);
+      
+      // Get current isActive status (default to true if not set)
+      const currentIsActive = currentSupervisorData.isActive ?? 
+                               currentSupervisorData.accountStatus?.active ?? 
+                               true;
+      
+      // Calculate the new isActive value (opposite of current)
+      // When toggle is turned OFF, set isActive to false
+      // When toggle is turned ON, set isActive to true
+      const newIsActive = !currentIsActive;
+
+      // Update in Firestore
+      await updateSupervisorIsActive(supervisorId, newIsActive);
+
+      // Show success message
+      addToast({
+        type: "success",
+        message: newIsActive
+          ? "تم تفعيل حساب المشرف بنجاح"
+          : "تم تعطيل حساب المشرف بنجاح",
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error("Error toggling supervisor status:", error);
+      addToast({
+        type: "error",
+        message: "فشل في تحديث حالة الحساب",
+        duration: 3000,
+      });
+    }
+  };
+
+  // Handle delete supervisor - open confirmation popup
+  const handleDelete = (id: string | number) => {
+    const supervisorId = String(id);
+    
+    // Find supervisor name for confirmation message
+    const supervisor = supervisorsData.find((s) => s.id === supervisorId);
+    const supervisorName = supervisor?.supervisorName || "المشرف";
+    
+    // Open confirmation dialog
+    setDeleteConfirm({
+      isOpen: true,
+      supervisorId,
+      supervisorName,
+    });
+  };
+
+  // Confirm and delete supervisor
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirm.supervisorId) return;
+
+    try {
+      setDeletingId(deleteConfirm.supervisorId);
+      
+      // Delete from Firestore
+      await deleteSupervisor(deleteConfirm.supervisorId);
+      
+      // Show success message
+      addToast({
+        type: "success",
+        message: `تم حذف ${deleteConfirm.supervisorName} بنجاح`,
+        duration: 3000,
+      });
+      
+      // Refresh the supervisors list
+      const updatedData = await fetchSupervisors();
+      setSupervisorsData(updatedData);
+      
+      // Close confirmation popup
+      setDeleteConfirm({
+        isOpen: false,
+        supervisorId: null,
+        supervisorName: "",
+      });
+      
+      // Reload the page to refresh the table
+      window.location.reload();
+    } catch (error: any) {
+      console.error("Error deleting supervisor:", error);
+      addToast({
+        type: "error",
+        message: error.message || "فشل في حذف المشرف",
+        duration: 3000,
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  // Cancel delete
+  const handleDeleteCancel = () => {
+    setDeleteConfirm({
+      isOpen: false,
+      supervisorId: null,
+      supervisorName: "",
+    });
+  };
+
+  // Handle add menu toggle
+  const handleAddMenuToggle = () => {
+    if (addButtonRef.current) {
+      const rect = addButtonRef.current.getBoundingClientRect();
+      setMenuPosition({
+        top: rect.bottom + 4,
+        left: rect.left,
+      });
+    }
+    setIsAddMenuOpen(!isAddMenuOpen);
+  };
+
+  // Handle menu options
+  const handleAddOneSupervisor = () => {
+    setIsAddMenuOpen(false);
+    navigate("/supervisors/add");
+  };
+
+  const handleUploadExcel = () => {
+    setIsAddMenuOpen(false);
+    // TODO: Implement Excel upload
+    addToast({
+      type: "info",
+      message: "سيتم تنفيذ رفع ملف Excel قريباً",
+      duration: 3000,
+    });
+  };
+
+  const handleDownloadTemplate = () => {
+    setIsAddMenuOpen(false);
+    // TODO: Implement template download
+    addToast({
+      type: "info",
+      message: "سيتم تنفيذ تنزيل النموذج قريباً",
+      duration: 3000,
+    });
+  };
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        addButtonRef.current &&
+        !addButtonRef.current.contains(event.target as Node)
+      ) {
+        setIsAddMenuOpen(false);
+      }
+    };
+
+    if (isAddMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isAddMenuOpen]);
+
+  // Fetch supervisors and store in state
+  const fetchSupervisorsWithState = async (): Promise<Supervisor[]> => {
+    const data = await fetchSupervisors();
+    setSupervisorsData(data);
+    return data;
+  };
+
   return (
-    <DataTableSection<Supervisor>
-      title="قائمة المشرفين"
-      entityName="مشرف"
-      entityNamePlural="مشرفين"
-      icon={Users}
-      columns={supervisorColumns}
-      fetchData={fetchSupervisors}
-      onToggleStatus={handleToggleStatus}
-      addNewRoute="/supervisors/add"
-      viewDetailsRoute={(id) => `/supervisors/${id}`}
-      loadingMessage="جاري تحميل بيانات المشرفين..."
-      itemsPerPage={10}
-      showTimeFilter={false}
-      showAddButton={true}
-    />
+    <>
+      <DataTableSection<Supervisor>
+        title="قائمة المشرفين"
+        entityName="مشرف"
+        entityNamePlural="مشرفين"
+        icon={Users}
+        columns={supervisorColumns}
+        fetchData={fetchSupervisorsWithState}
+        onToggleStatus={handleToggleStatus}
+        onDelete={handleDelete}
+        addNewRoute="/supervisors/add"
+        onAddClick={handleAddMenuToggle}
+        viewDetailsRoute={(id) => `/supervisors/${id}`}
+        loadingMessage="جاري تحميل بيانات المشرفين..."
+        itemsPerPage={10}
+        showTimeFilter={false}
+        showAddButton={true}
+        customAddButtonRef={addButtonRef}
+      />
+
+      {/* Add Menu Popup */}
+      {isAddMenuOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setIsAddMenuOpen(false)}
+          />
+          {createPortal(
+            <div
+              className="fixed w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden"
+              style={{
+                top: `${menuPosition.top}px`,
+                left: `${menuPosition.left}px`,
+              }}
+            >
+              <div className="py-1">
+                <button
+                  onClick={handleAddOneSupervisor}
+                  className="w-full px-4 py-3 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-3 transition-colors"
+                >
+                  <span className="[direction:rtl]">إضافة مشرف واحد</span>
+                  <CirclePlus className="w-4 h-4 text-gray-500" />
+                </button>
+                <button
+                  onClick={handleUploadExcel}
+                  className="w-full px-4 py-3 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-3 transition-colors"
+                >
+                  <span className="[direction:rtl]">رفع ملف Excel لمجموعة مشرفين</span>
+                  <Upload className="w-4 h-4 text-gray-500" />
+                </button>
+                <button
+                  onClick={handleDownloadTemplate}
+                  className="w-full px-4 py-3 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-3 transition-colors"
+                >
+                  <span className="[direction:rtl]">تنزيل نموذج للتعبئة</span>
+                  <Download className="w-4 h-4 text-gray-500" />
+                </button>
+              </div>
+            </div>,
+            document.body
+          )}
+        </>
+      )}
+
+      {/* Delete Confirmation Popup */}
+      <ConfirmDialog
+        open={deleteConfirm.isOpen}
+        title="تأكيد الحذف"
+        message={`هل أنت متأكد من حذف ${deleteConfirm.supervisorName}؟\n\nهذه العملية لا يمكن التراجع عنها.`}
+        confirmText="حذف"
+        cancelText="إلغاء"
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+      />
+    </>
   );
 };

@@ -8419,6 +8419,69 @@ export const fetchSupervisorById = async (supervisorId: string) => {
 };
 
 /**
+ * Update supervisor isActive status in users collection
+ * @param supervisorId - The ID of the supervisor (user document ID)
+ * @param isActive - The new isActive status (true or false)
+ * @returns Promise<boolean> - Returns true if update was successful
+ */
+export const updateSupervisorIsActive = async (
+  supervisorId: string,
+  isActive: boolean
+): Promise<boolean> => {
+  try {
+    console.log(
+      `📝 Updating supervisor isActive status: ${supervisorId} -> ${isActive}`
+    );
+
+    const userDocRef = doc(db, "users", supervisorId);
+    await updateDoc(userDocRef, {
+      isActive: isActive,
+    });
+
+    console.log(`✅ Successfully updated supervisor isActive status`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating supervisor isActive status:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete supervisor from users collection
+ * @param supervisorId - The ID of the supervisor (user document ID)
+ * @returns Promise<boolean> - Returns true if deletion was successful
+ */
+export const deleteSupervisor = async (
+  supervisorId: string
+): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting supervisor from Firestore: ${supervisorId}`);
+
+    // Verify the user is a supervisor/admin before deleting
+    const userDocRef = doc(db, "users", supervisorId);
+    const userDoc = await getDoc(userDocRef);
+
+    if (!userDoc.exists()) {
+      throw new Error("Supervisor not found");
+    }
+
+    const data = userDoc.data();
+    if (data.isAdmin !== true && data.isSuperAdmin !== true) {
+      throw new Error("User is not a supervisor/admin");
+    }
+
+    // Delete the user document
+    await deleteDoc(userDocRef);
+
+    console.log(`✅ Successfully deleted supervisor from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting supervisor:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetch a company by its ID
  * @param companyId - The ID of the company to fetch
  * @returns Promise with the company data

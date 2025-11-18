@@ -87,6 +87,9 @@ export const SupervisorInfo = ({
   supervisorData,
 }: SupervisorInfoProps): JSX.Element => {
   const navigate = useNavigate();
+  
+  // Get supervisor ID from the data
+  const supervisorId = supervisorData.id;
 
   // Helper function to get value or dash
   const getValueOrDash = (value: any): string => {
@@ -232,6 +235,7 @@ export const SupervisorInfo = ({
               {/* Edit Button */}
               <div className="flex items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
                 <button
+                  onClick={() => navigate(`/supervisors/add?edit=${supervisorId}`)}
                   className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-medium)] pb-[var(--corner-radius-medium)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] hover:opacity-90 transition-opacity"
                   style={{ backgroundColor: "#FFFCEC" }}
                   aria-label="تعديل البيانات"
