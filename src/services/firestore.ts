@@ -8496,7 +8496,7 @@ export interface Advertisement {
  * @param email - User email to search for
  * @returns Promise with display_name or null if not found
  */
-const fetchUserDisplayName = async (
+export const fetchUserDisplayNameByEmail = async (
   email: string | null | undefined
 ): Promise<string | null> => {
   if (!email) return null;
@@ -8633,7 +8633,7 @@ export const fetchAdvertisements = async (): Promise<Advertisement[]> => {
 
     // Fetch display names for all unique emails in parallel
     const displayNamePromises = uniqueEmails.map(async (email) => {
-      const displayName = await fetchUserDisplayName(email);
+      const displayName = await fetchUserDisplayNameByEmail(email);
       displayNameMap.set(email, displayName);
     });
 
@@ -11582,37 +11582,50 @@ const defaultCommunicationPoliciesData: CommunicationPoliciesData = {
  * Returns default dummy data if document doesn't exist
  * @returns Promise with communication policies data
  */
-export const fetchCommunicationPolicies = async (): Promise<CommunicationPoliciesData> => {
-  try {
-    console.log("📋 Fetching communication policies from Firestore...");
+export const fetchCommunicationPolicies =
+  async (): Promise<CommunicationPoliciesData> => {
+    try {
+      console.log("📋 Fetching communication policies from Firestore...");
 
-    const docRef = doc(db, "communication-policies", "settings");
-    const docSnap = await getDoc(docRef);
+      const docRef = doc(db, "communication-policies", "settings");
+      const docSnap = await getDoc(docRef);
 
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      console.log("✅ Communication policies data fetched successfully");
-      return {
-        platformPolicy: data.platformPolicy || defaultCommunicationPoliciesData.platformPolicy,
-        whatsappLink: data.whatsappLink || defaultCommunicationPoliciesData.whatsappLink,
-        instagramLink: data.instagramLink || defaultCommunicationPoliciesData.instagramLink,
-        tiktokLink: data.tiktokLink || defaultCommunicationPoliciesData.tiktokLink,
-        facebookLink: data.facebookLink || defaultCommunicationPoliciesData.facebookLink,
-        xPlatformLink: data.xPlatformLink || defaultCommunicationPoliciesData.xPlatformLink,
-        emailLink: data.emailLink || defaultCommunicationPoliciesData.emailLink,
-      };
-    } else {
-      console.log("⚠️ Communication policies document not found, using default data");
-      // Create document with default data
-      await setDoc(docRef, defaultCommunicationPoliciesData);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        console.log("✅ Communication policies data fetched successfully");
+        return {
+          platformPolicy:
+            data.platformPolicy ||
+            defaultCommunicationPoliciesData.platformPolicy,
+          whatsappLink:
+            data.whatsappLink || defaultCommunicationPoliciesData.whatsappLink,
+          instagramLink:
+            data.instagramLink ||
+            defaultCommunicationPoliciesData.instagramLink,
+          tiktokLink:
+            data.tiktokLink || defaultCommunicationPoliciesData.tiktokLink,
+          facebookLink:
+            data.facebookLink || defaultCommunicationPoliciesData.facebookLink,
+          xPlatformLink:
+            data.xPlatformLink ||
+            defaultCommunicationPoliciesData.xPlatformLink,
+          emailLink:
+            data.emailLink || defaultCommunicationPoliciesData.emailLink,
+        };
+      } else {
+        console.log(
+          "⚠️ Communication policies document not found, using default data"
+        );
+        // Create document with default data
+        await setDoc(docRef, defaultCommunicationPoliciesData);
+        return defaultCommunicationPoliciesData;
+      }
+    } catch (error) {
+      console.error("❌ Error fetching communication policies:", error);
+      // Return default data on error
       return defaultCommunicationPoliciesData;
     }
-  } catch (error) {
-    console.error("❌ Error fetching communication policies:", error);
-    // Return default data on error
-    return defaultCommunicationPoliciesData;
-  }
-};
+  };
 
 /**
  * Save communication policies data to Firestore
@@ -11635,6 +11648,367 @@ export const saveCommunicationPolicies = async (
     return true;
   } catch (error) {
     console.error("❌ Error saving communication policies:", error);
+    throw error;
+  }
+};
+
+// FAQ Types
+export interface FAQQuestion {
+  id?: string;
+  question: string;
+  answer: string;
+  userType:
+    | "company"
+    | "user"
+    | "distributer"
+    | "driver"
+    | "all"
+    | "admin"
+    | "superAdmin";
+  createdBy: string;
+  createdAt?: any;
+}
+
+/**
+ * Fetch user data from users collection by email
+ * @param email - User email address
+ * @returns Promise with user data including user_type, or null if not found
+ */
+export const fetchUserByEmail = async (email: string): Promise<any | null> => {
+  try {
+    if (!email) return null;
+
+    const usersRef = collection(db, "users");
+    const q = query(usersRef, where("email", "==", email));
+    const querySnapshot = await getDocs(q);
+
+    if (!querySnapshot.empty) {
+      const userData = querySnapshot.docs[0].data();
+      return {
+        id: querySnapshot.docs[0].id,
+        ...userData,
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error("❌ Error fetching user by email:", error);
+    return null;
+  }
+};
+
+/**
+ * Map user_type from users collection to FAQ userType
+ * @param userType - user_type from users collection
+ * @returns Mapped FAQ userType
+ */
+const mapUserTypeToFAQType = (
+  userType: string | undefined | null
+): FAQQuestion["userType"] => {
+  if (!userType) return "all";
+
+  const typeMap: Record<string, FAQQuestion["userType"]> = {
+    company: "company",
+    "service-provider": "distributer",
+    "service-distributer": "distributer",
+    station: "distributer",
+    driver: "driver",
+    user: "user",
+    individual: "user",
+    admin: "admin",
+    superadmin: "superAdmin",
+  };
+
+  return typeMap[userType.toLowerCase()] || "all";
+};
+
+/**
+ * Fetch all FAQ questions from Firestore
+ * @returns Promise with array of FAQ questions
+ */
+export const fetchFAQQuestions = async (): Promise<FAQQuestion[]> => {
+  try {
+    console.log("📋 Fetching FAQ questions from Firestore...");
+
+    const faqRef = collection(db, "faq");
+    const q = query(faqRef, orderBy("createdAt", "desc"));
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
+
+    const faqData: FAQQuestion[] = [];
+
+    querySnapshot.forEach((doc) => {
+      faqData.push({
+        id: doc.id,
+        ...doc.data(),
+      } as FAQQuestion);
+    });
+
+    console.log(
+      `✅ FAQ questions fetched successfully: ${faqData.length} questions`
+    );
+    return faqData;
+  } catch (error) {
+    console.error("❌ Error fetching FAQ questions:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get FAQ userType from user data
+ * Checks isAdmin/isSuperAdmin first, then falls back to user_type
+ * @param userData - User data from users collection
+ * @returns FAQ userType
+ */
+const getUserTypeFromUserData = (userData: any): FAQQuestion["userType"] => {
+  if (!userData) {
+    return "all";
+  }
+
+  // First check for admin flags
+  if (userData.isSuperAdmin === true) {
+    return "superAdmin";
+  }
+
+  if (userData.isAdmin === true) {
+    return "admin";
+  }
+
+  // If not admin, check user_type field
+  const userTypeFromDB = userData.user_type;
+  if (userTypeFromDB) {
+    return mapUserTypeToFAQType(userTypeFromDB);
+  }
+
+  // Default fallback
+  return "all";
+};
+
+/**
+ * Add a new FAQ question to Firestore
+ * @param data - FAQ question data (userType will be overridden by logged-in user's type)
+ * @returns Promise with the created FAQ question including document ID
+ */
+export const addFAQQuestion = async (
+  data: Omit<FAQQuestion, "id" | "createdAt" | "userType" | "createdBy"> & {
+    userType?: string;
+  }
+): Promise<FAQQuestion> => {
+  try {
+    console.log("💾 Adding new FAQ question to Firestore...");
+
+    const currentUser = auth.currentUser;
+    const userEmail = currentUser?.email;
+
+    if (!userEmail) {
+      throw new Error("No logged-in user found");
+    }
+
+    // Fetch user data from users collection
+    const userData = await fetchUserByEmail(userEmail);
+
+    if (!userData) {
+      console.warn(
+        "⚠️ User not found in users collection, using default values"
+      );
+    }
+
+    // Get userType from user data (checks isAdmin/isSuperAdmin first, then user_type)
+    const finalUserType = getUserTypeFromUserData(userData);
+
+    const createdBy = userEmail;
+
+    console.log("📋 User data:", {
+      email: userEmail,
+      isAdmin: userData?.isAdmin,
+      isSuperAdmin: userData?.isSuperAdmin,
+      user_type: userData?.user_type,
+      finalUserType: finalUserType,
+    });
+
+    const faqRef = collection(db, "faq");
+    const docRef = await addDoc(faqRef, {
+      question: data.question,
+      answer: data.answer,
+      userType: finalUserType,
+      createdBy: createdBy,
+      createdAt: serverTimestamp(),
+    });
+
+    const newQuestion: FAQQuestion = {
+      id: docRef.id,
+      question: data.question,
+      answer: data.answer,
+      userType: finalUserType,
+      createdBy: createdBy,
+    };
+
+    console.log("✅ FAQ question added successfully:", docRef.id);
+    console.log(`   User: ${createdBy}, FAQ Type: ${finalUserType}`);
+    return newQuestion;
+  } catch (error) {
+    console.error("❌ Error adding FAQ question:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update an existing FAQ question in Firestore
+ * @param id - Document ID of the FAQ question
+ * @param data - Updated FAQ question data
+ * @returns Promise<boolean> - Success status
+ */
+export const updateFAQQuestion = async (
+  id: string,
+  data: Partial<Omit<FAQQuestion, "id" | "createdAt" | "createdBy">>
+): Promise<boolean> => {
+  try {
+    console.log("💾 Updating FAQ question in Firestore...", id);
+
+    const docRef = doc(db, "faq", id);
+    await updateDoc(docRef, {
+      ...data,
+      updatedAt: serverTimestamp(),
+    });
+
+    console.log("✅ FAQ question updated successfully:", id);
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating FAQ question:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete an FAQ question from Firestore
+ * @param id - Document ID of the FAQ question
+ * @returns Promise<boolean> - Success status
+ */
+export const deleteFAQQuestion = async (id: string): Promise<boolean> => {
+  try {
+    console.log("🗑️ Deleting FAQ question from Firestore...", id);
+
+    const docRef = doc(db, "faq", id);
+    await deleteDoc(docRef);
+
+    console.log("✅ FAQ question deleted successfully:", id);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting FAQ question:", error);
+    throw error;
+  }
+};
+
+/**
+ * Seed dummy FAQ questions to Firestore
+ * This function can be called once to populate initial data
+ */
+export const seedFAQQuestions = async (): Promise<void> => {
+  try {
+    console.log("🌱 Seeding FAQ questions to Firestore...");
+
+    const currentUser = auth.currentUser;
+    const userEmail = currentUser?.email;
+
+    if (!userEmail) {
+      throw new Error("No logged-in user found for seeding");
+    }
+
+    // Fetch user data to get user_type
+    const userData = await fetchUserByEmail(userEmail);
+    const userTypeFromDB = userData?.user_type || "all";
+    const createdBy = userEmail;
+
+    const dummyQuestions: Omit<FAQQuestion, "id" | "createdAt">[] = [
+      {
+        question: "كيف يمكنني التسجيل في المنصة؟",
+        answer:
+          "يمكنك التسجيل في المنصة من خلال الضغط على زر التسجيل وإدخال بياناتك الشخصية مثل الاسم والبريد الإلكتروني ورقم الهاتف. بعد إتمام التسجيل، ستحصل على رسالة تأكيد عبر البريد الإلكتروني.",
+        userType: "all",
+        createdBy: createdBy,
+      },
+      {
+        question: "ما هي طرق الدفع المتاحة؟",
+        answer:
+          "نوفر عدة طرق للدفع تشمل الدفع النقدي عند الاستلام، والدفع عبر البطاقات الائتمانية، والدفع الإلكتروني عبر المحفظة الرقمية. يمكنك اختيار الطريقة التي تناسبك أثناء إتمام الطلب.",
+        userType: "all",
+        createdBy: createdBy,
+      },
+      {
+        question: "كيف يمكن للشركات التسجيل في النظام؟",
+        answer:
+          "يمكن للشركات التسجيل من خلال قسم الشركات في الموقع. ستحتاج إلى تقديم الوثائق القانونية للشركة مثل السجل التجاري ورخصة العمل. بعد مراجعة الطلب، سيتم تفعيل حساب الشركة.",
+        userType: "company",
+        createdBy: createdBy,
+      },
+      {
+        question: "ما هي متطلبات التسجيل للشركات؟",
+        answer:
+          "للشركات، نحتاج إلى السجل التجاري، رخصة العمل، هوية المدير المسؤول، وبطاقة ضريبية. يجب أن تكون جميع الوثائق سارية المفعول.",
+        userType: "company",
+        createdBy: createdBy,
+      },
+      {
+        question: "كيف يمكن للأفراد استخدام الخدمة؟",
+        answer:
+          "يمكن للأفراد التسجيل بسهولة من خلال التطبيق أو الموقع. بعد التسجيل، يمكنك طلب الخدمات المتاحة مثل توصيل الوقود أو الصيانة. يمكنك تتبع طلباتك من خلال لوحة التحكم.",
+        userType: "user",
+        createdBy: createdBy,
+      },
+      {
+        question: "ما هي الخدمات المتاحة للأفراد؟",
+        answer:
+          "نوفر للأفراد خدمات متعددة تشمل توصيل الوقود، صيانة المركبات، تغيير الزيوت، وخدمات الطوارئ على الطريق. يمكنك طلب أي خدمة من خلال التطبيق.",
+        userType: "user",
+        createdBy: createdBy,
+      },
+      {
+        question: "كيف يمكن لمزودي الخدمة التسجيل؟",
+        answer:
+          "يمكن لمزودي الخدمة التسجيل من خلال قسم مزودي الخدمة. يجب تقديم الوثائق المطلوبة مثل رخصة مزود الخدمة، شهادات التأهيل، وبطاقة الهوية. بعد الموافقة، سيتم تفعيل الحساب.",
+        userType: "distributer",
+        createdBy: createdBy,
+      },
+      {
+        question: "ما هي متطلبات مزودي الخدمة؟",
+        answer:
+          "يجب أن يكون مزود الخدمة حاصلاً على رخصة مزاولة المهنة، شهادات التأهيل المطلوبة، ووثائق التأمين. كما يجب أن يكون لديه فريق عمل مدرب ومعدات مناسبة.",
+        userType: "distributer",
+        createdBy: createdBy,
+      },
+      {
+        question: "كيف يمكن للسائقين استخدام التطبيق؟",
+        answer:
+          "يمكن للسائقين تحميل تطبيق السائق من متجر التطبيقات. بعد التسجيل وإدخال بيانات المركبة ورخصة القيادة، سيتم تفعيل الحساب. يمكن للسائقين بعد ذلك استقبال الطلبات وتنفيذها.",
+        userType: "driver",
+        createdBy: createdBy,
+      },
+      {
+        question: "ما هي متطلبات التسجيل للسائقين؟",
+        answer:
+          "يجب أن يكون السائق حاصلاً على رخصة قيادة سارية المفعول، وثيقة تأمين المركبة، وبطاقة الهوية. كما يجب أن تكون المركبة في حالة جيدة ومطابقة للمواصفات المطلوبة.",
+        userType: "driver",
+        createdBy: createdBy,
+      },
+    ];
+
+    const faqRef = collection(db, "faq");
+    const promises = dummyQuestions.map((question) =>
+      addDoc(faqRef, {
+        ...question,
+        createdBy: createdBy, // Override with actual user email
+        createdAt: serverTimestamp(),
+      })
+    );
+
+    await Promise.all(promises);
+    console.log(
+      `✅ Successfully seeded ${dummyQuestions.length} FAQ questions`
+    );
+    console.log(
+      `   Seeded by: ${createdBy} (user_type from users collection: ${userTypeFromDB})`
+    );
+  } catch (error) {
+    console.error("❌ Error seeding FAQ questions:", error);
     throw error;
   }
 };
