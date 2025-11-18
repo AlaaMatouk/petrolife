@@ -3003,6 +3003,124 @@ export const fetchProducts = async (): Promise<any[]> => {
 };
 
 /**
+ * Delete a petrolife product from Firestore
+ * @param productId - The product document ID
+ * @returns Promise<boolean> - Returns true if deletion was successful
+ */
+export const deletePetrolifeProduct = async (
+  productId: string
+): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting petrolife product from Firestore: ${productId}`);
+
+    // Verify the product exists before deleting
+    const productDocRef = doc(db, "products", productId);
+    const productDoc = await getDoc(productDocRef);
+
+    if (!productDoc.exists()) {
+      throw new Error("Product not found");
+    }
+
+    // Delete the product document
+    await deleteDoc(productDocRef);
+    console.log(`✅ Successfully deleted petrolife product from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting petrolife product:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add 8-digit refid to existing products that don't have one
+ * @returns Promise with the number of updated products
+ */
+export const addRefidToExistingProducts = async (): Promise<number> => {
+  try {
+    console.log("🔄 Starting migration: Adding refid to existing products...");
+    const productsRef = collection(db, "products");
+    // Try to fetch with orderBy, fallback to without if it fails
+    let productsSnapshot;
+    try {
+      const q = query(productsRef, orderBy("createdDate", "desc"));
+      productsSnapshot = await getDocs(q);
+    } catch (orderByError) {
+      console.warn("⚠️ Could not order by createdDate, fetching without order");
+      productsSnapshot = await getDocs(productsRef);
+    }
+    console.log(`📦 Found ${productsSnapshot.size} products`);
+
+    let updatedCount = 0;
+    const productsToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    for (const productDoc of productsSnapshot.docs) {
+      const productData = productDoc.data();
+      if (productData.refid) {
+        console.log(
+          `⏭️  Product ${productDoc.id} already has refid: ${productData.refid}`
+        );
+        continue;
+      }
+
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+        const productsRefCheck = collection(db, "products");
+        const qCheck = query(productsRefCheck, where("refid", "==", refid));
+        const querySnapshot = await getDocs(qCheck);
+        const isInPendingUpdates = productsToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for product ${productDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      productsToUpdate.push({
+        docRef: doc(db, "products", productDoc.id),
+        refid: refid,
+      });
+      console.log(`✅ Generated refid ${refid} for product ${productDoc.id}`);
+    }
+
+    console.log(
+      `📝 Updating ${productsToUpdate.length} products with refid...`
+    );
+    for (const { docRef, refid } of productsToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(`✅ Updated product ${docRef.id} with refid: ${refid}`);
+      } catch (error) {
+        console.error(`❌ Error updating product ${docRef.id}:`, error);
+      }
+    }
+    console.log(
+      `✅ Migration completed: ${updatedCount} products updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetch all subscriptions from Firestore
  * @returns Promise with subscriptions data
  */
@@ -3316,6 +3434,36 @@ export const createProductWithSchema = async (
     ) {
       combined.createdDate = serverTimestamp();
     }
+
+    // Generate unique 8-digit refid for product
+    console.log("🔢 Generating unique 8-digit refid for product...");
+    let refid: string = "";
+    let isUnique = false;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    while (!isUnique && attempts < maxAttempts) {
+      const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+      refid = randomCode.toString();
+      const productsRefCheck = collection(db, "products");
+      const qCheck = query(productsRefCheck, where("refid", "==", refid));
+      const querySnapshot = await getDocs(qCheck);
+
+      if (querySnapshot.empty) {
+        isUnique = true;
+      } else {
+        attempts++;
+      }
+    }
+
+    if (!isUnique || !refid) {
+      throw new Error("فشل في إنشاء كود المنتج. يرجى المحاولة مرة أخرى.");
+    }
+
+    console.log(`✅ Generated unique refid: ${refid}`);
+
+    // Add refid to combined data
+    combined.refid = refid;
 
     const productDocRef = doc(productsCollection);
     await setDoc(productDocRef, combined);

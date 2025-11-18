@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Table, Pagination, LoadingSpinner } from "../../../shared";
 import {
@@ -18,8 +18,11 @@ import {
   fetchVehicleById,
   fetchDrivers,
   addDriverToVehicle,
+  updatePetrolifeDriverIsActive,
+  fetchPetrolifeDriverById,
 } from "../../../../services/firestore";
 import { useToast } from "../../../../context/ToastContext";
+import { StatusToggle } from "../../../shared/StatusToggle";
 
 interface VehicleInfo {
   plateNumber: string;
@@ -38,8 +41,8 @@ interface VehicleDriverRow {
   phone: string;
   email: string;
   city: string;
-  status: string;
-  isActive: boolean;
+  accountStatus: { active: boolean; text: string };
+  driverDocId: string; // Store the document ID for toggle functionality
 }
 
 interface AllDriverRow {
@@ -199,22 +202,79 @@ const PetrolifeCarDetails = (): JSX.Element => {
     string[]
   >([]);
 
+  const handleToggleStatus = useCallback(async (driverDocId: string) => {
+    try {
+      // Fetch current driver data from Firestore to get the current isActive status
+      const currentDriverData = await fetchPetrolifeDriverById(driverDocId);
+      
+      // Get current isActive status
+      // Handle null, undefined, or missing values - treat as false/inactive
+      let currentIsActive: boolean;
+      if (currentDriverData.isActive === null || currentDriverData.isActive === undefined) {
+        // If isActive is null/undefined, treat as inactive
+        currentIsActive = false;
+      } else {
+        currentIsActive = currentDriverData.isActive === true;
+      }
+      
+      const newIsActive = !currentIsActive;
+      await updatePetrolifeDriverIsActive(driverDocId, newIsActive);
+      addToast({
+        type: "success",
+        message: newIsActive
+          ? "تم تفعيل حساب السائق بنجاح"
+          : "تم تعطيل حساب السائق بنجاح",
+        duration: 3000,
+      });
+      
+      // Update local state
+      setDrivers((prevDrivers) =>
+        prevDrivers.map((driver) =>
+          driver.driverDocId === driverDocId
+            ? {
+                ...driver,
+                accountStatus: {
+                  active: newIsActive,
+                  text: newIsActive ? "مفعل" : "معطل",
+                },
+              }
+            : driver
+        )
+      );
+    } catch (error) {
+      console.error("Error toggling driver status:", error);
+      addToast({
+        type: "error",
+        message: "فشل في تحديث حالة الحساب",
+        duration: 3000,
+      });
+    }
+  }, [addToast]);
+
   const columns = useMemo(
     () => [
       {
-        key: "status",
+        key: "actions",
+        label: "الإجراءات",
+        width: "w-16",
+        priority: "high",
+        render: () => (
+          <button className="p-2 hover:bg-gray-100 rounded-lg">
+            <MoreVertical className="w-4 h-4 text-gray-600" />
+          </button>
+        ),
+      },
+      {
+        key: "accountStatus",
         label: "حالة الحساب",
         width: "min-w-[120px]",
         priority: "high",
-        render: (_: string, row: VehicleDriverRow) => (
-          <div className="flex items-center gap-2">
-            <div
-              className={`w-2 h-2 rounded-full ${
-                row.isActive ? "bg-green-500" : "bg-gray-400"
-              }`}
-            />
-            <span className="text-sm text-gray-700">{row.status}</span>
-          </div>
+        render: (_: any, row: VehicleDriverRow) => (
+          <StatusToggle
+            isActive={row.accountStatus.active}
+            onToggle={() => handleToggleStatus(row.driverDocId)}
+            statusText={row.accountStatus.text}
+          />
         ),
       },
       {
@@ -247,23 +307,12 @@ const PetrolifeCarDetails = (): JSX.Element => {
         width: "min-w-[120px]",
         priority: "high",
       },
-      {
-        key: "actions",
-        label: "الإجراءات",
-        width: "w-16",
-        priority: "high",
-        render: () => (
-          <button className="p-2 hover:bg-gray-100 rounded-lg">
-            <MoreVertical className="w-4 h-4 text-gray-600" />
-          </button>
-        ),
-      },
     ],
-    []
+    [handleToggleStatus]
   );
 
   const columnsReversed = useMemo(
-    () => [...(columns as any[])].reverse(),
+    () => [...(columns as any[])],
     [columns]
   );
 
@@ -310,8 +359,11 @@ const PetrolifeCarDetails = (): JSX.Element => {
           phone: driver.phone,
           email: driver.email,
           city: driver.city,
-          status: driver.status,
-          isActive: driver.isActive,
+          accountStatus: {
+            active: driver.isActive,
+            text: driver.status,
+          },
+          driverDocId: driver.assignmentIdentifier,
         },
       ]);
 
@@ -411,17 +463,20 @@ const PetrolifeCarDetails = (): JSX.Element => {
             Boolean(driverDoc)
           )
           .map((driverDoc: Record<string, any>, index: number) => {
-            const status = driverDoc?.isActive ? "نشط" : "معطل";
-
+            // Use refid as primary source for code, with fallbacks
             const code = formatValue(
-              driverDoc?.uId ??
+              driverDoc?.refid ??
+                driverDoc?.uId ??
                 driverDoc?.email ??
                 driverDoc?.id ??
                 driverDoc?.docId
             );
 
+            const driverDocId = String(driverDoc?.docId ?? driverDoc?.id ?? index);
+            const isActive = driverDoc?.isActive === true;
+
             return {
-              id: String(driverDoc?.docId ?? driverDoc?.id ?? index),
+              id: driverDocId,
               code,
               name: formatValue(
                 driverDoc?.name ?? driverDoc?.driverName ?? driverDoc?.fullName
@@ -429,8 +484,11 @@ const PetrolifeCarDetails = (): JSX.Element => {
               phone: formatValue(driverDoc?.phoneNumber ?? driverDoc?.phone),
               email: formatValue(driverDoc?.email),
               city: formatValue(driverDoc?.city?.name?.en),
-              status,
-              isActive: Boolean(driverDoc?.isActive),
+              accountStatus: {
+                active: isActive,
+                text: isActive ? "مفعل" : "معطل",
+              },
+              driverDocId: driverDocId,
             } as VehicleDriverRow;
           });
 
