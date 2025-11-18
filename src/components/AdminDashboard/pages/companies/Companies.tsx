@@ -3,6 +3,7 @@ import { Building2 } from "lucide-react";
 import {
   fetchAllCompaniesWithCounts,
   deleteCompany,
+  addRefidToExistingCompanies,
 } from "../../../../services/firestore";
 import { useToast } from "../../../../context/ToastContext";
 import { useState } from "react";
@@ -226,6 +227,7 @@ export const Companies = () => {
   const { addToast } = useToast();
   const [companiesData, setCompaniesData] = useState<Company[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isMigrating, setIsMigrating] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{
     isOpen: boolean;
     companyId: string | null;
@@ -309,6 +311,31 @@ export const Companies = () => {
     });
   };
 
+  // Handle migration: Add refid to existing companies
+  const handleAddRefidToExisting = async () => {
+    setIsMigrating(true);
+    try {
+      const updatedCount = await addRefidToExistingCompanies();
+      addToast({
+        type: "success",
+        message: `تم إضافة كود الشركة لـ ${updatedCount} شركة بنجاح`,
+        duration: 5000,
+      });
+      // Refresh the companies list
+      const updatedData = await fetchCompanies();
+      setCompaniesData(updatedData);
+    } catch (error: any) {
+      console.error("Error migrating companies:", error);
+      addToast({
+        type: "error",
+        message: error.message || "فشل في إضافة كود الشركة للشركات الموجودة",
+        duration: 5000,
+      });
+    } finally {
+      setIsMigrating(false);
+    }
+  };
+
   // Fetch companies and store in state
   const fetchCompaniesWithState = async (): Promise<Company[]> => {
     const data = await fetchCompanies();
@@ -318,22 +345,55 @@ export const Companies = () => {
 
   return (
     <>
-      <DataTableSection<Company>
-        title="قائمة الشركات"
-        entityName="شركة"
-        entityNamePlural="شركات"
-        icon={Building2}
-        columns={companyColumns}
-        fetchData={fetchCompaniesWithState}
-        onToggleStatus={handleToggleStatus}
-        onDelete={handleDelete}
-        addNewRoute="/companies/add"
-        viewDetailsRoute={(id) => `/companies/${id}`}
-        loadingMessage="جاري تحميل بيانات الشركات..."
-        itemsPerPage={10}
-        showTimeFilter={false}
-        showAddButton={true}
-      />
+      <div className="flex flex-col items-start gap-5 w-full">
+        {/* Migration Button - Only show if there are companies without refid */}
+        {companiesData.length > 0 && companiesData.some(c => !c.companyCode || c.companyCode === c.id) && (
+          <div className="w-full">
+            <div className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder">
+              <div className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={handleAddRefidToExisting}
+                    disabled={isMigrating}
+                    className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
+                      <div className="inline-flex items-center justify-center gap-2.5 pt-1 pb-0 px-0 relative flex-[0_0_auto]">
+                        <span className="w-fit mt-[-1.00px] font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-sec text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] relative font-body-body-2 text-[length:var(--body-body-2-font-size)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
+                          {isMigrating ? "جاري إضافة كود الشركة..." : "إضافة كود الشركة للشركات الموجودة"}
+                        </span>
+                      </div>
+                      {isMigrating && (
+                        <div className="w-4 h-4 border-2 border-gray-500 border-t-transparent rounded-full animate-spin"></div>
+                      )}
+                    </div>
+                  </button>
+                  <p className="text-sm text-gray-600 [direction:rtl]">
+                    هذا الزر يضيف كود شركة (8 أرقام) للشركات التي لا تملك كود
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <DataTableSection<Company>
+          title="قائمة الشركات"
+          entityName="شركة"
+          entityNamePlural="شركات"
+          icon={Building2}
+          columns={companyColumns}
+          fetchData={fetchCompaniesWithState}
+          onToggleStatus={handleToggleStatus}
+          onDelete={handleDelete}
+          addNewRoute="/companies/add"
+          viewDetailsRoute={(id) => `/companies/${id}`}
+          loadingMessage="جاري تحميل بيانات الشركات..."
+          itemsPerPage={10}
+          showTimeFilter={false}
+          showAddButton={true}
+        />
+      </div>
 
       {/* Delete Confirmation Popup */}
       <ConfirmDialog

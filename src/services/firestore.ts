@@ -5944,7 +5944,8 @@ export const fetchAllCompaniesWithCounts = async (): Promise<any[]> => {
 
       companies.push({
         id: companyDoc.id,
-        companyCode: companyData.id || companyDoc.id || "-",
+        companyCode:
+          companyData.refid || companyData.id || companyDoc.id || "-",
         companyName: companyData.name || companyData.brandName || "-",
         phone: companyData.phoneNumber || companyData.phone || "-",
         email: companyData.email || "-",
@@ -8503,6 +8504,102 @@ export const deleteCompany = async (companyId: string): Promise<boolean> => {
 };
 
 /**
+ * Add refid to existing companies that don't have one
+ * Generates unique 8-digit codes for all companies without refid
+ * @returns Promise with the number of companies updated
+ */
+export const addRefidToExistingCompanies = async (): Promise<number> => {
+  try {
+    console.log("🔄 Starting migration: Adding refid to existing companies...");
+
+    // Fetch all companies
+    const companiesSnapshot = await getDocs(collection(db, "companies"));
+    console.log(`📦 Found ${companiesSnapshot.size} companies`);
+
+    let updatedCount = 0;
+    const companiesToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    // First pass: Identify companies without refid and generate refids
+    for (const companyDoc of companiesSnapshot.docs) {
+      const companyData = companyDoc.data();
+
+      // Skip if company already has refid
+      if (companyData.refid) {
+        console.log(
+          `⏭️  Company ${companyDoc.id} already has refid: ${companyData.refid}`
+        );
+        continue;
+      }
+
+      // Generate unique 8-digit refid
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Generate 8-digit number (10000000 to 99999999)
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+
+        // Check if refid already exists in Firestore or in our pending updates
+        const companiesRef = collection(db, "companies");
+        const q = query(companiesRef, where("refid", "==", refid));
+        const querySnapshot = await getDocs(q);
+
+        // Also check if this refid is already in our pending updates
+        const isInPendingUpdates = companiesToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for company ${companyDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      companiesToUpdate.push({
+        docRef: doc(db, "companies", companyDoc.id),
+        refid: refid,
+      });
+
+      console.log(`✅ Generated refid ${refid} for company ${companyDoc.id}`);
+    }
+
+    console.log(
+      `📝 Updating ${companiesToUpdate.length} companies with refid...`
+    );
+
+    // Second pass: Update all companies in batch
+    for (const { docRef, refid } of companiesToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(`✅ Updated company ${docRef.id} with refid: ${refid}`);
+      } catch (error) {
+        console.error(`❌ Error updating company ${docRef.id}:`, error);
+      }
+    }
+
+    console.log(
+      `✅ Migration completed: ${updatedCount} companies updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetch a company by its ID
  * @param companyId - The ID of the company to fetch
  * @returns Promise with the company data
@@ -9422,13 +9519,42 @@ export const addCompany = async (companyData: AddCompanyData) => {
     const companyUid = result.data.uid;
     console.log("✅ Firebase Auth account created:", companyUid);
 
-    // 4. Build formattedLocation object
+    // 4. Generate unique 8-digit refid
+    let refid: string = "";
+    let isUnique = false;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    while (!isUnique && attempts < maxAttempts) {
+      // Generate 8-digit number (10000000 to 99999999)
+      const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+      refid = randomCode.toString();
+
+      // Check if refid already exists
+      const companiesRef = collection(db, "companies");
+      const q = query(companiesRef, where("refid", "==", refid));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        isUnique = true;
+      } else {
+        attempts++;
+      }
+    }
+
+    if (!isUnique || !refid) {
+      throw new Error("فشل في إنشاء كود الشركة. يرجى المحاولة مرة أخرى.");
+    }
+
+    console.log("✅ Generated unique refid:", refid);
+
+    // 5. Build formattedLocation object
     const formattedLocation = {
       "address.city": companyData.city,
       country: "Saudi Arabia",
     };
 
-    // 5. Prepare company document
+    // 6. Prepare company document
     const companyDocument = {
       // Basic info
       name: companyData.name.trim(),
@@ -9459,6 +9585,9 @@ export const addCompany = async (companyData: AddCompanyData) => {
       status: "approved",
       balance: 0,
 
+      // Company code (8-digit refid)
+      refid: refid,
+
       // Timestamps and user info
       createdDate: serverTimestamp(),
       createdUserId: adminEmail,
@@ -9472,7 +9601,7 @@ export const addCompany = async (companyData: AddCompanyData) => {
 
     console.log("📄 Company document prepared:", companyDocument);
 
-    // 6. Add document to Firestore companies collection
+    // 7. Add document to Firestore companies collection
     console.log("💾 Adding company document to companies collection...");
     const companyDocRef = doc(db, "companies", companyData.email);
     await setDoc(companyDocRef, companyDocument);
