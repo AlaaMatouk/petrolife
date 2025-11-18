@@ -8586,6 +8586,190 @@ export const addRefidToExistingSupervisors = async (): Promise<number> => {
   }
 };
 
+/**
+ * Fetch a client by its ID
+ * @param clientId - The ID of the client to fetch
+ * @returns Promise with the client data
+ */
+export const fetchClientById = async (clientId: string) => {
+  try {
+    console.log("Fetching client by ID:", clientId);
+
+    // Fetch the specific client document from Firestore
+    const clientDocRef = doc(db, "clients", clientId);
+    const clientDoc = await getDoc(clientDocRef);
+
+    if (!clientDoc.exists()) {
+      throw new Error("Client not found");
+    }
+
+    const clientData = clientDoc.data();
+
+    const client = {
+      id: clientDoc.id,
+      ...clientData,
+    };
+
+    console.log("Client data fetched:", client);
+
+    return client;
+  } catch (error) {
+    console.error("Error fetching client by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update client isActive status in clients collection
+ * @param clientId - The ID of the client (document ID)
+ * @param isActive - The new isActive status (true or false)
+ * @returns Promise<boolean> - Returns true if update was successful
+ */
+export const updateClientIsActive = async (
+  clientId: string,
+  isActive: boolean
+): Promise<boolean> => {
+  try {
+    console.log(
+      `📝 Updating client isActive status: ${clientId} -> ${isActive}`
+    );
+
+    const clientDocRef = doc(db, "clients", clientId);
+    await updateDoc(clientDocRef, {
+      isActive: isActive,
+    });
+
+    console.log(`✅ Successfully updated client isActive status`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating client isActive status:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete client from clients collection
+ * @param clientId - The ID of the client (document ID)
+ * @returns Promise<boolean> - Returns true if deletion was successful
+ */
+export const deleteClient = async (clientId: string): Promise<boolean> => {
+  try {
+    console.log(`🗑️ Deleting client from Firestore: ${clientId}`);
+
+    // Verify the client exists before deleting
+    const clientDocRef = doc(db, "clients", clientId);
+    const clientDoc = await getDoc(clientDocRef);
+
+    if (!clientDoc.exists()) {
+      throw new Error("Client not found");
+    }
+
+    // Delete the client document
+    await deleteDoc(clientDocRef);
+    console.log(`✅ Successfully deleted client from Firestore`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error deleting client:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add refid to existing clients that don't have one
+ * Generates unique 8-digit codes for all clients without refid
+ * @returns Promise with the number of clients updated
+ */
+export const addRefidToExistingClients = async (): Promise<number> => {
+  try {
+    console.log("🔄 Starting migration: Adding refid to existing clients...");
+
+    // Fetch all clients
+    const clientsRef = collection(db, "clients");
+    const q = query(clientsRef, orderBy("createdDate", "desc"));
+    const clientsSnapshot = await getDocs(q);
+    console.log(`📦 Found ${clientsSnapshot.size} clients`);
+
+    let updatedCount = 0;
+    const clientsToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    // First pass: Identify clients without refid and generate refids
+    for (const clientDoc of clientsSnapshot.docs) {
+      const clientData = clientDoc.data();
+
+      // Skip if client already has refid
+      if (clientData.refid) {
+        console.log(
+          `⏭️  Client ${clientDoc.id} already has refid: ${clientData.refid}`
+        );
+        continue;
+      }
+
+      // Generate unique 8-digit refid
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Generate 8-digit number (10000000 to 99999999)
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+
+        // Check if refid already exists in Firestore or in our pending updates
+        const clientsRefCheck = collection(db, "clients");
+        const qCheck = query(clientsRefCheck, where("refid", "==", refid));
+        const querySnapshot = await getDocs(qCheck);
+
+        // Also check if this refid is already in our pending updates
+        const isInPendingUpdates = clientsToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for client ${clientDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      clientsToUpdate.push({
+        docRef: doc(db, "clients", clientDoc.id),
+        refid: refid,
+      });
+
+      console.log(`✅ Generated refid ${refid} for client ${clientDoc.id}`);
+    }
+
+    console.log(`📝 Updating ${clientsToUpdate.length} clients with refid...`);
+
+    // Second pass: Update all clients in batch
+    for (const { docRef, refid } of clientsToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(`✅ Updated client ${docRef.id} with refid: ${refid}`);
+      } catch (error) {
+        console.error(`❌ Error updating client ${docRef.id}:`, error);
+      }
+    }
+
+    console.log(
+      `✅ Migration completed: ${updatedCount} clients updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
+    throw error;
+  }
+};
+
 export const deleteCompany = async (companyId: string): Promise<boolean> => {
   try {
     console.log(`🗑️ Deleting company from Firestore: ${companyId}`);
