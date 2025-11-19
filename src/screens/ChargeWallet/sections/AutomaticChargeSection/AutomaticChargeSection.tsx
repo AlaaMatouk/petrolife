@@ -57,17 +57,6 @@ export const AutomaticChargeSection = ({ onTabChange }: AutomaticChargeSectionPr
             </div>
           </button>
           <button
-            onClick={() => onTabChange('automatic')}
-            className="px-4 py-2 rounded-lg font-medium transition-colors"
-            style={{ 
-              backgroundColor: '#F9F3FF', 
-              color: '#5A66C1',
-              border: '1px solid #5A66C1'
-            }}
-          >
-            الشحن آليا
-          </button>
-          <button
             onClick={() => onTabChange('manual')}
             className="px-4 py-2 rounded-lg bg-gray-100 text-gray-600 font-medium hover:bg-gray-200 transition-colors"
           >
