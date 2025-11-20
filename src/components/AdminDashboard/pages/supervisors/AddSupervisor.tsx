@@ -58,7 +58,7 @@ export const AddSupervisor = () => {
     name: "",
     email: "",
     phoneNumber: "",
-    city: "",
+    city: "الرياض", // Default to الرياض
     address: "",
     employeeNumber: "",
   });
@@ -224,6 +224,10 @@ export const AddSupervisor = () => {
       errors.push("رقم الهاتف مطلوب");
     }
 
+    if (!formData.city || !formData.city.trim()) {
+      errors.push("المدينة مطلوبة");
+    }
+
     // Image is only required when adding new supervisor
     if (!isEditMode && !imageFile) {
       errors.push("صورة المشرف مطلوبة");
@@ -317,7 +321,7 @@ export const AddSupervisor = () => {
           name: formData.name.trim(),
           email: formData.email.trim(),
           phoneNumber: formData.phoneNumber.trim(),
-          city: formData.city,
+          city: formData.city.trim() || "الرياض",
           address: formData.address.trim(),
           employeeNumber: formData.employeeNumber.trim(),
           image: imageUrl,
@@ -368,7 +372,7 @@ export const AddSupervisor = () => {
           name: formData.name.trim(),
           email: formData.email.trim(),
           phoneNumber: formData.phoneNumber.trim(),
-          city: formData.city,
+          city: formData.city.trim() || "الرياض",
           address: formData.address.trim(),
           employeeNumber: formData.employeeNumber.trim(),
           image: imageUrl,
@@ -481,7 +485,7 @@ export const AddSupervisor = () => {
       <header className="flex flex-col items-end gap-[var(--corner-radius-extra-large)] relative self-stretch w-full flex-[0_0_auto]">
         <nav className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
           <button
-            onClick={() => navigate("/supervisors")}
+            onClick={handleCancel}
             className="inline-flex h-10 items-center gap-[var(--corner-radius-medium)] relative flex-[0_0_auto] hover:bg-gray-100 rounded-lg transition-colors"
             aria-label="العودة"
             type="button"

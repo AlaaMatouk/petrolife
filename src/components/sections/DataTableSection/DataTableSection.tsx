@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { Table } from "../../shared/Table/Table";
 import { Pagination } from "../../shared/Pagination/Pagination";
 import { useNavigate } from "react-router-dom";
@@ -54,6 +54,7 @@ export interface DataTableSectionProps<T> {
   showMoneyRefundButton?: boolean; // New prop to show money refund requests button
   showFuelDeliveryButton?: boolean; // New prop to show fuel delivery requests button
   showModifyButton?: boolean; // New prop to show Modify button instead of action menu
+  refreshTrigger?: number; // New prop to trigger data refresh when changed
 }
 
 // Generic Action Menu Component
@@ -96,32 +97,17 @@ const ActionMenu = <
     );
     if (action === "view") {
       navigate(viewDetailsRoute(item.id));
-    } else if (action === "delete" && onDelete) {
-      if (isProcessing) return;
-      
-      setIsProcessing(true);
-      try {
-        await onDelete(item.id);
-        addToast({
-          type: "success",
-          message: `تم حذف ${entityName} بنجاح`,
-          duration: 3000,
-        });
-        // Refresh the page to update the data
-        window.location.reload();
-      } catch (error: any) {
-        console.error("Error deleting item:", error);
-        addToast({
-          type: "error",
-          message: error.message || `فشل في حذف ${entityName}`,
-          duration: 3000,
-        });
-      } finally {
-        setIsProcessing(false);
-      }
-    } else if (action === "delete" && onDelete) {
-      onDelete(item.id);
       setIsOpen(false);
+    } else if (action === "delete" && onDelete) {
+      // Close the action menu first
+      setIsOpen(false);
+      // Use setTimeout to ensure menu closes before opening dialog
+      // This prevents any race conditions with rerenders
+      setTimeout(() => {
+        // Call onDelete which should open the confirmation dialog
+        // Don't await it or reload - let the parent component handle the actual deletion
+        onDelete(item.id);
+      }, 0);
     } else {
       setIsOpen(false);
     }
@@ -263,7 +249,19 @@ const ActionMenu = <
         <>
           <div
             className="fixed inset-0 z-40"
-            onClick={() => setIsOpen(false)}
+            onClick={(e) => {
+              // Only close if clicking directly on backdrop
+              if (e.target === e.currentTarget) {
+                setIsOpen(false);
+              }
+            }}
+            onMouseDown={(e) => {
+              // Prevent any mouse events from interfering
+              if (e.target === e.currentTarget) {
+                e.preventDefault();
+                e.stopPropagation();
+              }
+            }}
           />
 
           {createPortal(
@@ -273,6 +271,8 @@ const ActionMenu = <
                 top: `${menuPosition.top}px`,
                 left: `${menuPosition.left}px`,
               }}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
             >
               <div className="py-1">
                 {customActionButtons ? (
@@ -328,8 +328,13 @@ const ActionMenu = <
                       <User className="w-4 h-4 text-gray-500" />
                     </button>
                     <button
-                      onClick={() => handleAction("delete")}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleAction("delete");
+                      }}
                       disabled={isProcessing || !onDelete}
+                      type="button"
                       className={`w-full px-4 py-2 text-right text-sm flex items-center justify-end gap-2 transition-colors ${
                         isProcessing || !onDelete
                           ? "text-gray-400 cursor-not-allowed bg-gray-50"
@@ -493,6 +498,7 @@ export const DataTableSection = <
   showFuelDeliveryButton = false,
   showModifyButton = false,
   onDelete,
+  refreshTrigger = 0,
 }: DataTableSectionProps<T>): JSX.Element => {
   const navigate = useNavigate();
   const [data, setData] = useState<T[]>([]);
@@ -500,6 +506,11 @@ export const DataTableSection = <
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedFilter, setSelectedFilter] = useState<string>("الكل");
+  // Use ref to store fetchData to prevent unnecessary rerenders
+  const fetchDataRef = useRef(fetchData);
+  useEffect(() => {
+    fetchDataRef.current = fetchData;
+  }, [fetchData]);
 
   // Initialize filters state based on filterOptions
   const initialFilters = filterOptions.reduce((acc, filter) => {
@@ -536,35 +547,34 @@ export const DataTableSection = <
     }));
   };
 
-  // Fetch data on component mount
+  // Fetch data on component mount or when refreshTrigger changes
   useEffect(() => {
     const loadData = async () => {
-      if (data.length === 0) {
-        setIsLoading(true);
-        setError(null);
+      setIsLoading(true);
+      setError(null);
 
+      try {
+        console.log(`Loading ${entityNamePlural} data...`);
+        const fetchedData = await fetchDataRef.current();
+        setData(fetchedData);
+      } catch (err) {
+        console.error(`Error loading ${entityNamePlural}:`, err);
+        setError(errorMessage || `فشل في تحميل بيانات ${entityNamePlural}`);
+        // Try to load data anyway as fallback
         try {
-          console.log(`Loading ${entityNamePlural} data...`);
-          const fetchedData = await fetchData();
-          setData(fetchedData);
-        } catch (err) {
-          console.error(`Error loading ${entityNamePlural}:`, err);
-          setError(errorMessage || `فشل في تحميل بيانات ${entityNamePlural}`);
-          // Try to load data anyway as fallback
-          try {
-            const fallbackData = await fetchData();
-            setData(fallbackData);
-          } catch {
-            // If fallback also fails, keep empty data
-          }
-        } finally {
-          setIsLoading(false);
+          const fallbackData = await fetchDataRef.current();
+          setData(fallbackData);
+        } catch {
+          // If fallback also fails, keep empty data
         }
+      } finally {
+        setIsLoading(false);
       }
     };
 
     loadData();
-  }, [data.length, entityNamePlural, fetchData, errorMessage]);
+    // Refresh when refreshTrigger changes or on initial mount
+  }, [refreshTrigger, entityNamePlural, errorMessage]);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -607,40 +617,42 @@ export const DataTableSection = <
     ? data.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
     : [];
 
-  // Enhance columns with ActionMenu
-  const enhancedColumns = columns.map((col) => {
-    if (col.key === "actions") {
-      return {
-        ...col,
-        render: (_: any, row: T) => (
-          <ActionMenu
-            item={row}
-            entityName={entityName}
-            viewDetailsRoute={viewDetailsRoute}
-            customActionButtons={customActionButtons}
-            showModifyButton={showModifyButton}
-            onDelete={onDelete}
-          />
-        ),
-      };
-    }
-    if (
-      (col.key === "accountStatus" || col.key === "stationStatus") &&
-      onToggleStatus
-    ) {
-      return {
-        ...col,
-        render: (value: any, row: T) => (
-          <StatusToggle
-            isActive={value.active}
-            onToggle={() => handleToggleStatus(row.id)}
-            statusText={value.text}
-          />
-        ),
-      };
-    }
-    return col;
-  });
+  // Enhance columns with ActionMenu - memoized to prevent unnecessary rerenders
+  const enhancedColumns = useMemo(() => {
+    return columns.map((col) => {
+      if (col.key === "actions") {
+        return {
+          ...col,
+          render: (_: any, row: T) => (
+            <ActionMenu
+              item={row}
+              entityName={entityName}
+              viewDetailsRoute={viewDetailsRoute}
+              customActionButtons={customActionButtons}
+              showModifyButton={showModifyButton}
+              onDelete={onDelete}
+            />
+          ),
+        };
+      }
+      if (
+        (col.key === "accountStatus" || col.key === "stationStatus") &&
+        onToggleStatus
+      ) {
+        return {
+          ...col,
+          render: (value: any, row: T) => (
+            <StatusToggle
+              isActive={value.active}
+              onToggle={() => handleToggleStatus(row.id)}
+              statusText={value.text}
+            />
+          ),
+        };
+      }
+      return col;
+    });
+  }, [columns, entityName, viewDetailsRoute, customActionButtons, showModifyButton, onDelete, onToggleStatus]);
 
   return (
     <section className="flex flex-col items-start gap-5 w-full">

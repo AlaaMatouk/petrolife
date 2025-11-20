@@ -754,6 +754,99 @@ export const fetchCollection = async (collectionName: string) => {
  * Filtered by current user's company email (createdUser.email)
  * @returns Promise with the companies-drivers-transfer data filtered by current company
  */
+/**
+ * Add 8-digit refid to existing driver transfers in companies-drivers-transfer collection
+ * @returns Promise with number of updated transfers
+ */
+export const addRefidToExistingDriverTransfers = async (): Promise<number> => {
+  try {
+    console.log(
+      "🔄 Starting migration: Adding refid to existing driver transfers..."
+    );
+
+    const transfersRef = collection(db, "companies-drivers-transfer");
+    const transfersSnapshot = await getDocs(transfersRef);
+    console.log(`📦 Found ${transfersSnapshot.size} driver transfers`);
+
+    let updatedCount = 0;
+    const transfersToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    // First pass: Identify transfers without refid and generate refids
+    for (const transferDoc of transfersSnapshot.docs) {
+      const transferData = transferDoc.data();
+
+      // Skip if transfer already has refid
+      if (transferData.refid) {
+        console.log(
+          `⏭️  Driver transfer ${transferDoc.id} already has refid: ${transferData.refid}`
+        );
+        continue;
+      }
+
+      // Generate unique 8-digit refid
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Generate 8-digit number (10000000 to 99999999)
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+
+        // Check if refid already exists in Firestore or in our pending updates
+        const transfersRefCheck = collection(db, "companies-drivers-transfer");
+        const qCheck = query(transfersRefCheck, where("refid", "==", refid));
+        const querySnapshot = await getDocs(qCheck);
+
+        // Also check if this refid is already in our pending updates
+        const isInPendingUpdates = transfersToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for driver transfer ${transferDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      transfersToUpdate.push({
+        docRef: doc(db, "companies-drivers-transfer", transferDoc.id),
+        refid: refid,
+      });
+      console.log(`✅ Generated refid ${refid} for driver transfer ${transferDoc.id}`);
+    }
+
+    console.log(
+      `📝 Updating ${transfersToUpdate.length} driver transfers with refid...`
+    );
+    for (const { docRef, refid } of transfersToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(`✅ Updated driver transfer ${docRef.id} with refid: ${refid}`);
+      } catch (error) {
+        console.error(`❌ Error updating driver transfer ${docRef.id}:`, error);
+      }
+    }
+    console.log(
+      `✅ Migration completed: ${updatedCount} driver transfers updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
+    throw error;
+  }
+};
+
 export const fetchCompaniesDriversTransfer = async () => {
   try {
     // console.log('\n🔄 ========================================');
@@ -3741,6 +3834,27 @@ export const createCountry = async ({
     return { id: docRef.id };
   } catch (error) {
     console.error("❌ Error creating country:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a country from Firestore countries collection
+ * @param countryId - Country document ID to delete
+ * @returns Promise that resolves when deletion is complete
+ */
+export const deleteCountry = async (countryId: string): Promise<void> => {
+  try {
+    if (!countryId) {
+      throw new Error("Country ID is required");
+    }
+
+    const countryDocRef = doc(db, "countries", countryId);
+    await deleteDoc(countryDocRef);
+
+    console.log(`✅ Country ${countryId} deleted successfully`);
+  } catch (error) {
+    console.error("❌ Error deleting country:", error);
     throw error;
   }
 };
@@ -7579,6 +7693,36 @@ export const addCompanyDriver = async (driverData: AddDriverData) => {
       createdUserId: currentUser.email || "",
       companyUid: currentUser.uid, // Current user's UID
 
+      // Generate unique 8-digit refid for driver
+      refid: await (async () => {
+        console.log("🔢 Generating unique 8-digit refid for driver...");
+        let refid: string = "";
+        let isUnique = false;
+        let attempts = 0;
+        const maxAttempts = 20;
+
+        while (!isUnique && attempts < maxAttempts) {
+          const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+          refid = randomCode.toString();
+          const driversRefCheck = collection(db, "companies-drivers");
+          const qCheck = query(driversRefCheck, where("refid", "==", refid));
+          const querySnapshot = await getDocs(qCheck);
+
+          if (querySnapshot.empty) {
+            isUnique = true;
+          } else {
+            attempts++;
+          }
+        }
+
+        if (!isUnique || !refid) {
+          throw new Error("فشل في إنشاء كود السائق. يرجى المحاولة مرة أخرى.");
+        }
+
+        console.log(`✅ Generated unique refid: ${refid}`);
+        return refid;
+      })(),
+
       // Empty arrays for future use
       driverIds: [],
 
@@ -7600,6 +7744,99 @@ export const addCompanyDriver = async (driverData: AddDriverData) => {
     };
   } catch (error) {
     console.error("Error adding driver to Firestore:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add 8-digit refid to existing company drivers that don't have one
+ * @returns Promise with number of updated drivers
+ */
+export const addRefidToExistingCompanyDrivers = async (): Promise<number> => {
+  try {
+    console.log(
+      "🔄 Starting migration: Adding refid to existing company drivers..."
+    );
+
+    const driversRef = collection(db, "companies-drivers");
+    const driversSnapshot = await getDocs(driversRef);
+    console.log(`📦 Found ${driversSnapshot.size} company drivers`);
+
+    let updatedCount = 0;
+    const driversToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    // First pass: Identify drivers without refid and generate refids
+    for (const driverDoc of driversSnapshot.docs) {
+      const driverData = driverDoc.data();
+
+      // Skip if driver already has refid
+      if (driverData.refid) {
+        console.log(
+          `⏭️  Driver ${driverDoc.id} already has refid: ${driverData.refid}`
+        );
+        continue;
+      }
+
+      // Generate unique 8-digit refid
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Generate 8-digit number (10000000 to 99999999)
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        refid = randomCode.toString();
+
+        // Check if refid already exists in Firestore or in our pending updates
+        const driversRefCheck = collection(db, "companies-drivers");
+        const qCheck = query(driversRefCheck, where("refid", "==", refid));
+        const querySnapshot = await getDocs(qCheck);
+
+        // Also check if this refid is already in our pending updates
+        const isInPendingUpdates = driversToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for driver ${driverDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      driversToUpdate.push({
+        docRef: doc(db, "companies-drivers", driverDoc.id),
+        refid: refid,
+      });
+      console.log(`✅ Generated refid ${refid} for driver ${driverDoc.id}`);
+    }
+
+    console.log(
+      `📝 Updating ${driversToUpdate.length} drivers with refid...`
+    );
+    for (const { docRef, refid } of driversToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(`✅ Updated driver ${docRef.id} with refid: ${refid}`);
+      } catch (error) {
+        console.error(`❌ Error updating driver ${docRef.id}:`, error);
+      }
+    }
+    console.log(
+      `✅ Migration completed: ${updatedCount} drivers updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
     throw error;
   }
 };

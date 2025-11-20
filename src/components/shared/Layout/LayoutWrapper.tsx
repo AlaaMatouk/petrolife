@@ -33,7 +33,7 @@ const PAGE_CONFIGS: Record<string, PageConfig> = {
     titleIcon: <img src="/img/side-icons-6.svg" alt="" className="w-5 h-5" />,
   },
   "/financialreports": {
-    title: "تقرير المبيعات",
+    title: "تقارير المشتريات",
     titleIcon: <img src="/img/side-icons-5.svg" alt="" className="w-5 h-5" />,
   },
   "/walletreports": {

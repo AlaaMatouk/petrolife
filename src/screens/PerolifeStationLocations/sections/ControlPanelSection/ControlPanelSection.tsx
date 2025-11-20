@@ -1,8 +1,13 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Table } from "../../../../components/shared";
-import { ChevronLeft, Check } from "lucide-react";
-import { fetchCarStationsWithConsumption } from "../../../../services/firestore";
+import {
+  fetchCarStationsWithConsumption,
+  updateStationIsActive,
+  fetchStationById,
+} from "../../../../services/firestore";
 import { LoadingSpinner } from "../../../../components/shared/Spinner/LoadingSpinner";
+import { StatusToggle } from "../../../../components/shared/StatusToggle/StatusToggle";
+import { useToast } from "../../../../context/ToastContext";
 
 interface StationData {
   id: string;
@@ -14,6 +19,7 @@ interface StationData {
   isAvailable: boolean;
   totalLitersConsumed?: number;
   status?: string;
+  stationStatus?: { active: boolean; text: string };
 }
 
 const dummyStationData: StationData[] = [
@@ -100,17 +106,20 @@ const dummyStationData: StationData[] = [
   },
 ];
 
-
 interface ControlPanelSectionProps {
   currentPage: number;
   setTotalPages: (pages: number) => void;
 }
 
-export const ControlPanelSection = ({ currentPage, setTotalPages }: ControlPanelSectionProps): JSX.Element => {
+export const ControlPanelSection = ({
+  currentPage,
+  setTotalPages,
+}: ControlPanelSectionProps): JSX.Element => {
+  const { addToast } = useToast();
   const [stationData, setStationData] = useState<StationData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   const ITEMS_PER_PAGE = 10;
 
   // Fetch car stations with consumption data
@@ -120,27 +129,50 @@ export const ControlPanelSection = ({ currentPage, setTotalPages }: ControlPanel
         setIsLoading(true);
         setError(null);
         const stations = await fetchCarStationsWithConsumption();
-        
+
         // Transform data to match StationData interface
-        const transformedStations: StationData[] = stations.map(station => ({
-          id: station.id,
-          code: station.stationCode,
-          city: station.city,
-          company: station.company,
-          consumption: `${Math.round(station.totalLitersConsumed)} لتر`,
-          isAvailable: station.status === 'active' || station.isActive === true,
-          totalLitersConsumed: station.totalLitersConsumed,
-          status: station.status,
-        }));
+        const transformedStations: StationData[] = stations
+          .filter((station) => {
+            // Ensure station has a valid ID (doc.id from Firestore)
+            const hasValidId =
+              station.id &&
+              typeof station.id === "string" &&
+              station.id.trim() !== "";
+            if (!hasValidId) {
+              console.warn("Station without valid ID skipped:", station);
+            }
+            return hasValidId;
+          })
+          .map((station) => {
+            // Determine if station is active
+            const isActive =
+              station.isActive !== false &&
+              (station.status === "active" || station.isActive === true);
+
+            return {
+              id: station.id, // Use the Firestore document ID
+              code: station.stationCode,
+              city: station.city,
+              company: station.company,
+              consumption: `${Math.round(station.totalLitersConsumed)} لتر`,
+              isAvailable: isActive,
+              totalLitersConsumed: station.totalLitersConsumed,
+              status: station.status,
+              stationStatus: {
+                active: isActive,
+                text: isActive ? "مفعل" : "معطل",
+              },
+            };
+          });
 
         setStationData(transformedStations);
-        
+
         // Update total pages
         const pages = Math.ceil(transformedStations.length / ITEMS_PER_PAGE);
         setTotalPages(pages);
       } catch (err) {
-        console.error('Error loading stations:', err);
-        setError('فشل في تحميل بيانات المحطات');
+        console.error("Error loading stations:", err);
+        setError("فشل في تحميل بيانات المحطات");
       } finally {
         setIsLoading(false);
       }
@@ -149,9 +181,105 @@ export const ControlPanelSection = ({ currentPage, setTotalPages }: ControlPanel
     loadStations();
   }, []);
 
+  // Handler for toggling station status
+  const handleToggleStatus = async (stationId: string | number) => {
+    try {
+      // Validate station ID
+      if (!stationId || stationId === null || stationId === undefined) {
+        console.error("Invalid station ID:", stationId);
+        addToast({
+          type: "error",
+          title: "خطأ",
+          message: "معرف المحطة غير صحيح",
+        });
+        return;
+      }
+
+      const stationIdStr = String(stationId);
+
+      // Validate that the ID is not empty or just whitespace
+      if (!stationIdStr.trim()) {
+        console.error("Empty station ID string");
+        addToast({
+          type: "error",
+          title: "خطأ",
+          message: "معرف المحطة غير صحيح",
+        });
+        return;
+      }
+
+      // Fetch current station data from Firestore to get the current isActive status
+      const currentStationData: any = await fetchStationById(stationIdStr);
+
+      // Get current isActive status
+      // Handle null, undefined, or missing values - treat as true/active
+      let currentIsActive: boolean;
+      if (
+        currentStationData.isActive === null ||
+        currentStationData.isActive === undefined
+      ) {
+        // If isActive is null/undefined, treat as active
+        currentIsActive = true;
+      } else {
+        currentIsActive = currentStationData.isActive === true;
+      }
+
+      const newIsActive = !currentIsActive;
+      await updateStationIsActive(stationIdStr, newIsActive);
+      addToast({
+        type: "success",
+        title: "نجح",
+        message: newIsActive
+          ? "تم تفعيل المحطة بنجاح"
+          : "تم تعطيل المحطة بنجاح",
+      });
+
+      // Refresh the stations list
+      const stations = await fetchCarStationsWithConsumption();
+      const transformedStations: StationData[] = stations
+        .filter((station) => {
+          // Ensure station has a valid ID (doc.id from Firestore)
+          const hasValidId =
+            station.id &&
+            typeof station.id === "string" &&
+            station.id.trim() !== "";
+          return hasValidId;
+        })
+        .map((station) => {
+          const isActive =
+            station.isActive !== false &&
+            (station.status === "active" || station.isActive === true);
+
+          return {
+            id: station.id, // Use the Firestore document ID
+            code: station.stationCode,
+            city: station.city,
+            company: station.company,
+            consumption: `${Math.round(station.totalLitersConsumed)} لتر`,
+            isAvailable: isActive,
+            totalLitersConsumed: station.totalLitersConsumed,
+            status: station.status,
+            stationStatus: {
+              active: isActive,
+              text: isActive ? "مفعل" : "معطل",
+            },
+          };
+        });
+
+      setStationData(transformedStations);
+    } catch (error) {
+      console.error("Error toggling station status:", error);
+      addToast({
+        type: "error",
+        title: "خطأ",
+        message: "فشل في تحديث حالة المحطة",
+      });
+    }
+  };
+
   const tableColumns = [
     {
-      key: "status",
+      key: "stationStatus",
       label: "حالة المحطة",
       width: "flex-1 grow min-w-[200px]",
     },
@@ -178,43 +306,54 @@ export const ControlPanelSection = ({ currentPage, setTotalPages }: ControlPanel
   ];
 
   // Calculate pagination
-  const totalPagesCalc = Math.ceil(stationData.length / ITEMS_PER_PAGE);
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
   const endIndex = startIndex + ITEMS_PER_PAGE;
   const paginatedStations = stationData.slice(startIndex, endIndex);
 
-  const tableData = paginatedStations.map((station) => ({
-    ...station,
-    status: (
-      <span className="w-[98px] h-[19px] font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-sec text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] relative font-body-body-2 whitespace-nowrap [font-style:var(--body-body-2-font-style)]">
-        متاحة للسائقين
-      </span>
-    ),
-    consumption: station.consumptionDetails ? (
-      <p className="relative w-fit mt-[-0.20px] font-tajawal font-normal text-black text-sm text-left leading-[22.4px] whitespace-nowrap [direction:rtl]">
-        <span className="tracking-[var(--body-body-2-letter-spacing)] font-body-body-2 [font-style:var(--body-body-2-font-style)] font-[number:var(--body-body-2-font-weight)] leading-[var(--body-body-2-line-height)] text-[length:var(--body-body-2-font-size)]">
-          {station.consumption}{" "}
+  const tableData = paginatedStations
+    .filter((station) => station.id) // Filter out stations without ID
+    .map((station) => ({
+      ...station,
+      stationStatus: station.stationStatus ? (
+        <StatusToggle
+          isActive={station.stationStatus.active}
+          onToggle={() => station.id && handleToggleStatus(station.id)}
+          statusText={station.stationStatus.text}
+          disabled={!station.id}
+        />
+      ) : (
+        <StatusToggle
+          isActive={true}
+          onToggle={() => station.id && handleToggleStatus(station.id)}
+          statusText="مفعل"
+          disabled={!station.id}
+        />
+      ),
+      consumption: station.consumptionDetails ? (
+        <p className="relative w-fit mt-[-0.20px] font-tajawal font-normal text-black text-sm text-left leading-[22.4px] whitespace-nowrap [direction:rtl]">
+          <span className="tracking-[var(--body-body-2-letter-spacing)] font-body-body-2 [font-style:var(--body-body-2-font-style)] font-[number:var(--body-body-2-font-weight)] leading-[var(--body-body-2-line-height)] text-[length:var(--body-body-2-font-size)]">
+            {station.consumption}{" "}
+          </span>
+          <span className="text-[length:var(--caption-caption-1-font-size)] tracking-[var(--caption-caption-1-letter-spacing)] leading-[var(--caption-caption-1-line-height)] font-caption-caption-1 [font-style:var(--caption-caption-1-font-style)] font-[number:var(--caption-caption-1-font-weight)]">
+            {station.consumptionDetails}
+          </span>
+        </p>
+      ) : (
+        <span className="relative w-fit mt-[-0.20px] font-body-body-2 font-[number:var(--body-body-2-font-weight)] text-black text-[length:var(--body-body-2-font-size)] text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
+          {station.consumption}
         </span>
-        <span className="text-[length:var(--caption-caption-1-font-size)] tracking-[var(--caption-caption-1-letter-spacing)] leading-[var(--caption-caption-1-line-height)] font-caption-caption-1 [font-style:var(--caption-caption-1-font-style)] font-[number:var(--caption-caption-1-font-weight)]">
-          {station.consumptionDetails}
-        </span>
-      </p>
-    ) : (
-      <span className="relative w-fit mt-[-0.20px] font-body-body-2 font-[number:var(--body-body-2-font-weight)] text-black text-[length:var(--body-body-2-font-size)] text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
-        {station.consumption}
-      </span>
-    ),
-    city: (
-      <address className="tracking-[var(--body-body-2-letter-spacing)] relative w-fit mt-[-0.20px] font-body-body-2 font-[number:var(--body-body-2-font-weight)] text-black text-[length:var(--body-body-2-font-size)] text-left leading-[var(--body-body-2-line-height)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)] not-italic">
-        {station.city}
-      </address>
-    ),
-    code: (
-      <code className="relative w-fit mt-[-0.20px] font-body-body-2 font-[number:var(--body-body-2-font-weight)] text-black text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] whitespace-nowrap [font-style:var(--body-body-2-font-style)]">
-        {station.code}
-      </code>
-    ),
-  }));
+      ),
+      city: (
+        <address className="tracking-[var(--body-body-2-letter-spacing)] relative w-fit mt-[-0.20px] font-body-body-2 font-[number:var(--body-body-2-font-weight)] text-black text-[length:var(--body-body-2-font-size)] text-left leading-[var(--body-body-2-line-height)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)] not-italic">
+          {station.city}
+        </address>
+      ),
+      code: (
+        <code className="relative w-fit mt-[-0.20px] font-body-body-2 font-[number:var(--body-body-2-font-weight)] text-black text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] whitespace-nowrap [font-style:var(--body-body-2-font-style)]">
+          {station.code}
+        </code>
+      ),
+    }));
 
   // Show loading state
   if (isLoading) {
@@ -250,7 +389,9 @@ export const ControlPanelSection = ({ currentPage, setTotalPages }: ControlPanel
         role="region"
         aria-label="لوحة التحكم في المحطات"
       >
-        <p className="text-gray-500 text-center [direction:rtl]">لا توجد محطات متاحة</p>
+        <p className="text-gray-500 text-center [direction:rtl]">
+          لا توجد محطات متاحة
+        </p>
       </section>
     );
   }
