@@ -56,12 +56,6 @@ export const ManualChargeSection = ({ onTabChange }: ManualChargeSectionProps): 
             </div>
           </button>
           <button
-            onClick={() => onTabChange('automatic')}
-            className="px-4 py-2 rounded-lg bg-gray-100 text-gray-600 font-medium hover:bg-gray-200 transition-colors"
-          >
-            الشحن آليا
-          </button>
-          <button
             onClick={() => onTabChange('manual')}
             className="px-4 py-2 rounded-lg font-medium transition-colors"
             style={{ 
@@ -195,6 +189,7 @@ export const ManualChargeSection = ({ onTabChange }: ManualChargeSectionProps): 
         <div className="flex justify-start gap-4 w-full mt-4">
           <button
             type="button"
+            onClick={() => navigate('/wallet')}
             className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-medium)] pb-[var(--corner-radius-medium)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray transition-colors"
           >
             <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">

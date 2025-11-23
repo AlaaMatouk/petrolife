@@ -100,7 +100,7 @@ export const ReportSummarySection = (): JSX.Element => {
             <div className="inline-flex items-center justify-end gap-[var(--dimensions-size-small)] relative flex-[0_0_auto]">
               <div className="inline-flex h-[17px] justify-end pl-2.5 pr-0 pt-[13px] pb-2.5 flex-[0_0_auto] items-center gap-2.5 relative">
                 <h1 className="relative w-fit mt-[-14.00px] mb-[-12.00px] font-headings-h1-h6-heading-5 font-[number:var(--headings-h1-h6-heading-5-font-weight)] text-color-mode-text-icons-t-sec text-[length:var(--headings-h1-h6-heading-5-font-size)] tracking-[var(--headings-h1-h6-heading-5-letter-spacing)] leading-[var(--headings-h1-h6-heading-5-line-height)] whitespace-nowrap [direction:rtl] [font-style:var(--headings-h1-h6-heading-5-font-style)]">
-                  التقــــــــــــــــارير / تقرير المبيعات
+                  التقــــــــــــــــارير / تقارير المشتريات
                 </h1>
               </div>
 
