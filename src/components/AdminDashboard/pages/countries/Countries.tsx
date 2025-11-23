@@ -9,7 +9,10 @@ import {
   fetchAllAreas,
   createCity,
   createArea,
+  deleteCountry,
 } from "../../../../services/firestore";
+import { useToast } from "../../../../context/ToastContext";
+import { ConfirmDialog } from "../../../shared/ConfirmDialog/ConfirmDialog";
 
 // Action Menu Component for each row
 interface ActionMenuProps {
@@ -17,9 +20,10 @@ interface ActionMenuProps {
   onView: (item: any) => void;
   onAddCity: (item: any) => void;
   onAddRegion: (item: any) => void;
+  onDelete: (item: any) => void;
 }
 
-const ActionMenu = ({ item, onView, onAddCity, onAddRegion }: ActionMenuProps) => {
+const ActionMenu = ({ item, onView, onAddCity, onAddRegion, onDelete }: ActionMenuProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [buttonRef, setButtonRef] = useState<HTMLButtonElement | null>(null);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
@@ -41,14 +45,20 @@ const ActionMenu = ({ item, onView, onAddCity, onAddRegion }: ActionMenuProps) =
   const handleAction = (action: string) => {
     if (action === "view") {
       onView(item);
+      setIsOpen(false);
     } else if (action === "add-city") {
       onAddCity(item);
+      setIsOpen(false);
     } else if (action === "add-region") {
       onAddRegion(item);
+      setIsOpen(false);
     } else if (action === "delete") {
-      console.log("Delete country:", item.rowId ?? item.id);
+      // Close menu first, then call onDelete after a small delay
+      setIsOpen(false);
+      setTimeout(() => {
+        onDelete(item);
+      }, 0);
     }
-    setIsOpen(false);
   };
 
   return (
@@ -96,7 +106,11 @@ const ActionMenu = ({ item, onView, onAddCity, onAddRegion }: ActionMenuProps) =
                   <Building2 className="w-4 h-4 text-gray-500" />
                 </button>
                 <button
-                  onClick={() => handleAction("delete")}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleAction("delete");
+                  }}
                   className="w-full px-4 py-2 text-right text-sm text-red-600 hover:bg-red-50 flex items-center justify-end gap-2 transition-colors"
                 >
                   <span>حذف الدولة</span>
@@ -114,6 +128,7 @@ const ActionMenu = ({ item, onView, onAddCity, onAddRegion }: ActionMenuProps) =
 
 const Countries = () => {
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [countries, setCountries] = useState<any[]>([]);
@@ -124,6 +139,16 @@ const Countries = () => {
   const [isCityModalOpen, setIsCityModalOpen] = useState(false);
   const [isRegionModalOpen, setIsRegionModalOpen] = useState(false);
   const [selectedCountry, setSelectedCountry] = useState<any | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    countryId: string | null;
+    countryName: string;
+  }>({
+    isOpen: false,
+    countryId: null,
+    countryName: "",
+  });
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [cityForm, setCityForm] = useState({
     cityNameAr: "",
     cityNameEn: "",
@@ -207,6 +232,7 @@ const Countries = () => {
                 setRegionForm({ regionNameAr: "", regionNameEn: "", cityId: "" });
                 setIsRegionModalOpen(true);
               }}
+              onDelete={handleDelete}
             />
           </div>
         ),
@@ -356,6 +382,56 @@ const Countries = () => {
 
   const handleExport = (format: string) => {
     console.log(`Exporting countries as ${format}`);
+  };
+
+  const handleDelete = (item: any) => {
+    console.log("handleDelete called with item:", item);
+    const countryId = item.rowId ?? item.id;
+    const countryName = item.countryNameAr || item.countryNameEn || "الدولة";
+    console.log("Setting delete confirm with:", { countryId, countryName });
+    setDeleteConfirm({
+      isOpen: true,
+      countryId,
+      countryName,
+    });
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirm.countryId) return;
+
+    try {
+      setDeletingId(deleteConfirm.countryId);
+
+      // Delete from Firestore
+      await deleteCountry(deleteConfirm.countryId);
+
+      // Show success message
+      addToast({
+        type: "success",
+        message: `تم حذف ${deleteConfirm.countryName} بنجاح`,
+        duration: 3000,
+      });
+
+      // Close confirmation popup
+      setDeleteConfirm({
+        isOpen: false,
+        countryId: null,
+        countryName: "",
+      });
+
+      // Reload countries data
+      const countriesData = await fetchAllCountries();
+      setCountries(countriesData);
+    } catch (error: any) {
+      console.error("Error deleting country:", error);
+      addToast({
+        type: "error",
+        message: error.message || "فشل في حذف الدولة",
+        duration: 3000,
+      });
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   if (isLoading) {
@@ -693,6 +769,23 @@ const Countries = () => {
           </div>,
           document.body
         )}
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={deleteConfirm.isOpen}
+        onCancel={() =>
+          setDeleteConfirm({
+            isOpen: false,
+            countryId: null,
+            countryName: "",
+          })
+        }
+        onConfirm={handleDeleteConfirm}
+        title="تأكيد الحذف"
+        message={`هل أنت متأكد من حذف ${deleteConfirm.countryName}؟\n\nهذه العملية لا يمكن التراجع عنها.`}
+        confirmText="حذف"
+        cancelText="إلغاء"
+      />
     </div>
   );
 };

@@ -177,7 +177,7 @@ export const SupervisorInfo = ({
         <header className="flex flex-col items-end gap-[var(--corner-radius-extra-large)] relative self-stretch w-full flex-[0_0_auto]">
           <nav className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
             <button
-              onClick={() => navigate(-1)}
+              onClick={() => navigate("/supervisors")}
               className="inline-flex h-10 items-center gap-[var(--corner-radius-medium)] relative flex-[0_0_auto]"
               aria-label="العودة"
             >

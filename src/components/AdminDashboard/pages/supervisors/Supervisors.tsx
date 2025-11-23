@@ -8,7 +8,7 @@ import {
   addRefidToExistingSupervisors,
 } from "../../../../services/firestore";
 import { useToast } from "../../../../context/ToastContext";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { ConfirmDialog } from "../../../shared/ConfirmDialog/ConfirmDialog";
@@ -180,6 +180,7 @@ export const Supervisors = () => {
   const [supervisorsData, setSupervisorsData] = useState<Supervisor[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isMigrating, setIsMigrating] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [deleteConfirm, setDeleteConfirm] = useState<{
     isOpen: boolean;
     supervisorId: string | null;
@@ -265,19 +266,15 @@ export const Supervisors = () => {
         duration: 3000,
       });
       
-      // Refresh the supervisors list
-      const updatedData = await fetchSupervisors();
-      setSupervisorsData(updatedData);
-      
-      // Close confirmation popup
+      // Close confirmation popup first
       setDeleteConfirm({
         isOpen: false,
         supervisorId: null,
         supervisorName: "",
       });
       
-      // Reload the page to refresh the table
-      window.location.reload();
+      // Trigger table refresh by incrementing refreshTrigger
+      setRefreshTrigger(prev => prev + 1);
     } catch (error: any) {
       console.error("Error deleting supervisor:", error);
       addToast({
@@ -337,9 +334,17 @@ export const Supervisors = () => {
   };
 
   // Handle menu options
-  const handleAddOneSupervisor = () => {
+  const handleAddOneSupervisor = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    console.log("handleAddOneSupervisor called");
+    // Close menu immediately
     setIsAddMenuOpen(false);
-    navigate("/supervisors/add");
+    // Navigate immediately
+    console.log("About to navigate to /supervisors/add");
+    navigate("/supervisors/add", { replace: false });
   };
 
   const handleUploadExcel = () => {
@@ -382,12 +387,12 @@ export const Supervisors = () => {
     };
   }, [isAddMenuOpen]);
 
-  // Fetch supervisors and store in state
-  const fetchSupervisorsWithState = async (): Promise<Supervisor[]> => {
+  // Fetch supervisors and store in state - memoized to prevent unnecessary rerenders
+  const fetchSupervisorsWithState = useCallback(async (): Promise<Supervisor[]> => {
     const data = await fetchSupervisors();
     setSupervisorsData(data);
     return data;
-  };
+  }, []); // Empty deps - function doesn't depend on any props/state
 
   return (
     <>
@@ -440,6 +445,7 @@ export const Supervisors = () => {
           showTimeFilter={false}
           showAddButton={true}
           customAddButtonRef={addButtonRef}
+          refreshTrigger={refreshTrigger}
         />
       </div>
 
@@ -448,7 +454,12 @@ export const Supervisors = () => {
         <>
           <div
             className="fixed inset-0 z-40"
-            onClick={() => setIsAddMenuOpen(false)}
+            onClick={(e) => {
+              // Only close if clicking directly on backdrop, not on menu
+              if (e.target === e.currentTarget) {
+                setIsAddMenuOpen(false);
+              }
+            }}
           />
           {createPortal(
             <div
@@ -457,24 +468,41 @@ export const Supervisors = () => {
                 top: `${menuPosition.top}px`,
                 left: `${menuPosition.left}px`,
               }}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
             >
               <div className="py-1">
                 <button
-                  onClick={handleAddOneSupervisor}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleAddOneSupervisor(e);
+                  }}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
                   className="w-full px-4 py-3 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-3 transition-colors"
                 >
                   <span className="[direction:rtl]">إضافة مشرف واحد</span>
                   <CirclePlus className="w-4 h-4 text-gray-500" />
                 </button>
                 <button
-                  onClick={handleUploadExcel}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleUploadExcel();
+                  }}
                   className="w-full px-4 py-3 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-3 transition-colors"
                 >
                   <span className="[direction:rtl]">رفع ملف Excel لمجموعة مشرفين</span>
                   <Upload className="w-4 h-4 text-gray-500" />
                 </button>
                 <button
-                  onClick={handleDownloadTemplate}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDownloadTemplate();
+                  }}
                   className="w-full px-4 py-3 text-right text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-end gap-3 transition-colors"
                 >
                   <span className="[direction:rtl]">تنزيل نموذج للتعبئة</span>

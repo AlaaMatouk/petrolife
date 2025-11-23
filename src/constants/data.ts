@@ -43,7 +43,7 @@ export const navigationMenuData = {
       items: [
         {
           id: "sales-report",
-          label: "تقرير المبيعات",
+          label: "تقارير المشتريات",
           icon: "/img/side-icons-5.svg",
           href: ROUTES.FINANCIAL_REPORTS,
         },
@@ -91,12 +91,6 @@ export const navigationMenuData = {
       label: "الفواتير",
       icon: "/img/side-icons-5.svg",
       href: ROUTES.INVOICES,
-    },
-    {
-      id: "refund-requests",
-      label: "طلبات الاسترداد",
-      icon: "/img/side-icons-10.svg",
-      href: ROUTES.MONEY_REFUND_REQUESTS,
     },
     {
       id: "charge-requests",

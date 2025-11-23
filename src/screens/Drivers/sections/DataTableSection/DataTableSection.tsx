@@ -2,12 +2,15 @@ import React, { useEffect, useState } from "react";
 import { Table } from "../../../../components/shared/Table/Table";
 import { Pagination } from "../../../../components/shared/Pagination/Pagination";
 import { LoadingSpinner } from "../../../../components/shared/Spinner";
+import { StatusToggle } from "../../../../components/shared/StatusToggle";
 import { useDrivers } from "../../../../hooks/useGlobalState";
 import { driversData as mockDriversData } from "../../../../constants/data";
 import { useNavigate } from "react-router-dom";
-import { fetchCompaniesDrivers } from "../../../../services/firestore";
+import { fetchCompaniesDrivers, addRefidToExistingCompanyDrivers } from "../../../../services/firestore";
 import { exportDataTable } from "../../../../services/exportService";
 import { useToast } from "../../../../context/ToastContext";
+import { doc, updateDoc } from "firebase/firestore";
+import { db } from "../../../../config/firebase";
 import {
   UserRound,
   CirclePlus,
@@ -29,7 +32,8 @@ import { createPortal } from "react-dom";
 
 // Driver interface
 interface Driver {
-  id: number;
+  id: number | string;
+  firestoreId?: string; // Firestore document ID
   driverCode: string;
   driverName: string;
   phone: string;
@@ -167,9 +171,13 @@ const convertFirestoreToDrivers = (firestoreData: any[]): Driver[] => {
         ? String(dailyLimit)
         : "-";
 
+    const firestoreId = driver.id; // Firestore document ID
+    const isActive = driver.isActive ?? driver.accountStatus?.active ?? driver.status === "active" ?? true;
+    
     return {
-      id: driver.id || index + 1,
-      driverCode: getValueOrDash(driver.id || driver.code),
+      id: firestoreId || index + 1,
+      firestoreId: firestoreId, // Store Firestore document ID separately
+      driverCode: getValueOrDash(driver.refid || firestoreId || driver.code), // Use refid if available, otherwise fall back to firestoreId or driver.code
       driverName: getValueOrDash(
         driver.name || driver.driverName || driver.fullName
       ),
@@ -185,12 +193,8 @@ const convertFirestoreToDrivers = (firestoreData: any[]): Driver[] => {
         icon: null,
       },
       accountStatus: {
-        active:
-          driver.isActive ??
-          driver.accountStatus?.active ??
-          driver.status === "active" ??
-          true,
-        text: driver.isActive ? "مفعل" : "معطل",
+        active: isActive,
+        text: isActive ? "مفعل" : "معطل",
       },
     };
   });
@@ -200,6 +204,7 @@ const convertFirestoreToDrivers = (firestoreData: any[]): Driver[] => {
 const convertMockDataToDrivers = (mockData: any[]): Driver[] => {
   return mockData.map((driver, index) => ({
     id: driver.id || index + 1,
+    firestoreId: driver.firestoreId || driver.id,
     driverCode: driver.driverCode || "21A254",
     driverName: driver.driverName || "أحمد محمد",
     phone: driver.phone || "00965284358",
@@ -325,6 +330,79 @@ const ActionMenu = ({ driver }: { driver: Driver }) => {
         </>
       )}
     </div>
+  );
+};
+
+// Account Status Toggle Component
+const AccountStatusToggle = ({ driver }: { driver: Driver }) => {
+  const { updateDriver } = useDrivers();
+  const { addToast } = useToast();
+  const [isLoading, setIsLoading] = useState(false);
+  const [isActive, setIsActive] = useState(driver.accountStatus.active);
+
+  // Sync local state when driver prop changes
+  useEffect(() => {
+    setIsActive(driver.accountStatus.active);
+  }, [driver.accountStatus.active]);
+
+  const handleToggle = async () => {
+    if (!driver.firestoreId) {
+      addToast({
+        title: "خطأ",
+        message: "معرف السائق غير موجود",
+        type: "error",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    const newValue = !isActive;
+    
+    try {
+      // Update in Firestore
+      const driverDocRef = doc(db, "companies-drivers", driver.firestoreId);
+      await updateDoc(driverDocRef, {
+        isActive: newValue,
+      });
+
+      // Update local state
+      setIsActive(newValue);
+      
+      // Update in global state
+      const driverId = typeof driver.id === 'string' ? parseInt(driver.id) || 0 : driver.id;
+      updateDriver(driverId, {
+        accountStatus: {
+          active: newValue,
+          text: newValue ? "مفعل" : "معطل",
+        },
+      });
+
+      addToast({
+        title: "تم التحديث",
+        message: `تم ${newValue ? "تفعيل" : "تعطيل"} حساب السائق بنجاح`,
+        type: "success",
+      });
+    } catch (error: any) {
+      console.error("Error updating driver status:", error);
+      addToast({
+        title: "خطأ",
+        message: "فشل تحديث حالة الحساب. يرجى المحاولة مرة أخرى.",
+        type: "error",
+      });
+      // Revert the toggle on error
+      setIsActive(!newValue);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <StatusToggle
+      isActive={isActive}
+      onToggle={handleToggle}
+      statusText={driver.accountStatus.text}
+      disabled={isLoading}
+    />
   );
 };
 
@@ -482,8 +560,11 @@ export const DataTableSection = ({
   const { drivers, pagination, setDrivers, setCurrentPage, updateDriver } =
     useDrivers();
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [rawDriversData, setRawDriversData] = useState<any[]>([]);
 
   // Fetch companies-drivers data from Firestore on component mount
   useEffect(() => {
@@ -494,6 +575,9 @@ export const DataTableSection = ({
       try {
         // console.log('Loading companies-drivers data from Firestore...');
         const firestoreDrivers = await fetchCompaniesDrivers();
+        
+        // Store raw data for migration check
+        setRawDriversData(firestoreDrivers);
 
         if (firestoreDrivers && firestoreDrivers.length > 0) {
           // console.log('Converting Firestore data to Driver format...');
@@ -516,6 +600,38 @@ export const DataTableSection = ({
 
     loadDriversData();
   }, [setDrivers]);
+
+  // Handle migration: Add refid to existing drivers
+  const handleAddRefidToExisting = async () => {
+    setIsMigrating(true);
+    try {
+      const updatedCount = await addRefidToExistingCompanyDrivers();
+      addToast({
+        type: "success",
+        message: `تم إضافة كود السائق لـ ${updatedCount} سائق بنجاح`,
+        duration: 5000,
+      });
+      // Reload drivers data
+      const firestoreDrivers = await fetchCompaniesDrivers();
+      setRawDriversData(firestoreDrivers);
+      if (firestoreDrivers && firestoreDrivers.length > 0) {
+        const convertedDrivers = convertFirestoreToDrivers(firestoreDrivers);
+        setDrivers(convertedDrivers);
+      }
+    } catch (error: any) {
+      console.error("Error adding refid to existing drivers:", error);
+      addToast({
+        type: "error",
+        message: error.message || "فشل في إضافة كود السائق للسائقين الموجودة",
+        duration: 3000,
+      });
+    } finally {
+      setIsMigrating(false);
+    }
+  };
+
+  // Check if migration is needed
+  const needsMigration = rawDriversData.some((driver) => !driver.refid);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -557,16 +673,8 @@ export const DataTableSection = ({
       label: "حالة الحساب",
       width: "flex-1 grow min-w-[120px]",
       priority: "high",
-      render: (value: any) => (
-        <div className="flex items-center justify-center">
-          <span
-            className={`text-sm font-medium ${
-              value.active ? "text-green-700" : "text-gray-500"
-            }`}
-          >
-            {value.text}
-          </span>
-        </div>
+      render: (value: any, row: Driver) => (
+        <AccountStatusToggle driver={row} />
       ),
     },
     {
@@ -659,6 +767,37 @@ export const DataTableSection = ({
 
   return (
     <section className="flex flex-col items-start gap-5 w-full">
+      {/* Migration Button */}
+      {needsMigration && (
+        <div className="w-full">
+          <div className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder">
+            <div className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={handleAddRefidToExisting}
+                  disabled={isMigrating}
+                  className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
+                    <div className="inline-flex items-center justify-center gap-2.5 pt-1 pb-0 px-0 relative flex-[0_0_auto]">
+                      <span className="w-fit mt-[-1.00px] font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-sec text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] relative font-body-body-2 text-[length:var(--body-body-2-font-size)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
+                        {isMigrating ? "جاري إضافة كود السائق..." : "إضافة كود السائق للسائقين الموجودة"}
+                      </span>
+                    </div>
+                    {isMigrating && (
+                      <div className="w-4 h-4 border-2 border-gray-500 border-t-transparent rounded-full animate-spin"></div>
+                    )}
+                  </div>
+                </button>
+                <p className="text-sm text-gray-600 [direction:rtl]">
+                  هذا الزر يضيف كود سائق (8 أرقام) للسائقين الذين لا يملكون كود
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Loading State - Full page spinner */}
       {isLoading ? (
         <LoadingSpinner size="lg" message="جاري التحميل..." />

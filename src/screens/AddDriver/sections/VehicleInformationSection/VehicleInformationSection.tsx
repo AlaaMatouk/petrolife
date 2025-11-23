@@ -2,13 +2,11 @@ import React, { useState } from "react";
 import {
   Upload,
   MapPin,
-  ChevronDown,
   User,
-  Car,
   FileText,
   Loader2,
 } from "lucide-react";
-import { Input, Select, RadioGroup } from "../../../../components/shared/Form";
+import { Input, Select } from "../../../../components/shared/Form";
 import { useForm } from "../../../../hooks/useForm";
 import { useDrivers } from "../../../../hooks/useGlobalState";
 import { useNavigate } from "react-router-dom";
@@ -24,12 +22,8 @@ const initialValues = {
   driverImage: null as File | null,
   address: "",
   city: "الرياض",
-  vehicleStatus: "دبلوماسية",
   driverAmount: "",
   driverLicense: null as File | null,
-  plateLetters: "",
-  plateNumber: "",
-  vehicleCategory: "صغيرة",
 };
 
 export const VehicleInformationSection = (): JSX.Element => {
@@ -50,13 +44,6 @@ export const VehicleInformationSection = (): JSX.Element => {
     "السبت",
   ];
 
-  const vehicleStatusOptions = [
-    { value: "دبلوماسية", label: "دبلوماسية" },
-    { value: "عادية", label: "عادية" },
-    { value: "تجارية", label: "تجارية" },
-    { value: "حكومية", label: "حكومية" },
-  ];
-
   const cityOptions = [
     { value: "الرياض", label: "الرياض" },
     { value: "جدة", label: "جدة" },
@@ -68,26 +55,6 @@ export const VehicleInformationSection = (): JSX.Element => {
     { value: "الطائف", label: "الطائف" },
     { value: "بريدة", label: "بريدة" },
     { value: "تبوك", label: "تبوك" },
-  ];
-
-  const vehicleCategoryOptions = [
-    { value: "صغيرة", label: "صغيرة" },
-    { value: "متوسطة", label: "متوسطة" },
-    { value: "كبيرة", label: "كبيرة" },
-    { value: "VIP", label: "VIP" },
-  ];
-
-  const plateLettersOptions = [
-    { value: "ح ن ط", label: "ح ن ط" },
-    { value: "أ ب ج", label: "أ ب ج" },
-    { value: "د ه و", label: "د ه و" },
-    { value: "ز ح خ", label: "ز ح خ" },
-    { value: "ر س ش", label: "ر س ش" },
-    { value: "ص ض ط", label: "ص ض ط" },
-    { value: "ع غ ف", label: "ع غ ف" },
-    { value: "ق ك ل", label: "ق ك ل" },
-    { value: "م ن ه", label: "م ن ه" },
-    { value: "و ي ء", label: "و ي ء" },
   ];
 
   const handleChange = (field: string, value: any) => {
@@ -162,12 +129,8 @@ export const VehicleInformationSection = (): JSX.Element => {
         address: form.values.address,
         city: form.values.city,
         selectedDays: selectedDays,
-        vehicleStatus: form.values.vehicleStatus,
         driverAmount: form.values.driverAmount,
         driverLicense: form.values.driverLicense,
-        plateLetters: form.values.plateLetters,
-        plateNumber: form.values.plateNumber,
-        vehicleCategory: form.values.vehicleCategory,
       };
 
       console.log("Submitting driver data to Firestore:", driverData);
@@ -214,8 +177,8 @@ export const VehicleInformationSection = (): JSX.Element => {
         address: form.values.address,
         fuelType: "بنزين 95", // Default value
         financialValue: `${form.values.driverAmount} / ${form.values.driverAmount}`,
-        carNumber: `${form.values.plateNumber} ${form.values.plateLetters}`,
-        carCategory: { text: form.values.vehicleCategory, icon: null },
+        carNumber: "",
+        carCategory: { text: "", icon: null },
         accountStatus: { active: true, text: "مفعل" },
       };
 
@@ -400,19 +363,6 @@ export const VehicleInformationSection = (): JSX.Element => {
           </div>
           <div className="flex items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
             <div className="flex-1 grow">
-              <Select
-                label="حالة السيارة"
-                name="vehicleStatus"
-                value={form.values.vehicleStatus}
-                onChange={(value) => handleChange("vehicleStatus", value)}
-                onBlur={() => handleFieldBlur("vehicleStatus")}
-                options={vehicleStatusOptions}
-                error={form.errors.vehicleStatus}
-                required
-                icon={<Car className="w-4 h-4 text-gray-500" />}
-              />
-            </div>
-            <div className="flex-1 grow">
               <div className="flex flex-col items-end gap-[var(--corner-radius-extra-small)] relative self-stretch w-full flex-[0_0_auto]">
                 <div className="flex items-center justify-between w-full">
                   <span className="text-blue-500 text-sm font-medium">
@@ -480,54 +430,6 @@ export const VehicleInformationSection = (): JSX.Element => {
                   </div>
                 </button>
               </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-5 relative self-stretch w-full flex-[0_0_auto]">
-            <div className="flex-1 grow">
-              <Select
-                label="حروف لوحة السيارة"
-                name="plateLetters"
-                value={form.values.plateLetters}
-                onChange={(value) => handleChange("plateLetters", value)}
-                onBlur={() => handleFieldBlur("plateLetters")}
-                options={plateLettersOptions}
-                error={form.errors.plateLetters}
-                icon={<ChevronDown className="w-4 h-4 text-gray-500" />}
-                required
-              />
-            </div>
-            <div className="flex-1 grow">
-              <Input
-                label="رقم لوحة السيارة"
-                type="text"
-                name="plateNumber"
-                value={form.values.plateNumber}
-                onChange={(value) => handleChange("plateNumber", value)}
-                onBlur={() => handleFieldBlur("plateNumber")}
-                error={form.errors.plateNumber}
-                icon={
-                  <img
-                    src="/src/assets/imgs/icons/calendar.svg"
-                    alt=""
-                    className="w-4 h-4"
-                  />
-                }
-                required
-                placeholder="1234"
-              />
-            </div>
-            <div className="flex-1 grow">
-              <Select
-                label="تصنيف السيارة"
-                name="vehicleCategory"
-                value={form.values.vehicleCategory}
-                onChange={(value) => handleChange("vehicleCategory", value)}
-                onBlur={() => handleFieldBlur("vehicleCategory")}
-                options={vehicleCategoryOptions}
-                error={form.errors.vehicleCategory}
-                icon={<Car className="w-4 h-4 text-gray-500" />}
-                required
-              />
             </div>
           </div>
         </div>

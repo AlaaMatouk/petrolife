@@ -6,7 +6,7 @@ import {
   fetchSubscriptions,
   deleteSubscription,
 } from "../../../../services/firestore";
-import { LoadingSpinner } from "../../../shared";
+import { LoadingSpinner, ToggleButton } from "../../../shared";
 import { useToast } from "../../../../context/ToastContext";
 
 const Subscriptions = () => {
@@ -225,28 +225,14 @@ const Subscriptions = () => {
       {/* Subscription Type Toggle */}
       <div className="w-full flex items-center justify-center gap-4" dir="rtl">
         <span className="text-gray-700 font-medium">الاشتراكات الشهرية</span>
-        <button
-          onClick={() =>
-            handleSubscriptionTypeChange(
-              subscriptionType === "monthly" ? "annual" : "monthly"
-            )
+        <ToggleButton
+          isOn={subscriptionType === "monthly"}
+          onToggle={(isOn) =>
+            handleSubscriptionTypeChange(isOn ? "monthly" : "annual")
           }
-          className={`relative inline-flex h-8 w-14 items-center rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 bg-white ${
-            subscriptionType === "monthly"
-              ? "border-2 border-green-500"
-              : "border-2 border-gray-300"
-          }`}
-          role="switch"
-          aria-checked={subscriptionType === "monthly"}
-        >
-          <span
-            className={`inline-block h-5 w-5 transform rounded-full bg-green-500 shadow-sm transition-transform duration-200 ${
-              subscriptionType === "monthly"
-                ? "translate-x-[-18px]"
-                : "translate-x-[18px]"
-            }`}
-          />
-        </button>
+          color="green"
+          size="md"
+        />
         <span className="text-gray-700 font-medium">الاشتراكات السنوية</span>
       </div>
 
