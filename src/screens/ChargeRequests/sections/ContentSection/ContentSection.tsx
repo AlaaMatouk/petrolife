@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { Wallet } from "lucide-react";
 import { Table, ExportButton, LoadingSpinner } from "../../../../components/shared";
-import { fetchWalletChargeRequests } from "../../../../services/firestore";
+import { fetchWalletChargeRequests, addRefidToExistingWalletRequests } from "../../../../services/firestore";
 import { exportDataTable } from "../../../../services/exportService";
 import { useToast } from "../../../../context/ToastContext";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "../../../../config/firebase";
 
 interface TableRow {
   id: string;
@@ -87,7 +89,7 @@ const convertRequestsToTableData = (requests: any[]): TableRow[] => {
   });
   
   return sortedRequests.map((request) => ({
-    orderNumber: request.requestId || request.id || '-',
+    orderNumber: request.refid || request.id || '-', // Use refid if available, otherwise fall back to id
     orderType: getRequestType(request),
     oldBalance: formatNumber(request.oldBalance),
     shippingValue: formatNumber(request.value || request.amount),
@@ -110,6 +112,9 @@ export const ContentSection = ({ currentPage, setTotalPages, selectedTimeFilter,
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { addToast } = useToast();
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [rawWalletRequestsData, setRawWalletRequestsData] = useState<any[]>([]);
+  const [needsMigration, setNeedsMigration] = useState(false);
   
   const ITEMS_PER_PAGE = 10;
   
@@ -119,7 +124,6 @@ export const ContentSection = ({ currentPage, setTotalPages, selectedTimeFilter,
       // Define columns for export
       const exportColumns = [
         { key: "orderNumber", label: "رقم الطلب" },
-        { key: "orderType", label: "نوع الطلب" },
         { key: "oldBalance", label: "الرصيد القديم (ر.س)" },
         { key: "shippingValue", label: "قيمة طلب الشحن (ر.س)" },
         { key: "date", label: "تاريخ الطلب" },
@@ -155,6 +159,28 @@ export const ContentSection = ({ currentPage, setTotalPages, selectedTimeFilter,
     }
   };
 
+  // Check if migration is needed
+  useEffect(() => {
+    const checkMigration = async () => {
+      try {
+        const requestsRef = collection(db, "companies-wallets-requests");
+        const requestsSnapshot = await getDocs(requestsRef);
+        
+        const requestsData = requestsSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        
+        setRawWalletRequestsData(requestsData);
+        setNeedsMigration(requestsData.some((r) => !r.refid));
+      } catch (error) {
+        console.error("Error checking migration:", error);
+      }
+    };
+    
+    checkMigration();
+  }, []);
+
   // Fetch wallet charge requests on mount
   useEffect(() => {
     const loadRequests = async () => {
@@ -176,6 +202,46 @@ export const ContentSection = ({ currentPage, setTotalPages, selectedTimeFilter,
     
     loadRequests();
   }, []);
+
+  // Handle migration: Add refid to existing wallet charge requests
+  const handleAddRefidToExisting = async () => {
+    setIsMigrating(true);
+    try {
+      const updatedCount = await addRefidToExistingWalletRequests();
+      
+      addToast({
+        title: 'نجح التحديث',
+        message: `تم إضافة رقم الطلب لـ ${updatedCount} طلب بنجاح`,
+        type: 'success',
+      });
+      
+      // Reload data
+      const requestsRef = collection(db, "companies-wallets-requests");
+      const requestsSnapshot = await getDocs(requestsRef);
+      
+      const requestsData = requestsSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      
+      setRawWalletRequestsData(requestsData);
+      setNeedsMigration(false);
+      
+      // Refresh the table
+      const firestoreRequests = await fetchWalletChargeRequests();
+      const convertedRequests = convertRequestsToTableData(firestoreRequests);
+      setRequests(convertedRequests);
+    } catch (error) {
+      console.error('Error migrating wallet charge requests:', error);
+      addToast({
+        title: 'فشل التحديث',
+        message: 'حدث خطأ أثناء إضافة رقم الطلب',
+        type: 'error',
+      });
+    } finally {
+      setIsMigrating(false);
+    }
+  };
 
   // Apply time filter
   const filteredRequests = requests.filter(request => {
@@ -216,7 +282,6 @@ export const ContentSection = ({ currentPage, setTotalPages, selectedTimeFilter,
       // Define columns for export
       const exportColumns = [
         { key: "orderNumber", label: "رقم الطلب" },
-        { key: "orderType", label: "نوع الطلب" },
         { key: "oldBalance", label: "الرصيد القديم (ر.س)" },
         { key: "shippingValue", label: "قيمة طلب الشحن (ر.س)" },
         { key: "date", label: "تاريخ الطلب" },
@@ -350,17 +415,6 @@ export const ContentSection = ({ currentPage, setTotalPages, selectedTimeFilter,
       ),
     },
     {
-      key: "orderType",
-      label: "نوع الطلب",
-      width: "min-w-[102px]",
-      sortable: false,
-      render: (value: string) => (
-        <div className="w-fit mt-[-0.20px] font-[number:var(--body-body-2-font-weight)] text-black text-[length:var(--body-body-2-font-size)] text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] relative font-body-body-2 whitespace-nowrap [font-style:var(--body-body-2-font-style)]">
-          {value}
-        </div>
-      ),
-    },
-    {
       key: "orderNumber",
       label: "رقم الطلب",
       width: "min-w-[120px]",
@@ -407,10 +461,29 @@ export const ContentSection = ({ currentPage, setTotalPages, selectedTimeFilter,
   const paginatedRequests = filteredRequests.slice(startIndex, endIndex);
 
   return (
-    <Table
-      columns={tableColumns}
-      data={paginatedRequests}
-      className="w-full"
-    />
+    <div className="w-full">
+      {needsMigration && (
+        <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg [direction:rtl]">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-yellow-800 font-semibold">تحذير: بعض الطلبات لا تحتوي على رقم طلب</p>
+              <p className="text-yellow-700 text-sm mt-1">يرجى إضافة رقم الطلب للطلبات الموجودة</p>
+            </div>
+            <button
+              onClick={handleAddRefidToExisting}
+              disabled={isMigrating}
+              className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {isMigrating ? "جاري التحديث..." : "إضافة رقم الطلب"}
+            </button>
+          </div>
+        </div>
+      )}
+      <Table
+        columns={tableColumns}
+        data={paginatedRequests}
+        className="w-full"
+      />
+    </div>
   );
 };
