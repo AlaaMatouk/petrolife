@@ -1,5 +1,7 @@
 import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import html2canvas from "html2canvas";
 import { saveAs } from "file-saver";
 import { fetchCurrentCompany } from "./firestore";
@@ -102,12 +104,15 @@ const exportToExcel = async (
     // Add worksheet to workbook
     XLSX.utils.book_append_sheet(workbook, worksheet, "Wallet Report");
 
+    // Add logo to the worksheet
+    const workbookWithLogo = await addLogoToExcelWorksheet(workbook, "Wallet Report");
+
     // Generate filename with current date
     const currentDate = new Date().toISOString().split("T")[0];
     const filename = `wallet-report-${reportType}-${currentDate}.xlsx`;
 
-    // Save the workbook with cell styles
-    const excelBuffer = XLSX.write(workbook, {
+    // Save the workbook with cell styles and logo
+    const excelBuffer = XLSX.write(workbookWithLogo, {
       bookType: "xlsx",
       type: "array",
       cellStyles: true,
@@ -120,6 +125,58 @@ const exportToExcel = async (
   } catch (error) {
     console.error("Excel export error:", error);
     throw error;
+  }
+};
+
+/**
+ * Add logo to Excel worksheet using ExcelJS
+ * Logo is placed in the middle section (columns F-H, rows 1-3) matching template structure
+ */
+const addLogoToExcelWorksheet = async (
+  workbook: XLSX.WorkBook,
+  worksheetName: string = "Sheet1"
+): Promise<XLSX.WorkBook> => {
+  try {
+    // Convert XLSX workbook to ExcelJS format to add image
+    const xlsxBuffer = XLSX.write(workbook, { type: "array", bookType: "xlsx" });
+    const exceljsWorkbook = new ExcelJS.Workbook();
+    await exceljsWorkbook.xlsx.load(xlsxBuffer);
+
+    const worksheet = exceljsWorkbook.getWorksheet(worksheetName) || exceljsWorkbook.worksheets[0];
+    if (!worksheet) {
+      return workbook; // Return original if worksheet not found
+    }
+
+    // Load logo image
+    const logoResponse = await fetch("/static/img/logo-3.png");
+    if (!logoResponse.ok) {
+      console.warn("Logo not found at /static/img/logo-3.png, skipping image addition");
+      // Convert back to XLSX format
+      const buffer = await exceljsWorkbook.xlsx.writeBuffer();
+      return XLSX.read(buffer, { type: "array" });
+    }
+
+    const logoBuffer = await logoResponse.arrayBuffer();
+    const logoImage = exceljsWorkbook.addImage({
+      buffer: logoBuffer,
+      extension: "png",
+    });
+
+    // Add image to middle section (columns F-H, rows 1-3)
+    // Columns: F=6, G=7, H=8 (1-indexed in ExcelJS, but 0-indexed in addImage)
+    // Rows: 1-3 (0-indexed: rows 0, 1, 2)
+    // Position: Center of merged cells F1:H3
+    worksheet.addImage(logoImage, {
+      tl: { col: 5, row: 0 }, // Top-left at column F (index 5), row 1 (index 0)
+      ext: { width: 150, height: 75 }, // Logo size
+    });
+
+    // Convert back to XLSX format
+    const buffer = await exceljsWorkbook.xlsx.writeBuffer();
+    return XLSX.read(buffer, { type: "array" });
+  } catch (error) {
+    console.error("Error adding logo to Excel:", error);
+    return workbook; // Return original workbook if logo addition fails
   }
 };
 
@@ -462,7 +519,201 @@ const formatSimpleDate = (dateString: string): string => {
 };
 
 /**
- * Export data to PDF by converting Excel to PDF
+ * Create PDF HTML template with consistent styling
+ */
+/**
+ * Load logo as base64 for embedding in PDF
+ */
+const loadLogoAsBase64 = async (): Promise<string> => {
+  try {
+    const response = await fetch("/static/img/logo-3.png");
+    if (!response.ok) {
+      return ""; // Return empty string if logo not found
+    }
+    const blob = await response.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = () => resolve("");
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.warn("Could not load logo:", error);
+    return "";
+  }
+};
+
+const createPDFHTMLTemplate = async (
+  companyData: any,
+  reportTitle: string,
+  tableHeaders: string[],
+  tableRows: string[][]
+): Promise<string> => {
+  const companyName =
+    companyData?.brandName || companyData?.name || companyData?.email || "N/A";
+  const commercialRegister =
+    companyData?.commercialRegister ||
+    companyData?.commercialRegistrationNumber ||
+    companyData?.cr ||
+    "123456789";
+  const taxNumber =
+    companyData?.taxNumber ||
+    companyData?.vatNumber ||
+    companyData?.vat ||
+    companyData?.taxId ||
+    "123456789";
+  const clientNumber = companyData?.id || companyData?.uid || "N/A";
+
+  // Load logo as base64
+  const logoBase64 = await loadLogoAsBase64();
+  const logoImg = logoBase64 ? `<img src="${logoBase64}" alt="Petrolife Logo" />` : "";
+
+  return `
+    <!DOCTYPE html>
+    <html dir="rtl" lang="ar">
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap');
+        * {
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
+        }
+        body {
+          font-family: 'Tajawal', Arial, sans-serif;
+          direction: rtl;
+          padding: 20px;
+          background: white;
+        }
+        .header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 20px;
+          border-bottom: 2px solid #ddd;
+          padding-bottom: 15px;
+        }
+        .logo-container {
+          flex: 1;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          padding: 0 20px;
+        }
+        .logo-container img {
+          max-width: 150px;
+          max-height: 80px;
+          object-fit: contain;
+        }
+        .company-info-arabic {
+          text-align: right;
+          flex: 1;
+        }
+        .company-info-english {
+          text-align: left;
+          flex: 1;
+        }
+        .company-info-arabic h2 {
+          font-size: 18px;
+          font-weight: bold;
+          margin-bottom: 5px;
+        }
+        .company-info-arabic p,
+        .company-info-english p {
+          font-size: 12px;
+          margin: 3px 0;
+        }
+        .report-title {
+          text-align: center;
+          font-size: 20px;
+          font-weight: bold;
+          margin: 20px 0;
+        }
+        .client-info {
+          display: flex;
+          justify-content: space-between;
+          margin-bottom: 20px;
+          font-size: 12px;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 20px;
+          font-size: 11px;
+        }
+        th {
+          background-color: #4f5bb3;
+          color: white;
+          padding: 10px;
+          text-align: right;
+          font-weight: bold;
+          border: 1px solid #ddd;
+        }
+        td {
+          padding: 8px;
+          text-align: right;
+          border: 1px solid #ddd;
+        }
+        tr:nth-child(even) {
+          background-color: #f5f5f5;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="company-info-arabic">
+          <h2>شركة بترولايف</h2>
+          <p>بترو لايف</p>
+          <p>السجل التجاري : ${commercialRegister}</p>
+          <p>الرقم الضريبي : ${taxNumber}</p>
+        </div>
+        <div class="logo-container">
+          ${logoImg}
+        </div>
+        <div class="company-info-english">
+          <h2>petrolife co.</h2>
+          <p>petro life</p>
+          <p>CR: ${commercialRegister}</p>
+          <p>vat: ${taxNumber}</p>
+        </div>
+      </div>
+      
+      <div class="client-info">
+        <div>
+          <strong>اسم العميل:</strong> ${companyName}<br>
+          <strong>رقم العميل:</strong> ${clientNumber}
+        </div>
+        <div>
+          <strong>السجل التجاري:</strong> ${commercialRegister}<br>
+          <strong>الرقم الضريبي:</strong> ${taxNumber}
+        </div>
+      </div>
+      
+      <div class="report-title">${reportTitle}</div>
+      
+      <table>
+        <thead>
+          <tr>
+            ${tableHeaders.map((header) => `<th>${header}</th>`).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows
+            .map(
+              (row) =>
+                `<tr>${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </body>
+    </html>
+  `;
+};
+
+/**
+ * Export data to PDF using consistent table style
  */
 const exportToPDF = async (
   transactions: TransactionData[],
@@ -473,45 +724,113 @@ const exportToPDF = async (
     // Get current company data
     const companyData = await fetchCurrentCompany();
 
-    // Create new workbook from scratch
-    const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.aoa_to_sheet([]);
-
     const reportType = filters.reportType;
+    const reportTitle =
+      reportType === "تحليلي"
+        ? "التقرير التفصيلي للمحفظة"
+        : "التقرير الإجمالي للمحفظة";
+
+    // Prepare table data
+    let tableHeaders: string[];
+    let tableRows: string[][];
 
     if (reportType === "تحليلي") {
-      await createDetailedReport(worksheet, transactions, filters, companyData);
+      // Detailed report
+      tableHeaders = [
+        "التاريخ",
+        "رقم العملية",
+        "نوع العملية",
+        "الحالة",
+        "اسم الشركة",
+        "المبلغ",
+      ];
+
+      tableRows = transactions.map((transaction) => [
+        formatSimpleDate(transaction.date),
+        transaction.id,
+        transaction.operationType,
+        "مقبول",
+        transaction.operationName || "N/A",
+        transaction.debit,
+      ]);
     } else {
-      await createSummaryReport(worksheet, transactions, filters, companyData);
+      // Summary report
+      const totalAmount = transactions.reduce((sum, transaction) => {
+        const amount = parseFloat(transaction.debit.replace(/,/g, "")) || 0;
+        return sum + amount;
+      }, 0);
+
+      const transactionCount = transactions.length;
+      const operationType =
+        filters.operationType === "الكل" ? "طلبات المحفظة" : filters.operationType;
+
+      tableHeaders = ["نوع العملية", "الكمية", "المبلغ"];
+      tableRows = [
+        [operationType, transactionCount.toString(), totalAmount.toFixed(2)],
+        ["الإجمالي", "", totalAmount.toFixed(2)],
+      ];
     }
 
-    // Add worksheet to workbook
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Wallet Report");
+    // Create HTML template
+    const htmlContent = await createPDFHTMLTemplate(
+      companyData,
+      reportTitle,
+      tableHeaders,
+      tableRows
+    );
 
-    // Convert Excel to HTML table
-    const html = XLSX.utils.sheet_to_html(worksheet, {
-      id: "wallet-report-table",
-      header: "",
-      footer: "",
+    // Create an iframe to completely isolate the PDF content from the main UI
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "absolute";
+    iframe.style.left = "-9999px";
+    iframe.style.top = "-9999px";
+    iframe.style.width = "297mm";
+    iframe.style.height = "210mm";
+    iframe.style.border = "none";
+    document.body.appendChild(iframe);
+    
+    // Wait for iframe to load
+    await new Promise((resolve) => {
+      iframe.onload = resolve;
+      iframe.src = "about:blank";
     });
-
-    // Create a temporary container for the HTML
-    const tempDiv = document.createElement("div");
-    tempDiv.innerHTML = html;
-    tempDiv.style.position = "absolute";
-    tempDiv.style.left = "-9999px";
-    tempDiv.style.top = "-9999px";
-    document.body.appendChild(tempDiv);
+    
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!iframeDoc) {
+      document.body.removeChild(iframe);
+      throw new Error("فشل في إنشاء إطار PDF");
+    }
+    
+    iframeDoc.open();
+    iframeDoc.write(htmlContent);
+    iframeDoc.close();
+    
+    const tempDiv = iframeDoc.body;
 
     // Convert HTML to canvas then to PDF
-    const canvas = await html2canvas(tempDiv, {
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-    });
+    let canvas: HTMLCanvasElement;
+    try {
+      // Wait for fonts to load
+      await new Promise((resolve) => setTimeout(resolve, 500)); // Give time for fonts to load
+      
+      canvas = await html2canvas(tempDiv, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        width: tempDiv.scrollWidth,
+        height: tempDiv.scrollHeight,
+        windowWidth: tempDiv.scrollWidth,
+        windowHeight: tempDiv.scrollHeight,
+      });
+    } catch (canvasError) {
+      document.body.removeChild(iframe);
+      console.error("html2canvas error:", canvasError);
+      throw new Error("فشل في تحويل البيانات إلى صورة. يرجى المحاولة مرة أخرى.");
+    }
 
     // Remove temporary element
-    document.body.removeChild(tempDiv);
+    document.body.removeChild(iframe);
 
     // Create PDF
     const imgData = canvas.toDataURL("image/png");
@@ -543,7 +862,8 @@ const exportToPDF = async (
     pdf.save(filename);
   } catch (error) {
     console.error("PDF export error:", error);
-    throw error;
+    const errorMessage = error instanceof Error ? error.message : "فشل في تصدير ملف PDF";
+    throw new Error(errorMessage);
   }
 };
 
@@ -725,12 +1045,15 @@ const exportFinancialToExcel = async (
     // Add worksheet to workbook
     XLSX.utils.book_append_sheet(workbook, worksheet, "Financial Report");
 
+    // Add logo to the worksheet
+    const workbookWithLogo = await addLogoToExcelWorksheet(workbook, "Financial Report");
+
     // Generate filename with current date
     const currentDate = new Date().toISOString().split("T")[0];
     const filename = `financial-report-${reportType}-${currentDate}.xlsx`;
 
-    // Save the workbook with cell styles
-    const excelBuffer = XLSX.write(workbook, {
+    // Save the workbook with cell styles and logo
+    const excelBuffer = XLSX.write(workbookWithLogo, {
       bookType: "xlsx",
       type: "array",
       cellStyles: true,
@@ -1071,7 +1394,7 @@ const createFinancialSummaryReport = async (
 };
 
 /**
- * Export financial data to PDF
+ * Export financial data to PDF using consistent table style
  */
 const exportFinancialToPDF = async (
   reportData: FinancialReportData[],
@@ -1081,55 +1404,136 @@ const exportFinancialToPDF = async (
     // Get current company data
     const companyData = await fetchCurrentCompany();
 
-    // Create new workbook from scratch (for conversion to PDF)
-    const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.aoa_to_sheet([]);
-
     const reportType = filters.reportType;
+    const reportTitle =
+      reportType === "تحليلي"
+        ? "التقرير المالي التفصيلي"
+        : "التقرير المالي الإجمالي";
+
+    // Prepare table data
+    let tableHeaders: string[];
+    let tableRows: string[][];
 
     if (reportType === "تحليلي") {
-      await createFinancialDetailedReport(
-        worksheet,
-        reportData,
-        filters,
-        companyData
-      );
+      // Detailed report
+      tableHeaders = [
+        "المدينة",
+        "اسم المحطة",
+        "التاريخ",
+        "رقم العملية",
+        "الكمية",
+        "اسم المنتج",
+        "نوع المنتج",
+        "اسم السائق",
+        "كود السائق",
+      ];
+
+      tableRows = reportData.map((item) => [
+        item.city || "-",
+        item.stationName || "-",
+        item.date || "-",
+        item.operationNumber || "-",
+        item.quantity || "-",
+        item.productName || "-",
+        item.productType || "-",
+        item.driverName || "-",
+        item.driverCode || "-",
+      ]);
     } else {
-      await createFinancialSummaryReport(
-        worksheet,
-        reportData,
-        filters,
-        companyData
-      );
+      // Summary report
+      const totalQuantity = reportData.reduce((sum, item) => {
+        const qty = parseFloat(item.quantity.replace(/,/g, "")) || 0;
+        return sum + qty;
+      }, 0);
+
+      const totalTransactions = reportData.length;
+
+      // Group by product type
+      const productGroups = reportData.reduce((acc, item) => {
+        const type = item.productType || "غير محدد";
+        if (!acc[type]) {
+          acc[type] = { count: 0, quantity: 0 };
+        }
+        acc[type].count += 1;
+        acc[type].quantity += parseFloat(item.quantity.replace(/,/g, "")) || 0;
+        return acc;
+      }, {} as Record<string, { count: number; quantity: number }>);
+
+      tableHeaders = ["نوع المنتج", "عدد المعاملات", "إجمالي الكمية"];
+      tableRows = Object.entries(productGroups).map(([type, data]) => [
+        type,
+        data.count.toString(),
+        data.quantity.toFixed(2),
+      ]);
+
+      // Add total row
+      tableRows.push([
+        "الإجمالي الكلي",
+        totalTransactions.toString(),
+        totalQuantity.toFixed(2),
+      ]);
     }
 
-    // Add worksheet to workbook
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Financial Report");
+    // Create HTML template
+    const htmlContent = await createPDFHTMLTemplate(
+      companyData,
+      reportTitle,
+      tableHeaders,
+      tableRows
+    );
 
-    // Convert Excel to HTML table
-    const html = XLSX.utils.sheet_to_html(worksheet, {
-      id: "financial-report-table",
-      header: "",
-      footer: "",
+    // Create an iframe to completely isolate the PDF content from the main UI
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "absolute";
+    iframe.style.left = "-9999px";
+    iframe.style.top = "-9999px";
+    iframe.style.width = "297mm";
+    iframe.style.height = "210mm";
+    iframe.style.border = "none";
+    document.body.appendChild(iframe);
+    
+    // Wait for iframe to load
+    await new Promise((resolve) => {
+      iframe.onload = resolve;
+      iframe.src = "about:blank";
     });
-
-    // Create a temporary container for the HTML
-    const tempDiv = document.createElement("div");
-    tempDiv.innerHTML = html;
-    tempDiv.style.position = "absolute";
-    tempDiv.style.left = "-9999px";
-    tempDiv.style.top = "-9999px";
-    document.body.appendChild(tempDiv);
+    
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!iframeDoc) {
+      document.body.removeChild(iframe);
+      throw new Error("فشل في إنشاء إطار PDF");
+    }
+    
+    iframeDoc.open();
+    iframeDoc.write(htmlContent);
+    iframeDoc.close();
+    
+    const tempDiv = iframeDoc.body;
 
     // Convert HTML to canvas then to PDF
-    const canvas = await html2canvas(tempDiv, {
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-    });
+    let canvas: HTMLCanvasElement;
+    try {
+      // Wait for fonts to load
+      await new Promise((resolve) => setTimeout(resolve, 500)); // Give time for fonts to load
+      
+      canvas = await html2canvas(tempDiv, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        width: tempDiv.scrollWidth,
+        height: tempDiv.scrollHeight,
+        windowWidth: tempDiv.scrollWidth,
+        windowHeight: tempDiv.scrollHeight,
+      });
+    } catch (canvasError) {
+      document.body.removeChild(iframe);
+      console.error("html2canvas error:", canvasError);
+      throw new Error("فشل في تحويل البيانات إلى صورة. يرجى المحاولة مرة أخرى.");
+    }
 
     // Remove temporary element
-    document.body.removeChild(tempDiv);
+    document.body.removeChild(iframe);
 
     // Create PDF
     const imgData = canvas.toDataURL("image/png");
@@ -1161,7 +1565,8 @@ const exportFinancialToPDF = async (
     pdf.save(filename);
   } catch (error) {
     console.error("PDF export error:", error);
-    throw error;
+    const errorMessage = error instanceof Error ? error.message : "فشل في تصدير ملف PDF";
+    throw new Error(errorMessage);
   }
 };
 
@@ -1361,12 +1766,15 @@ const exportTableToExcel = async (
     // Add worksheet to workbook
     XLSX.utils.book_append_sheet(workbook, worksheet, "Report");
 
+    // Add logo to the worksheet
+    const workbookWithLogo = await addLogoToExcelWorksheet(workbook, "Report");
+
     // Generate filename with current date
     const currentDate = new Date().toISOString().split("T")[0];
     const fullFilename = `${filename}-${currentDate}.xlsx`;
 
-    // Save the workbook with cell styles
-    const excelBuffer = XLSX.write(workbook, {
+    // Save the workbook with cell styles and logo
+    const excelBuffer = XLSX.write(workbookWithLogo, {
       bookType: "xlsx",
       type: "array",
       cellStyles: true,
@@ -1384,6 +1792,7 @@ const exportTableToExcel = async (
 
 /**
  * Export table data to PDF with company header
+ * Uses consistent table style matching drivers/cars exports
  */
 const exportTableToPDF = async (
   data: any[],
@@ -1393,37 +1802,6 @@ const exportTableToPDF = async (
   reportTitle: string
 ) => {
   try {
-    const pdf = new jsPDF("l", "mm", "a4"); // Landscape orientation
-
-    let yPosition = 10;
-
-    // Add report title
-    pdf.setFontSize(16);
-    pdf.text(reportTitle, pdf.internal.pageSize.getWidth() - 10, yPosition, {
-      align: "right",
-    });
-    yPosition += 10;
-
-    // Add company information
-    if (company) {
-      pdf.setFontSize(10);
-      const companyInfo = [
-        `${company.brandName || company.name || "-"} :اسم الشركة`,
-        `${company.email || "-"} :البريد الإلكتروني`,
-        `${company.phoneNumber || "-"} :رقم الهاتف`,
-        `ر.س ${company.balance || 0} :الرصيد`,
-      ];
-
-      companyInfo.forEach((info) => {
-        pdf.text(info, pdf.internal.pageSize.getWidth() - 10, yPosition, {
-          align: "right",
-        });
-        yPosition += 6;
-      });
-
-      yPosition += 5;
-    }
-
     // Prepare table data
     const tableHeaders = columns.map((col) => col.label);
     const tableRows = data.map((item) =>
@@ -1439,22 +1817,89 @@ const exportTableToPDF = async (
       })
     );
 
-    // Add table using autoTable
-    (pdf as any).autoTable({
-      head: [tableHeaders],
-      body: tableRows,
-      startY: yPosition,
-      styles: {
-        font: "helvetica",
-        halign: "center",
-      },
-      headStyles: {
-        fillColor: [79, 91, 179],
-        textColor: [255, 255, 255],
-        fontSize: 10,
-      },
-      margin: { top: 10, right: 10, bottom: 10, left: 10 },
+    // Create HTML template using shared function
+    const htmlContent = createPDFHTMLTemplate(
+      company,
+      reportTitle,
+      tableHeaders,
+      tableRows
+    );
+
+    // Create an iframe to completely isolate the PDF content from the main UI
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "absolute";
+    iframe.style.left = "-9999px";
+    iframe.style.top = "-9999px";
+    iframe.style.width = "297mm";
+    iframe.style.height = "210mm";
+    iframe.style.border = "none";
+    document.body.appendChild(iframe);
+    
+    // Wait for iframe to load
+    await new Promise((resolve) => {
+      iframe.onload = resolve;
+      iframe.src = "about:blank";
     });
+    
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!iframeDoc) {
+      document.body.removeChild(iframe);
+      throw new Error("فشل في إنشاء إطار PDF");
+    }
+    
+    iframeDoc.open();
+    iframeDoc.write(htmlContent);
+    iframeDoc.close();
+    
+    const tempDiv = iframeDoc.body;
+
+    // Wait for fonts to load
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    // Convert HTML to canvas then to PDF
+    let canvas: HTMLCanvasElement;
+    try {
+      canvas = await html2canvas(tempDiv, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        width: tempDiv.scrollWidth,
+        height: tempDiv.scrollHeight,
+        windowWidth: tempDiv.scrollWidth,
+        windowHeight: tempDiv.scrollHeight,
+      });
+    } catch (canvasError) {
+      document.body.removeChild(iframe);
+      console.error("html2canvas error:", canvasError);
+      throw new Error("فشل في تحويل البيانات إلى صورة. يرجى المحاولة مرة أخرى.");
+    }
+
+    // Remove temporary element
+    document.body.removeChild(iframe);
+
+    // Create PDF
+    const imgData = canvas.toDataURL("image/png");
+    const pdf = new jsPDF("l", "mm", "a4"); // Landscape orientation
+
+    const imgWidth = 297; // A4 width in mm
+    const pageHeight = 210; // A4 height in mm
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    let heightLeft = imgHeight;
+
+    let position = 0;
+
+    // Add image to PDF
+    pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+    heightLeft -= pageHeight;
+
+    // Add new pages if needed
+    while (heightLeft >= 0) {
+      position = heightLeft - imgHeight;
+      pdf.addPage();
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+    }
 
     // Generate filename with current date
     const currentDate = new Date().toISOString().split("T")[0];
@@ -1464,6 +1909,7 @@ const exportTableToPDF = async (
     pdf.save(fullFilename);
   } catch (error) {
     console.error("PDF export error:", error);
-    throw error;
+    const errorMessage = error instanceof Error ? error.message : "فشل في تصدير ملف PDF";
+    throw new Error(errorMessage);
   }
 };
