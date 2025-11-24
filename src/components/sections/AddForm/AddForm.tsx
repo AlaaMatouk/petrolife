@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ArrowLeft, Plus, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Input, Select } from "../../shared/Form";
@@ -38,6 +38,9 @@ export interface AddFormProps {
   backButtonAction?: () => void;
   validationSchema?: (values: Record<string, any>) => Record<string, string>;
   isLoading?: boolean;
+  showCancelButton?: boolean;
+  cancelButtonText?: string;
+  cancelButtonAction?: () => void;
 }
 
 export const AddForm = ({
@@ -50,12 +53,20 @@ export const AddForm = ({
   showBackButton = true,
   backButtonAction,
   validationSchema,
-  isLoading = false
+  isLoading = false,
+  showCancelButton = false,
+  cancelButtonText = "الغاء",
+  cancelButtonAction
 }: AddFormProps): JSX.Element => {
   const navigate = useNavigate();
   const [values, setValues] = useState<Record<string, any>>(initialValues);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Sync values when initialValues change (for edit mode)
+  useEffect(() => {
+    setValues(initialValues);
+  }, [initialValues]);
 
   // Helper function to get grid column span class
   const getGridSpanClass = (span: number = 1) => {
@@ -272,8 +283,23 @@ export const AddForm = ({
               {fields.map((field) => renderField(field))}
             </div>
 
-            {/* Submit Button */}
+            {/* Action Buttons */}
             <div className="flex items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
+              {showCancelButton && (
+                <button
+                  type="button"
+                  onClick={cancelButtonAction}
+                  disabled={isSubmitting || isLoading}
+                  className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-medium)] pb-[var(--corner-radius-medium)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] transition-opacity bg-gray-500 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label={cancelButtonText}
+                >
+                  <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
+                    <div className="w-fit font-[number:var(--subtitle-subtitle-3-font-weight)] text-white text-left tracking-[var(--subtitle-subtitle-3-letter-spacing)] whitespace-nowrap [direction:rtl] relative mt-[-1.00px] font-subtitle-subtitle-3 text-[length:var(--subtitle-subtitle-3-font-size)] leading-[var(--subtitle-subtitle-3-line-height)] [font-style:var(--subtitle-subtitle-3-font-style)]">
+                      {cancelButtonText}
+                    </div>
+                  </div>
+                </button>
+              )}
               <button
                 type="submit"
                 disabled={isSubmitting || isLoading}

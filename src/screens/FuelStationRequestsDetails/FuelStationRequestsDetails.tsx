@@ -232,7 +232,7 @@ export function FuelStationRequestsDetails() {
         titleIcon={<Eye className="w-5 h-5 text-gray-500" />}
         fields={fuelRequestFields}
         onEdit={handleEdit}
-        showEditButton={true}
+        showEditButton={false}
         editButtonText="تعديل البيانات"
         showBackButton={true}
       />
@@ -243,7 +243,7 @@ export function FuelStationRequestsDetails() {
         titleIcon={<Car className="w-5 h-5 text-gray-500" />}
         fields={vehicleFields}
         onEdit={handleVehicleEdit}
-        showEditButton={true}
+        showEditButton={false}
         editButtonText="تعديل البيانات"
         showBackButton={false}
       />
