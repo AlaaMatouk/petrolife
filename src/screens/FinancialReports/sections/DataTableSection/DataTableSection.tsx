@@ -417,11 +417,14 @@ export const DataTableSection = (): JSX.Element => {
   ];
   
   // Get driver codes from companies-drivers collection (filtered by current company)
+  // Use refid instead of id for driver code (field is lowercase: refid)
   const uniqueDriverCodes = [
     'الكل',
-    ...drivers
-      .map(driver => driver.id) // Get the document ID
-      .filter(Boolean) // Remove null/undefined values
+    ...Array.from(new Set(
+      drivers
+        .map(driver => driver.refid || driver.refId) // Get the refid field (support both lowercase and camelCase)
+        .filter(Boolean) // Remove null/undefined values
+    )) // Remove duplicates using Set
   ];
   
   // Get cities from carstations collection (address field)
