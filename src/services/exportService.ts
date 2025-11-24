@@ -1802,6 +1802,15 @@ const exportTableToPDF = async (
   reportTitle: string
 ) => {
   try {
+    // Debug: Log input data
+    console.log("exportTableToPDF - Input data:", data);
+    console.log("exportTableToPDF - Columns:", columns);
+    
+    // Validate data
+    if (!data || data.length === 0) {
+      throw new Error("لا توجد بيانات للتصدير");
+    }
+    
     // Prepare table data
     const tableHeaders = columns.map((col) => col.label);
     const tableRows = data.map((item) =>
@@ -1816,14 +1825,25 @@ const exportTableToPDF = async (
         return value || "-";
       })
     );
+    
+    // Debug: Log prepared data
+    console.log("exportTableToPDF - Table headers:", tableHeaders);
+    console.log("exportTableToPDF - Table rows:", tableRows);
+    
+    if (!tableRows || tableRows.length === 0) {
+      throw new Error("فشل في تحضير بيانات الجدول");
+    }
 
     // Create HTML template using shared function
-    const htmlContent = createPDFHTMLTemplate(
+    const htmlContent = await createPDFHTMLTemplate(
       company,
       reportTitle,
       tableHeaders,
       tableRows
     );
+    
+    // Debug: Log HTML content length
+    console.log("exportTableToPDF - HTML content length:", htmlContent.length);
 
     // Create an iframe to completely isolate the PDF content from the main UI
     const iframe = document.createElement("iframe");
