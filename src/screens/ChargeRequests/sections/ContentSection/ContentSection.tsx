@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Wallet } from "lucide-react";
 import { Table, ExportButton, LoadingSpinner } from "../../../../components/shared";
 import { fetchWalletChargeRequests } from "../../../../services/firestore";
+import { exportDataTable } from "../../../../services/exportService";
+import { useToast } from "../../../../context/ToastContext";
 
 interface TableRow {
   id: string;
@@ -100,14 +102,58 @@ interface ContentSectionProps {
   currentPage: number;
   setTotalPages: (pages: number) => void;
   selectedTimeFilter: string;
+  onExportHandlerReady?: (handler: (format: string) => void) => void;
 }
 
-export const ContentSection = ({ currentPage, setTotalPages, selectedTimeFilter }: ContentSectionProps): JSX.Element => {
+export const ContentSection = ({ currentPage, setTotalPages, selectedTimeFilter, onExportHandlerReady }: ContentSectionProps): JSX.Element => {
   const [requests, setRequests] = useState<TableRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { addToast } = useToast();
   
   const ITEMS_PER_PAGE = 10;
+  
+  // Handle export single row
+  const handleExportRow = async (format: string, row: TableRow) => {
+    try {
+      // Define columns for export
+      const exportColumns = [
+        { key: "orderNumber", label: "رقم الطلب" },
+        { key: "orderType", label: "نوع الطلب" },
+        { key: "oldBalance", label: "الرصيد القديم (ر.س)" },
+        { key: "shippingValue", label: "قيمة طلب الشحن (ر.س)" },
+        { key: "date", label: "تاريخ الطلب" },
+        { key: "status", label: "حالة الطلب" },
+      ];
+
+      // Transform status for export
+      const exportRow = {
+        ...row,
+        status: row.status === "rejected" ? "مرفوض" : row.status === "pending" ? "قيد المراجعة" : "مكتمل",
+      };
+
+      await exportDataTable(
+        [exportRow],
+        exportColumns,
+        `wallet-charge-request-${row.orderNumber}`,
+        format as 'excel' | 'pdf',
+        `تقرير طلب الشحن - ${row.orderNumber}`
+      );
+
+      addToast({
+        title: 'نجح التصدير',
+        message: `تم تصدير بيانات الطلب بنجاح`,
+        type: 'success',
+      });
+    } catch (error) {
+      console.error('Export error:', error);
+      addToast({
+        title: 'فشل التصدير',
+        message: 'حدث خطأ أثناء تصدير البيانات',
+        type: 'error',
+      });
+    }
+  };
 
   // Fetch wallet charge requests on mount
   useEffect(() => {
@@ -163,6 +209,55 @@ export const ContentSection = ({ currentPage, setTotalPages, selectedTimeFilter 
     
     return requestDate >= startDate;
   });
+  
+  // Handle export all filtered requests (defined after filteredRequests)
+  const handleExportAll = useCallback(async (format: string) => {
+    try {
+      // Define columns for export
+      const exportColumns = [
+        { key: "orderNumber", label: "رقم الطلب" },
+        { key: "orderType", label: "نوع الطلب" },
+        { key: "oldBalance", label: "الرصيد القديم (ر.س)" },
+        { key: "shippingValue", label: "قيمة طلب الشحن (ر.س)" },
+        { key: "date", label: "تاريخ الطلب" },
+        { key: "status", label: "حالة الطلب" },
+      ];
+
+      // Transform status for export
+      const exportData = filteredRequests.map(request => ({
+        ...request,
+        status: request.status === "rejected" ? "مرفوض" : request.status === "pending" ? "قيد المراجعة" : "مكتمل",
+      }));
+
+      await exportDataTable(
+        exportData,
+        exportColumns,
+        'wallet-charge-requests',
+        format as 'excel' | 'pdf',
+        'تقرير طلبات شحن المحفظة'
+      );
+
+      addToast({
+        title: 'نجح التصدير',
+        message: `تم تصدير طلبات الشحن بنجاح`,
+        type: 'success',
+      });
+    } catch (error) {
+      console.error('Export error:', error);
+      addToast({
+        title: 'فشل التصدير',
+        message: 'حدث خطأ أثناء تصدير البيانات',
+        type: 'error',
+      });
+    }
+  }, [filteredRequests, addToast]);
+  
+  // Expose handleExportAll to parent component
+  useEffect(() => {
+    if (onExportHandlerReady) {
+      onExportHandlerReady(handleExportAll);
+    }
+  }, [handleExportAll, onExportHandlerReady]);
 
   // Update total pages when filtered requests change
   useEffect(() => {
@@ -175,7 +270,13 @@ export const ContentSection = ({ currentPage, setTotalPages, selectedTimeFilter 
       key: "export",
       label: "",
       width: "min-w-[100px]",
-      render: () => <ExportButton className="!border-0 flex items-center gap-2 text-gray-600 hover:text-blue-600 hover:bg-gray-100 rounded transition-colors p-2" />,
+      render: (_value: any, row: TableRow) => (
+        <ExportButton 
+          onExport={(format) => handleExportRow(format, row)}
+          className="!border-0 flex items-center gap-2 text-gray-600 hover:text-blue-600 hover:bg-gray-100 rounded transition-colors p-2"
+          buttonText="تصدير"
+        />
+      ),
     },
     {
       key: "status",
