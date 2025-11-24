@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Table, Pagination, LoadingSpinner } from "../../../../components/shared";
-import { MoreVertical, ShoppingCart } from "lucide-react";
+import { MoreVertical, ShoppingCart, RotateCcw, Download, X, Edit, Info, FileDown } from "lucide-react";
 import { fetchOrders } from "../../../../services/firestore";
+import { createPortal } from "react-dom";
+import { useToast } from "../../../../context/ToastContext";
+import { exportDataTable } from "../../../../services/exportService";
 
 // Helper function to get status text in Arabic
 const getStatusText = (status: string): { text: string; type: string } => {
@@ -204,15 +207,255 @@ export const OrderDetailsSection = (): JSX.Element => {
     loadOrders();
   }, []);
 
+  // Actions Menu Component
+  interface ActionsMenuProps {
+    order: any;
+    statusType: string;
+  }
+
+  const ActionsMenu = ({ order, statusType }: ActionsMenuProps) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const buttonRef = useRef<HTMLButtonElement>(null);
+    const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+    const { addToast } = useToast();
+
+    const updateMenuPosition = () => {
+      if (!buttonRef.current) return;
+      const rect = buttonRef.current.getBoundingClientRect();
+      const menuWidth = 200;
+      let left = rect.right + 4;
+      if (left + menuWidth > window.innerWidth) {
+        left = rect.left - menuWidth - 4;
+      }
+      setMenuPosition({
+        top: rect.bottom + 4,
+        left: Math.max(4, left),
+      });
+    };
+
+    useEffect(() => {
+      if (isOpen) {
+        updateMenuPosition();
+        const handleScroll = () => setIsOpen(false);
+        const handleResize = () => setIsOpen(false);
+        window.addEventListener("scroll", handleScroll, true);
+        window.addEventListener("resize", handleResize);
+        return () => {
+          window.removeEventListener("scroll", handleScroll, true);
+          window.removeEventListener("resize", handleResize);
+        };
+      }
+    }, [isOpen]);
+
+    // Get actions based on status
+    const getActions = () => {
+      switch (statusType) {
+        case "completed":
+          return [
+            {
+              label: "إعادة الطلب",
+              icon: RotateCcw,
+              onClick: () => handleReorder(order),
+              color: "text-orange-600 hover:bg-orange-50",
+            },
+            {
+              label: "تصدير البيانات",
+              icon: FileDown,
+              onClick: () => handleExportData(order),
+              color: "text-blue-600 hover:bg-blue-50",
+            },
+          ];
+        case "reviewing":
+          return [
+            {
+              label: "الغاء الطلب",
+              icon: X,
+              onClick: () => handleCancelRequest(order),
+              color: "text-red-600 hover:bg-red-50",
+            },
+            {
+              label: "تعديل البيانات",
+              icon: Edit,
+              onClick: () => handleEditData(order),
+              color: "text-blue-600 hover:bg-blue-50",
+            },
+          ];
+        case "rejected":
+          return [
+            {
+              label: "سبب الرفض",
+              icon: Info,
+              onClick: () => handleRejectionReason(order),
+              color: "text-red-600 hover:bg-red-50",
+            },
+          ];
+        case "pending":
+          return [
+            {
+              label: "تصدير البيانات",
+              icon: FileDown,
+              onClick: () => handleExportData(order),
+              color: "text-blue-600 hover:bg-blue-50",
+            },
+          ];
+        default:
+          return [];
+      }
+    };
+
+    const actions = getActions();
+
+    const handleReorder = (order: any) => {
+      setIsOpen(false);
+      // TODO: Implement reorder functionality
+      addToast({
+        title: "إعادة الطلب",
+        message: `سيتم إعادة طلب ${order.id}`,
+        type: "info",
+      });
+    };
+
+    const handleExportData = async (order: any) => {
+      setIsOpen(false);
+      try {
+        const exportColumns = [
+          { key: "id", label: "كود الطلب" },
+          { key: "date", label: "تاريخ الطلب" },
+          { key: "product", label: "اسم المنتج" },
+          { key: "quantity", label: "الكمية" },
+          { key: "totalValue", label: "اجمالي القيمة" },
+          { key: "recipient", label: "اسم المستلم" },
+          { key: "phone", label: "رقم الهاتف" },
+          { key: "address", label: "العنوان" },
+          { key: "status", label: "حالة الطلب" },
+        ];
+
+        // Format order data for export
+        const exportData = {
+          id: order.id,
+          date: order.date,
+          product: order.product,
+          quantity: order.quantity,
+          totalValue: order.totalValue,
+          recipient: order.recipient,
+          phone: order.phone,
+          address: order.address,
+          status: order.status?.text || "-",
+        };
+
+        await exportDataTable(
+          [exportData],
+          exportColumns,
+          `fuel-delivery-${order.id}`,
+          "excel",
+          `تقرير طلب التوصيل - ${order.id}`
+        );
+
+        addToast({
+          title: "نجح التصدير",
+          message: "تم تصدير بيانات الطلب بنجاح",
+          type: "success",
+        });
+      } catch (error) {
+        console.error("Export error:", error);
+        addToast({
+          title: "فشل التصدير",
+          message: "حدث خطأ أثناء تصدير البيانات",
+          type: "error",
+        });
+      }
+    };
+
+    const handleCancelRequest = (order: any) => {
+      setIsOpen(false);
+      // TODO: Implement cancel request functionality
+      addToast({
+        title: "الغاء الطلب",
+        message: `سيتم إلغاء طلب ${order.id}`,
+        type: "info",
+      });
+    };
+
+    const handleEditData = (order: any) => {
+      setIsOpen(false);
+      // TODO: Implement edit data functionality
+      addToast({
+        title: "تعديل البيانات",
+        message: `سيتم فتح نموذج تعديل طلب ${order.id}`,
+        type: "info",
+      });
+    };
+
+    const handleRejectionReason = (order: any) => {
+      setIsOpen(false);
+      // TODO: Implement show rejection reason functionality
+      addToast({
+        title: "سبب الرفض",
+        message: `عرض سبب رفض طلب ${order.id}`,
+        type: "info",
+      });
+    };
+
+    if (actions.length === 0) return null;
+
+    return (
+      <div className="relative">
+        <button
+          ref={buttonRef}
+          onClick={() => {
+            setIsOpen(!isOpen);
+            if (!isOpen) {
+              setTimeout(updateMenuPosition, 0);
+            }
+          }}
+          className="flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 transition-colors"
+          aria-label="إجراءات"
+        >
+          <MoreVertical className="w-4 h-4 text-gray-500" />
+        </button>
+
+        {isOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setIsOpen(false)}
+            />
+            {createPortal(
+              <div
+                className="fixed w-48 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden"
+                style={{ top: menuPosition.top, left: menuPosition.left }}
+              >
+                <div className="py-1">
+                  {actions.map((action, index) => {
+                    const Icon = action.icon;
+                    return (
+                      <button
+                        key={index}
+                        onClick={action.onClick}
+                        className={`w-full px-4 py-2 text-right text-sm flex items-center justify-end gap-2 transition-colors ${action.color}`}
+                      >
+                        <span>{action.label}</span>
+                        <Icon className="w-4 h-4" />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>,
+              document.body
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
+
   const tableColumns = [
     {
       key: "actions",
       label: "الإجراءات",
       width: "w-[80px] min-w-[80px]",
-      render: () => (
-        <button className="flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 transition-colors">
-          <MoreVertical className="w-4 h-4 text-gray-500" />
-        </button>
+      render: (_value: any, row: any) => (
+        <ActionsMenu order={row} statusType={row.status?.type || "pending"} />
       ),
     },
     {

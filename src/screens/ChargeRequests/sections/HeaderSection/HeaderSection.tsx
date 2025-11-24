@@ -5,9 +5,10 @@ import { TimeFilter, ExportButton } from "../../../../components/shared";
 interface HeaderSectionProps {
   selectedTimeFilter: string;
   onFilterChange: (filter: string) => void;
+  onExport?: (format: string) => void;
 }
 
-export const HeaderSection = ({ selectedTimeFilter, onFilterChange }: HeaderSectionProps): JSX.Element => {
+export const HeaderSection = ({ selectedTimeFilter, onFilterChange, onExport }: HeaderSectionProps): JSX.Element => {
   const navigate = useNavigate();
 
   return (
@@ -22,7 +23,7 @@ export const HeaderSection = ({ selectedTimeFilter, onFilterChange }: HeaderSect
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </button>
 
-          <ExportButton />
+          <ExportButton onExport={onExport} />
           
           <TimeFilter
             selectedFilter={selectedTimeFilter}

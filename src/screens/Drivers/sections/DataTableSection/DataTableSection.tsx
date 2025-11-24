@@ -226,13 +226,78 @@ const ActionMenu = ({ driver }: { driver: Driver }) => {
   const [buttonRef, setButtonRef] = useState<HTMLButtonElement | null>(null);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const navigate = useNavigate();
+  const { addToast } = useToast();
 
-  const handleAction = (action: string) => {
-    console.log(`${action} clicked for driver:`, driver.driverCode);
+  const handleAction = async (action: string) => {
     if (action === "view") {
       navigate(`/driver/${driver.id}`);
+      setIsOpen(false);
+    } else if (action === "export") {
+      setIsOpen(false);
+      
+      try {
+        // Transform driver data for export (flatten nested objects and ensure all values are strings)
+        const exportDriver = {
+          driverCode: String(driver.driverCode || "-"),
+          driverName: String(driver.driverName || "-"),
+          phone: String(driver.phone || "-"),
+          address: String(driver.address || "-"),
+          fuelType: String(driver.fuelType || "-"),
+          financialValue: String(driver.financialValue || "-"),
+          carNumber: String(driver.carNumber || "-"),
+          carCategory: String(
+            (typeof driver.carCategory === "object" && driver.carCategory?.text) 
+              ? driver.carCategory.text 
+              : (driver.carCategory || "-")
+          ),
+          accountStatus: String(
+            (typeof driver.accountStatus === "object" && driver.accountStatus?.text) 
+              ? driver.accountStatus.text 
+              : (driver.accountStatus || "-")
+          ),
+        };
+
+        // Debug: Log the export data
+        console.log("Exporting driver data:", exportDriver);
+
+        // Define columns for export
+        const exportColumns = [
+          { key: "driverCode", label: "كود السائق" },
+          { key: "driverName", label: "اسم السائق" },
+          { key: "phone", label: "رقم الهاتف" },
+          { key: "address", label: "العنوان" },
+          { key: "fuelType", label: "نوع الوقود" },
+          { key: "financialValue", label: "القيمة المالية" },
+          { key: "carNumber", label: "رقم السيارة" },
+          { key: "carCategory", label: "تصنيف السيارة" },
+          { key: "accountStatus", label: "حالة الحساب" },
+        ];
+
+        // Export single driver as PDF
+        await exportDataTable(
+          [exportDriver],
+          exportColumns,
+          `driver-${driver.driverCode}-report`,
+          "pdf",
+          `تقرير السائق - ${driver.driverName}`
+        );
+
+        addToast({
+          title: "نجح التصدير",
+          message: `تم تصدير بيانات السائق بنجاح`,
+          type: "success",
+        });
+      } catch (error) {
+        console.error("Export error:", error);
+        addToast({
+          title: "فشل التصدير",
+          message: "حدث خطأ أثناء تصدير البيانات",
+          type: "error",
+        });
+      }
+    } else {
+      setIsOpen(false);
     }
-    setIsOpen(false);
   };
 
   const updateMenuPosition = () => {
@@ -557,7 +622,7 @@ interface DataTableSectionProps {
 export const DataTableSection = ({
   searchQuery = "",
 }: DataTableSectionProps): JSX.Element => {
-  const { drivers, pagination, setDrivers, setCurrentPage, updateDriver } =
+  const { drivers, pagination, setDrivers, setCurrentPage, setPagination, updateDriver } =
     useDrivers();
   const navigate = useNavigate();
   const { addToast } = useToast();
@@ -565,6 +630,8 @@ export const DataTableSection = ({
   const [error, setError] = useState<string | null>(null);
   const [isMigrating, setIsMigrating] = useState(false);
   const [rawDriversData, setRawDriversData] = useState<any[]>([]);
+  
+  const ITEMS_PER_PAGE = 10;
 
   // Fetch companies-drivers data from Firestore on component mount
   useEffect(() => {
@@ -655,6 +722,27 @@ export const DataTableSection = ({
       driver.fuelType?.toLowerCase().includes(query)
     );
   });
+
+  // Calculate pagination
+  const totalPages = Math.ceil(filteredDrivers.length / ITEMS_PER_PAGE);
+  const currentPage = pagination.currentPage || 1;
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const paginatedDrivers = filteredDrivers.slice(startIndex, endIndex);
+
+  // Update pagination when filtered drivers change
+  useEffect(() => {
+    const newTotalPages = Math.ceil(filteredDrivers.length / ITEMS_PER_PAGE);
+    const currentPageValue = pagination.currentPage || 1;
+    const newCurrentPage = currentPageValue > newTotalPages && newTotalPages > 0 ? 1 : currentPageValue;
+    
+    if (pagination.totalPages !== newTotalPages || pagination.currentPage !== newCurrentPage) {
+      setPagination({
+        currentPage: newCurrentPage,
+        totalPages: newTotalPages,
+      });
+    }
+  }, [filteredDrivers.length, searchQuery, pagination.currentPage, pagination.totalPages, setPagination]);
 
   // Calculate driver statistics based on actual data
   const driverStats = calculateDriverStats(filteredDrivers);
@@ -885,7 +973,7 @@ export const DataTableSection = ({
                 <div className="hidden lg:block w-full">
                   <Table
                     columns={driverColumns}
-                    data={Array.isArray(filteredDrivers) ? filteredDrivers : []}
+                    data={Array.isArray(paginatedDrivers) ? paginatedDrivers : []}
                     className="relative self-stretch w-full flex-[0_0_auto]"
                   />
                 </div>
@@ -897,7 +985,7 @@ export const DataTableSection = ({
                       (col) =>
                         col.priority === "high" || col.priority === "medium"
                     )}
-                    data={Array.isArray(filteredDrivers) ? filteredDrivers : []}
+                    data={Array.isArray(paginatedDrivers) ? paginatedDrivers : []}
                     className="relative self-stretch w-full flex-[0_0_auto]"
                   />
                 </div>
@@ -910,11 +998,13 @@ export const DataTableSection = ({
                 </div>
               </div>
 
-              <Pagination
-                currentPage={pagination.currentPage}
-                totalPages={pagination.totalPages}
-                onPageChange={handlePageChange}
-              />
+              {totalPages > 0 && (
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={handlePageChange}
+                />
+              )}
             </main>
           </div>
 
