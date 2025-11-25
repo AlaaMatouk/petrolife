@@ -5,6 +5,8 @@ import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { Input, Select } from "../../../shared/Form";
 import { MoreVertical, Download } from "lucide-react";
+import { exportDataTable } from "../../../../services/exportService";
+import { useToast } from "../../../../context/ToastContext";
 
 // Mock data for 48 agent report entries with varied dates for time filtering
 const generateMockData = () => {
@@ -132,6 +134,7 @@ const ActionMenu = ({ item }: ActionMenuProps) => {
 };
 
 const AgentReports = () => {
+  const { addToast } = useToast();
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedTimeFilter, setSelectedTimeFilter] = useState("12 شهر");
   const [filters, setFilters] = useState({
@@ -144,11 +147,30 @@ const AgentReports = () => {
   });
   const itemsPerPage = 10;
 
-  // Filter data based on time filter
+  // Get unique values for filter options from mockData
+  const uniqueAgentCodes = useMemo(() => {
+    return Array.from(new Set(mockData.map(item => String(item.agentCode))));
+  }, []);
+
+  const uniqueAgentNames = useMemo(() => {
+    return Array.from(new Set(mockData.map(item => item.agentName).filter(Boolean)));
+  }, []);
+
+  const uniqueClientCodes = useMemo(() => {
+    return Array.from(new Set(mockData.map(item => String(item.clientCode))));
+  }, []);
+
+  const uniqueProductNames = useMemo(() => {
+    return Array.from(new Set(mockData.map(item => item.productName).filter(Boolean)));
+  }, []);
+
+  // Filter data based on time filter and all other filters
   const filteredData = useMemo(() => {
     const now = new Date();
     let cutoffDate = new Date();
+    let filtered = mockData;
 
+    // Apply time filter
     switch (selectedTimeFilter) {
       case "اسبوع":
         cutoffDate.setDate(now.getDate() - 7);
@@ -163,11 +185,51 @@ const AgentReports = () => {
         cutoffDate.setMonth(now.getMonth() - 12);
         break;
       default:
-        return mockData;
+        // No time filter, continue with all data
+        break;
     }
 
-    return mockData.filter((item) => item.fullDate >= cutoffDate);
-  }, [selectedTimeFilter]);
+    if (selectedTimeFilter !== "الكل" && selectedTimeFilter) {
+      filtered = filtered.filter((item) => item.fullDate >= cutoffDate);
+    }
+
+    // Apply agentCode filter
+    if (filters.agentCode && filters.agentCode !== "الكل") {
+      filtered = filtered.filter((item) => 
+        String(item.agentCode) === String(filters.agentCode)
+      );
+    }
+
+    // Apply agentName filter
+    if (filters.agentName && filters.agentName !== "الكل") {
+      filtered = filtered.filter((item) => 
+        item.agentName && item.agentName.includes(filters.agentName)
+      );
+    }
+
+    // Apply clientType filter
+    if (filters.clientType && filters.clientType !== "الكل") {
+      filtered = filtered.filter((item) => 
+        item.clientType && item.clientType === filters.clientType
+      );
+    }
+
+    // Apply clientCode filter
+    if (filters.clientCode && filters.clientCode !== "الكل") {
+      filtered = filtered.filter((item) => 
+        String(item.clientCode) === String(filters.clientCode)
+      );
+    }
+
+    // Apply productName filter
+    if (filters.productName && filters.productName !== "الكل") {
+      filtered = filtered.filter((item) => 
+        item.productName && item.productName.includes(filters.productName)
+      );
+    }
+
+    return filtered;
+  }, [selectedTimeFilter, filters]);
 
   const columns = useMemo(
     () => [
@@ -243,8 +305,40 @@ const AgentReports = () => {
     [filteredData, currentPage]
   );
 
-  const handleExport = (format: string) => {
-    console.log(`Exporting agent reports as ${format}`);
+  const handleExport = async (format: string) => {
+    try {
+      const exportColumns = [
+        { key: "clientCode", label: "كود العميل" },
+        { key: "clientName", label: "اسم العميل" },
+        { key: "agentCode", label: "كود المندوب" },
+        { key: "agentName", label: "اسم المندوب" },
+        { key: "productType", label: "نوع المنتج" },
+        { key: "productNumber", label: "رقم المنتج" },
+        { key: "productName", label: "اسم المنتج" },
+        { key: "quantity", label: "الكمية" },
+      ];
+
+      await exportDataTable(
+        filteredData,
+        exportColumns,
+        "agent-reports",
+        format as "excel" | "pdf",
+        "تقرير المندوبين"
+      );
+
+      addToast({
+        type: "success",
+        title: "نجح التصدير",
+        message: `تم تصدير البيانات بنجاح كـ ${format === "excel" ? "Excel" : "PDF"}`,
+      });
+    } catch (error) {
+      console.error("Export error:", error);
+      addToast({
+        type: "error",
+        title: "فشل التصدير",
+        message: "حدث خطأ أثناء تصدير البيانات",
+      });
+    }
   };
 
   return (
@@ -293,6 +387,7 @@ const AgentReports = () => {
             onChange={(value) => setFilters((prev) => ({ ...prev, agentCode: value }))}
             options={[
               { value: "الكل", label: "الكل" },
+              ...uniqueAgentCodes.map(code => ({ value: code, label: code })),
             ]}
           />
           <Select
@@ -301,6 +396,7 @@ const AgentReports = () => {
             onChange={(value) => setFilters((prev) => ({ ...prev, agentName: value }))}
             options={[
               { value: "الكل", label: "الكل" },
+              ...uniqueAgentNames.map(name => ({ value: name, label: name })),
             ]}
           />
           <Select
@@ -317,6 +413,7 @@ const AgentReports = () => {
             onChange={(value) => setFilters((prev) => ({ ...prev, clientCode: value }))}
             options={[
               { value: "الكل", label: "الكل" },
+              ...uniqueClientCodes.map(code => ({ value: code, label: code })),
             ]}
           />
           <Select
@@ -325,6 +422,7 @@ const AgentReports = () => {
             onChange={(value) => setFilters((prev) => ({ ...prev, productName: value }))}
             options={[
               { value: "الكل", label: "الكل" },
+              ...uniqueProductNames.map(name => ({ value: name, label: name })),
             ]}
           />
         </div>

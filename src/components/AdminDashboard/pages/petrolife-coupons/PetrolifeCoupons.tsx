@@ -5,6 +5,8 @@ import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { StatusToggle } from "../../../shared/StatusToggle";
 import { fetchCoupons } from "../../../../services/firestore";
+import { exportDataTable } from "../../../../services/exportService";
+import { useToast } from "../../../../context/ToastContext";
 
 const formatValue = (value: any, fallback = "-") => {
   if (value === null || value === undefined) return fallback;
@@ -180,10 +182,16 @@ const columns = [
   },
 ];
 
-const ExportMenu = () => {
+interface ExportMenuProps {
+  data: any[];
+  columns: any[];
+}
+
+const ExportMenu = ({ data, columns }: ExportMenuProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [buttonRef, setButtonRef] = useState<HTMLButtonElement | null>(null);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+  const { addToast } = useToast();
 
   const updateMenuPosition = () => {
     if (!buttonRef) return;
@@ -194,9 +202,68 @@ const ExportMenu = () => {
     });
   };
 
+  const handleExport = async (format: string) => {
+    try {
+      // Transform columns to export format (exclude actions column)
+      const exportColumns = columns
+        .filter(col => col.key !== "actions")
+        .map(col => ({
+          key: col.key,
+          label: col.label || col.key,
+        }));
+      
+      // Transform data for export (flatten nested objects)
+      const exportData = data.map((item: any) => {
+        const flattened: any = {};
+        exportColumns.forEach(col => {
+          const value = item[col.key];
+          if (value && typeof value === "object" && !Array.isArray(value)) {
+            if (value.text !== undefined) {
+              flattened[col.key] = value.text;
+            } else if (value.name !== undefined) {
+              flattened[col.key] = value.name;
+            } else if (value.active !== undefined) {
+              flattened[col.key] = value.active ? "جاري" : "معطل";
+            } else {
+              flattened[col.key] = JSON.stringify(value);
+            }
+          } else if (Array.isArray(value)) {
+            flattened[col.key] = value.join(", ");
+          } else {
+            flattened[col.key] = value || "-";
+          }
+        });
+        return flattened;
+      });
+
+      await exportDataTable(
+        exportData,
+        exportColumns,
+        "petrolife-coupons",
+        format as "excel" | "pdf",
+        "تقرير كوبونات بترولايف"
+      );
+
+      addToast({
+        type: "success",
+        title: "نجح التصدير",
+        message: `تم تصدير البيانات بنجاح كـ ${format === "excel" ? "Excel" : "PDF"}`,
+      });
+    } catch (error) {
+      console.error("Export error:", error);
+      addToast({
+        type: "error",
+        title: "فشل التصدير",
+        message: "حدث خطأ أثناء تصدير البيانات",
+      });
+    } finally {
+      setIsOpen(false);
+    }
+  };
+
   const menuOptions = [
-    { icon: FileSpreadsheet, label: "تصدير Excel", action: () => console.log("Export to Excel") },
-    { icon: FileText, label: "تصدير PDF", action: () => console.log("Export to PDF") },
+    { icon: FileSpreadsheet, label: "تصدير Excel", action: () => handleExport("excel") },
+    { icon: FileText, label: "تصدير PDF", action: () => handleExport("pdf") },
   ];
 
   return (
@@ -510,7 +577,7 @@ const PetrolifeCoupons = () => {
                 <CirclePlus className="w-4 h-4 text-gray-500" />
               </div>
             </button>
-            <ExportMenu />
+            <ExportMenu data={activeData} columns={columns} />
           </div>
         </div>
 

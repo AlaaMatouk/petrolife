@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -13,20 +13,72 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-// Create custom fuel station icon
-const createFuelStationIcon = () => {
+// Helper function to check if station has Diesel option
+const hasDieselOption = (station: FuelStation): boolean => {
+  const options = station.options || station.formattedLocation?.options || [];
+  return options.some((option: any) => {
+    if (!option || typeof option !== 'object') return false;
+    
+    // Check title.ar, title.en, name.ar, name.en, and label fields
+    const titleAr = option.title?.ar?.toLowerCase() || '';
+    const titleEn = option.title?.en?.toLowerCase() || '';
+    const nameAr = option.name?.ar?.toLowerCase() || '';
+    const nameEn = option.name?.en?.toLowerCase() || '';
+    const label = option.label?.toLowerCase() || '';
+    
+    return (
+      titleAr.includes('ديزيل') ||
+      titleEn.includes('diesel') ||
+      nameAr.includes('ديزيل') ||
+      nameEn.includes('diesel') ||
+      label.includes('diesel')
+    );
+  });
+};
+
+// Create custom fuel station icon with Petrolife logo in red pin
+const createRedPinIcon = (): L.DivIcon => {
+  const logoImg = new Image();
+  logoImg.src = '/img/logo-2.png';
+  
   return L.divIcon({
     className: 'custom-fuel-marker',
     html: `
-      <div style="position: relative;">
-        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; background-color: rgba(239, 68, 68, 0.1); border-radius: 50%;"></div>
-        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 24px; height: 24px; background-color: rgba(239, 68, 68, 0.3); border-radius: 50%;"></div>
-        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 12px; height: 12px; background-color: #ef4444; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2);"></div>
+      <div style="position: relative; width: 32px; height: 40px; display: inline-block;">
+        <svg width="32" height="40" viewBox="0 0 40 50" style="position: absolute; top: 0; left: 0; z-index: 1;">
+          <path d="M20 0 C30 0, 38 8, 38 18 C38 28, 20 48, 20 48 C20 48, 2 28, 2 18 C2 8, 10 0, 20 0 Z" fill="#ef4444" stroke="#dc2626" stroke-width="1"/>
+        </svg>
+        <div style="position: absolute; top: 3px; left: 50%; transform: translateX(-50%); width: 20px; height: 20px; background-color: white; border: 1px solid #e5e7eb; border-radius: 3px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.2); z-index: 2; overflow: hidden;">
+          <img src="/img/logo-2.png" alt="P" style="width: 14px; height: 14px; object-fit: contain; display: block;" crossorigin="anonymous" />
+        </div>
       </div>
     `,
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
-    popupAnchor: [0, -20],
+    iconSize: [32, 40],
+    iconAnchor: [16, 40],
+    popupAnchor: [0, -40],
+  });
+};
+
+// Create custom fuel station icon with Petrolife logo in yellow pin
+const createYellowPinIcon = (): L.DivIcon => {
+  const logoImg = new Image();
+  logoImg.src = '/img/logo-2.png';
+  
+  return L.divIcon({
+    className: 'custom-fuel-marker',
+    html: `
+      <div style="position: relative; width: 32px; height: 40px; display: inline-block;">
+        <svg width="32" height="40" viewBox="0 0 40 50" style="position: absolute; top: 0; left: 0; z-index: 1;">
+          <path d="M20 0 C30 0, 38 8, 38 18 C38 28, 20 48, 20 48 C20 48, 2 28, 2 18 C2 8, 10 0, 20 0 Z" fill="#fbbf24" stroke="#f59e0b" stroke-width="1"/>
+        </svg>
+        <div style="position: absolute; top: 3px; left: 50%; transform: translateX(-50%); width: 20px; height: 20px; background-color: white; border: 1px solid #e5e7eb; border-radius: 3px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.2); z-index: 2; overflow: hidden;">
+          <img src="/img/logo-2.png" alt="P" style="width: 14px; height: 14px; object-fit: contain; display: block;" crossorigin="anonymous" />
+        </div>
+      </div>
+    `,
+    iconSize: [32, 40],
+    iconAnchor: [16, 40],
+    popupAnchor: [0, -40],
   });
 };
 
@@ -84,7 +136,9 @@ export const Map = (): JSX.Element => {
     loadFuelStations();
   }, []);
 
-  const fuelIcon = createFuelStationIcon();
+  // Create icon instances
+  const redPinIcon = createRedPinIcon();
+  const yellowPinIcon = createYellowPinIcon();
   
   // Default center for Saudi Arabia
   const defaultCenter: [number, number] = [23.8859, 45.0792]; // Riyadh
@@ -157,7 +211,7 @@ export const Map = (): JSX.Element => {
               <Marker
                 key={station.id}
                 position={[station.latitude, station.longitude]}
-                icon={fuelIcon}
+                icon={hasDieselOption(station) ? yellowPinIcon : redPinIcon}
               >
                 <Popup>
                   <div className="text-right" dir="rtl" style={{ minWidth: '200px' }}>

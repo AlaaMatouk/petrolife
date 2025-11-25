@@ -18,6 +18,8 @@ import { StatusToggle } from "../../../shared";
 import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
 import { db } from "../../../../config/firebase";
 import { useRef } from "react";
+import { exportDataTable } from "../../../../services/exportService";
+import { useToast } from "../../../../context/ToastContext";
 import { createCategory } from "../../../../services/firestore";
 
 // Action Menu Component for each row
@@ -592,8 +594,48 @@ const Classifications = () => {
     [currentPage, transformedCategories]
   );
 
-  const handleExport = (format: string) => {
-    console.log(`Exporting classifications as ${format}`);
+  const { addToast } = useToast();
+
+  const handleExport = async (format: string) => {
+    try {
+      const exportColumns = [
+        { key: "number", label: "الرقم" },
+        { key: "mainCategory", label: "التصنيف الرئيسي" },
+        { key: "englishName", label: "التصنيف بالانجليزي" },
+        { key: "subCategories", label: "التصنيفات الفرعية" },
+        { key: "statusLabel", label: "حالة التصنيف" },
+        { key: "creator", label: "المنشئ" },
+        { key: "creationDate", label: "تاريخ الانشاء" },
+      ];
+
+      // Transform data for export
+      const exportData = transformedCategories.map((item) => ({
+        ...item,
+        creator: item.creator?.name || "-",
+        statusLabel: item.statusLabel || (item.isActive ? "فعال" : "غير فعال"),
+      }));
+
+      await exportDataTable(
+        exportData,
+        exportColumns,
+        "classifications",
+        format as "excel" | "pdf",
+        "تقرير التصنيفات"
+      );
+
+      addToast({
+        type: "success",
+        title: "نجح التصدير",
+        message: `تم تصدير البيانات بنجاح كـ ${format === "excel" ? "Excel" : "PDF"}`,
+      });
+    } catch (error) {
+      console.error("Export error:", error);
+      addToast({
+        type: "error",
+        title: "فشل التصدير",
+        message: "حدث خطأ أثناء تصدير البيانات",
+      });
+    }
   };
 
   return (

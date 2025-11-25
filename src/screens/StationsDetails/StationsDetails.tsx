@@ -149,10 +149,6 @@ export const StationsDetails = () => {
     }
   ];
 
-  const handleEdit = () => {
-    // TODO: Implement edit functionality
-    console.log("Edit station data");
-  };
 
   // Define columns for station workers table
   const stationWorkerColumns = [
@@ -226,10 +222,11 @@ export const StationsDetails = () => {
         title="معلومات المحطة"
         titleIcon={<Eye className="w-5 h-5 text-gray-500" />}
         fields={stationFields}
-        onEdit={handleEdit}
         showEditButton={true}
         editButtonText="تعديل البيانات"
         showBackButton={true}
+        editRoute="/service-distributer-stations/add"
+        entityId={id}
       />
       <ConsumptionSection />
       

@@ -20,6 +20,8 @@ interface InfoDisplayProps {
   showEditButton?: boolean;
   editButtonText?: string;
   showBackButton?: boolean;
+  editRoute?: string; // Route to navigate to for edit mode (e.g., "/service-distributer-stations/add")
+  entityId?: string | number; // Current entity ID for edit mode
 }
 
 export const InfoDisplay = ({ 
@@ -30,9 +32,22 @@ export const InfoDisplay = ({
   onEdit,
   showEditButton = true,
   editButtonText = "تعديل البيانات",
-  showBackButton = true
+  showBackButton = true,
+  editRoute,
+  entityId
 }: InfoDisplayProps): JSX.Element => {
   const navigate = useNavigate();
+
+  // Handle edit button click
+  const handleEditClick = () => {
+    if (editRoute && entityId !== undefined) {
+      // Navigate to edit route with query parameter
+      navigate(`${editRoute}?edit=${entityId}`);
+    } else if (onEdit) {
+      // Fall back to callback if provided
+      onEdit();
+    }
+  };
   
   // Helper function to get value or dash
   const getValueOrDash = (value: any): string => {
@@ -245,7 +260,7 @@ export const InfoDisplay = ({
             {showEditButton && (
               <div className="flex items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
                 <button
-                  onClick={onEdit}
+                  onClick={handleEditClick}
                   className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-medium)] pb-[var(--corner-radius-medium)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] hover:opacity-90 transition-opacity"
                   style={{ backgroundColor: '#FFFCEC' }}
                   aria-label={editButtonText}

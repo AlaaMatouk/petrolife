@@ -13,6 +13,7 @@ import {
 } from "../../../../services/firestore";
 import { useToast } from "../../../../context/ToastContext";
 import { ConfirmDialog } from "../../../shared/ConfirmDialog/ConfirmDialog";
+import { exportDataTable } from "../../../../services/exportService";
 
 // Action Menu Component for each row
 interface ActionMenuProps {
@@ -380,8 +381,76 @@ const Countries = () => {
       });
   }, [countries, cities, currentPage, itemsPerPage]);
 
-  const handleExport = (format: string) => {
-    console.log(`Exporting countries as ${format}`);
+  const handleExport = async (format: string) => {
+    try {
+      const exportColumns = [
+        { key: "displayIndex", label: "الرقم" },
+        { key: "countryNameAr", label: "اسم الدولة" },
+        { key: "countryNameEn", label: "اسم الدولة بالانجليزي" },
+        { key: "numberOfCities", label: "عدد المدن" },
+        { key: "numberOfRegions", label: "عدد المناطق" },
+        { key: "creator", label: "المنشئ" },
+        { key: "creationDate", label: "تاريخ الانشاء" },
+      ];
+
+      // Use all countries data, not just paginated
+      const allCountriesData = countries.map((country, index) => {
+        const countryDocId = country?.id ?? country?.docId ?? `temp-${index}`;
+        const countryNameAr = (country?.name?.ar && typeof country.name.ar === "string" ? country.name.ar.trim() : "") || (typeof country?.name === "string" ? country.name.trim() : "") || "-";
+        const countryNameEn = (country?.name?.en && typeof country.name.en === "string" ? country.name.en.trim() : "") || (typeof country?.label === "string" ? country.label.trim() : "") || (typeof country?.name === "string" ? country.name.trim() : "") || "-";
+        const citiesCount = cities.filter((city) => {
+          const target = city?.countryId ?? city?.country?.id ?? (typeof city?.country === "string" ? city.country : null);
+          return target && String(target) === String(countryDocId);
+        }).length;
+        const areasCount = areas.filter((area) => {
+          const areaCountryId = area?.city?.country?.id ?? area?.city?.countryId ?? area?.country?.id ?? area?.countryId ?? (typeof area?.city?.country === "string" ? area.city.country : undefined);
+          return areaCountryId && String(areaCountryId) === String(countryDocId);
+        }).length;
+        const creatorId = country?.createdUserEmail ?? country?.createdUserId ?? country?.createdBy ?? "-";
+        let formattedDate = "-";
+        const createdDate = country?.createdDate ?? country?.createdAt ?? country?.timestamp ?? country?.dateCreated;
+        if (createdDate) {
+          try {
+            const date = typeof createdDate?.toDate === "function" ? createdDate.toDate() : createdDate instanceof Date ? createdDate : typeof createdDate === "number" ? new Date(createdDate) : typeof createdDate === "string" ? new Date(createdDate) : createdDate?.seconds ? new Date(createdDate.seconds * 1000) : null;
+            if (date && !Number.isNaN(date.getTime())) {
+              formattedDate = new Intl.DateTimeFormat("ar-SA", { year: "numeric", month: "long", day: "numeric" }).format(date);
+            }
+          } catch (err) {
+            console.warn("Failed to format country date:", createdDate, err);
+          }
+        }
+        return {
+          displayIndex: index + 1,
+          countryNameAr,
+          countryNameEn,
+          numberOfCities: citiesCount,
+          numberOfRegions: areasCount,
+          creator: creatorId || "-",
+          creationDate: formattedDate,
+        };
+      });
+
+      await exportDataTable(
+        allCountriesData,
+        exportColumns,
+        "countries",
+        format as "excel" | "pdf",
+        "تقرير البلدان"
+      );
+
+      addToast({
+        type: "success",
+        title: "نجح التصدير",
+        message: `تم تصدير البيانات بنجاح كـ ${format === "excel" ? "Excel" : "PDF"}`,
+      });
+    } catch (error) {
+      console.error("Export error:", error);
+      addToast({
+        type: "error",
+        title: "فشل التصدير",
+        message: "حدث خطأ أثناء تصدير البيانات",
+      });
+    }
   };
 
   const handleDelete = (item: any) => {

@@ -2683,10 +2683,73 @@ export const fetchCarStationsWithConsumption = async (
 export const fetchFinancialReportData = async (): Promise<any[]> => {
   try {
     const orders = await fetchOrders();
+    
+    // Fetch all drivers to get refid mapping
+    const drivers = await fetchCompaniesDrivers();
+    // Create a map for quick lookup: driver id/email/uId -> refid
+    const driverRefIdMap = new Map<string, string>();
+    const driverByIdMap = new Map<string, any>(); // Also store full driver objects for fallback
+    
+    drivers.forEach(driver => {
+      const refid = driver.refid || driver.refId; // Support both lowercase and camelCase
+      if (!refid) {
+        console.warn(`Driver ${driver.id} has no refid`);
+        return;
+      }
+      
+      // Store full driver object
+      if (driver.id) {
+        driverByIdMap.set(driver.id, driver);
+      }
+      
+      // Map by document id
+      if (driver.id) {
+        driverRefIdMap.set(driver.id, refid);
+      }
+      // Map by email (case-insensitive)
+      if (driver.email) {
+        const emailLower = driver.email.toLowerCase().trim();
+        driverRefIdMap.set(emailLower, refid);
+        driverRefIdMap.set(driver.email.trim(), refid);
+      }
+      // Map by uId
+      if (driver.uId) {
+        driverRefIdMap.set(driver.uId, refid);
+      }
+    });
+    
+    // Log map statistics
+    console.log("Driver mapping stats:", {
+      totalDrivers: drivers.length,
+      driversWithRefid: drivers.filter(d => d.refid || d.refId).length,
+      mapEntries: driverRefIdMap.size,
+      uniqueRefids: new Set(Array.from(driverRefIdMap.values())).size
+    });
 
     console.log("\n📊 Processing Financial Report Data");
     console.log("===================================");
     console.log("Total orders:", orders.length);
+    console.log("Total drivers:", drivers.length);
+    console.log("Driver refid map size:", driverRefIdMap.size);
+    
+    // Log sample drivers for debugging
+    if (drivers.length > 0) {
+      console.log("Sample drivers (first 3):", drivers.slice(0, 3).map(d => ({
+        id: d.id,
+        email: d.email,
+        refid: d.refid || d.refId,
+        name: d.name
+      })));
+    }
+    
+    // Log sample orders for debugging
+    if (orders.length > 0) {
+      console.log("Sample orders assignedDriver (first 3):", orders.slice(0, 3).map(o => ({
+        orderId: o.id,
+        assignedDriver: o.assignedDriver,
+        enrichedDriverName: o.enrichedDriverName
+      })));
+    }
 
     // Transform each order to financial report format
     const reportData = orders.map((order, index) => {
@@ -2744,12 +2807,47 @@ export const fetchFinancialReportData = async (): Promise<any[]> => {
       const driverName =
         order.assignedDriver?.name || order.enrichedDriverName || "-";
 
-      // Extract driver code from assignedDriver.id
-      const driverCode =
-        order.assignedDriver?.id ||
-        order.assignedDriver?.email ||
-        order.assignedDriver?.uId ||
-        "-";
+      // Extract driver code (refid) from companies-drivers collection
+      // Match by driver name - find the driver in companies-drivers collection by name
+      let driverCode = "-";
+      
+      if (driverName && driverName !== "-") {
+        // Find driver by name (case-insensitive, trim whitespace)
+        const driverNameNormalized = driverName.trim().toLowerCase();
+        const driver = drivers.find(d => {
+          const dName = (d.name || d.driverName || d.fullName || "").trim().toLowerCase();
+          return dName === driverNameNormalized;
+        });
+        
+        if (driver) {
+          driverCode = driver.refid || driver.refId || "-";
+        }
+        
+        // Debug logging for first few orders
+        if (index < 5) {
+          console.log(`Order ${index + 1} driver lookup by name:`, {
+            orderId: order.id,
+            driverName: driverName,
+            driverNameNormalized: driverNameNormalized,
+            foundDriver: driver ? {
+              id: driver.id,
+              name: driver.name || driver.driverName || driver.fullName,
+              refid: driver.refid || driver.refId,
+              email: driver.email
+            } : null,
+            driverCode: driverCode
+          });
+        }
+      } else {
+        // No driver name, log for debugging
+        if (index < 5) {
+          console.log(`Order ${index + 1} has no driver name:`, {
+            orderId: order.id,
+            assignedDriver: order.assignedDriver,
+            enrichedDriverName: order.enrichedDriverName
+          });
+        }
+      }
 
       if (index < 3) {
         console.log(`\n--- Order ${index + 1} ---`);
@@ -4221,8 +4319,63 @@ export const fetchWalletChargeRequests = async () => {
     throw error;
   }
 };
+
+/**
+ * Add refid to existing wallet requests in wallets-requests collection
+ * @returns Promise with count of updated documents
+ */
+export const addRefidToExistingAdminWalletRequests = async (): Promise<number> => {
+  try {
+    console.log(
+      "🔄 Starting migration: Adding refid to existing admin wallet requests..."
+    );
+
+    const requestsRef = collection(db, "wallets-requests");
+    const requestsSnapshot = await getDocs(requestsRef);
+    console.log(`📦 Found ${requestsSnapshot.size} admin wallet requests`);
+
+    let updatedCount = 0;
+    const requestsToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    // First pass: Identify requests without refid and generate refids
+    for (const requestDoc of requestsSnapshot.docs) {
+      const requestData = requestDoc.data();
+      if (!requestData.refid) {
+        const refid = generateRefId();
+        const docRef = doc(db, "wallets-requests", requestDoc.id);
+        requestsToUpdate.push({ docRef, refid });
+      }
+    }
+
+    console.log(`📝 Found ${requestsToUpdate.length} requests without refid`);
+
+    // Second pass: Update all documents in batch
+    const updatePromises = requestsToUpdate.map(({ docRef, refid }) =>
+      updateDoc(docRef, { refid }).catch((error) => {
+        console.error(
+          `❌ Error updating refid for wallet request ${docRef.id}:`,
+          error
+        );
+        return null; // Return null for failed updates
+      })
+    );
+
+    const results = await Promise.all(updatePromises);
+    updatedCount = results.filter((result) => result !== null).length;
+
+    console.log(`✅ Successfully updated ${updatedCount} admin wallet requests with refid`);
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error adding refid to existing admin wallet requests:", error);
+    throw error;
+  }
+};
+
 /**
  * Fetch admin wallet reports data from wallets-requests collection
+ * - Checks if refid exists in each document
+ * - If refid exists, uses it as operationNumber
+ * - If refid doesn't exist, generates a unique 8-digit code and stores it in Firestore
  * @returns Promise with admin wallet reports data
  */
 export const fetchAdminWalletReports = async () => {
@@ -4234,6 +4387,7 @@ export const fetchAdminWalletReports = async () => {
     const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
 
     const allRequestsData: any[] = [];
+    const requestsToUpdate: Array<{ docRef: any; refid: string }> = [];
 
     const formatDate = (timestamp: any): string => {
       if (!timestamp) return "-";
@@ -4269,14 +4423,26 @@ export const fetchAdminWalletReports = async () => {
       }
     };
 
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
+    // Process each document and check for refid
+    querySnapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      const docRef = doc(db, "wallets-requests", docSnap.id);
+      
+      // Check if refid exists, if not generate and store it
+      let operationNumber = data.refid || data.refId; // Support both lowercase and camelCase
+      if (!operationNumber) {
+        // Generate unique refid
+        operationNumber = generateRefId();
+        // Store it for batch update
+        requestsToUpdate.push({ docRef, refid: operationNumber });
+      }
+
       allRequestsData.push({
-        id: doc.id,
+        id: docSnap.id,
         date: formatDate(data.actionDate),
         clientType: data.requestedUser?.type || "-",
         clientName: data.requestedUser?.name || "-",
-        operationNumber: doc.id,
+        operationNumber: operationNumber, // Use refid if exists, otherwise generated code
         operationType: "-",
         debit: data.value || "-",
         credit: "-",
@@ -4284,6 +4450,24 @@ export const fetchAdminWalletReports = async () => {
         rawDate: data.actionDate,
       });
     });
+
+    // Update documents that don't have refid (batch update in background)
+    if (requestsToUpdate.length > 0) {
+      console.log(`📝 Updating ${requestsToUpdate.length} documents with refid...`);
+      // Update in background without blocking the return
+      Promise.all(
+        requestsToUpdate.map(({ docRef, refid }) =>
+          updateDoc(docRef, { refid }).catch((error) => {
+            console.error(`❌ Error updating refid for document ${docRef.id}:`, error);
+            return null;
+          })
+        )
+      ).then(() => {
+        console.log(`✅ Updated ${requestsToUpdate.length} documents with refid`);
+      }).catch((error) => {
+        console.error("❌ Error in batch update:", error);
+      });
+    }
 
     console.log(
       `✅ Total admin wallet reports found: ${allRequestsData.length}`

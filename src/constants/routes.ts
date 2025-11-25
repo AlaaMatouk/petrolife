@@ -126,6 +126,8 @@ export const ROUTES = {
   SUBSCRIPTION_DETAILS: "/admin-subscriptions/:id",
   ADMIN_COMMUNICATION_POLICIES: "/admin-communication-policies",
   FAQ: "/faq",
+  COMPANY_FAQ: "/company-faq",
+  TECHNICAL_SUPPORT: "/technical-support",
   CUSTOMER_MESSAGES: "/customer-messages",
   PROFILE: "/profile",
 } as const;
