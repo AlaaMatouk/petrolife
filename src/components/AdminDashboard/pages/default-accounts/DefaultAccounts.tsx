@@ -3,6 +3,8 @@ import { Table, Pagination, ExportButton } from "../../../shared";
 import { MoreVertical, Eye, Copy, FileText, CreditCard } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
+import { exportDataTable } from "../../../../services/exportService";
+import { useToast } from "../../../../context/ToastContext";
 
 // Mock data for default accounts
 const generateMockAccounts = () => {
@@ -187,6 +189,7 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
 
 const DefaultAccounts = () => {
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [currentPage, setCurrentPage] = useState(3);
   const itemsPerPage = 10;
 
@@ -267,8 +270,37 @@ const DefaultAccounts = () => {
     [currentPage]
   );
 
-  const handleExport = (format: string) => {
-    console.log(`Exporting default accounts as ${format}`);
+  const handleExport = async (format: string) => {
+    try {
+      const exportColumns = [
+        { key: "customerCode", label: "كود العميل" },
+        { key: "customerName", label: "اسم العميل" },
+        { key: "accountType", label: "نوع الحساب" },
+        { key: "phoneNumber", label: "رقم الهاتف" },
+        { key: "virtualAccount", label: "الحساب الافتراضية" },
+      ];
+
+      await exportDataTable(
+        mockDefaultAccounts,
+        exportColumns,
+        "default-accounts",
+        format as "excel" | "pdf",
+        "تقرير الحسابات الافتراضية"
+      );
+
+      addToast({
+        type: "success",
+        title: "نجح التصدير",
+        message: `تم تصدير البيانات بنجاح كـ ${format === "excel" ? "Excel" : "PDF"}`,
+      });
+    } catch (error) {
+      console.error("Export error:", error);
+      addToast({
+        type: "error",
+        title: "فشل التصدير",
+        message: "حدث خطأ أثناء تصدير البيانات",
+      });
+    }
   };
 
   return (

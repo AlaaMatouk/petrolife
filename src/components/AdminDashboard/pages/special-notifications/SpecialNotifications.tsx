@@ -3,6 +3,8 @@ import { Table, Pagination, ExportButton } from "../../../shared";
 import { Bell, MoreVertical, Send, Edit, Trash2, CirclePlus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
+import { exportDataTable } from "../../../../services/exportService";
+import { useToast } from "../../../../context/ToastContext";
 
 // Mock data for special notifications
 const mockSpecialNotifications = Array.from({ length: 10 }).map((_, i) => ({
@@ -127,6 +129,7 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
 
 const SpecialNotifications = () => {
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -208,8 +211,44 @@ const SpecialNotifications = () => {
     [currentPage]
   );
 
-  const handleExport = (format: string) => {
-    console.log(`Exporting special notifications as ${format}`);
+  const handleExport = async (format: string) => {
+    try {
+      const exportColumns = [
+        { key: "number", label: "الرقم" },
+        { key: "title", label: "عنوان الاعلان" },
+        { key: "description", label: "نص الاعلان" },
+        { key: "targeting", label: "التوجيه" },
+        { key: "creator", label: "المنشئ" },
+        { key: "lastSendDate", label: "اخر تاريخ للارسال" },
+        { key: "creationDate", label: "تاريخ الانشاء" },
+      ];
+
+      const exportData = mockSpecialNotifications.map((item) => ({
+        ...item,
+        creator: item.creator?.name || "-",
+      }));
+
+      await exportDataTable(
+        exportData,
+        exportColumns,
+        "special-notifications",
+        format as "excel" | "pdf",
+        "تقرير الاشعارات المخصصة"
+      );
+
+      addToast({
+        type: "success",
+        title: "نجح التصدير",
+        message: `تم تصدير البيانات بنجاح كـ ${format === "excel" ? "Excel" : "PDF"}`,
+      });
+    } catch (error) {
+      console.error("Export error:", error);
+      addToast({
+        type: "error",
+        title: "فشل التصدير",
+        message: "حدث خطأ أثناء تصدير البيانات",
+      });
+    }
   };
 
   return (

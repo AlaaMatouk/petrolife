@@ -4319,8 +4319,63 @@ export const fetchWalletChargeRequests = async () => {
     throw error;
   }
 };
+
+/**
+ * Add refid to existing wallet requests in wallets-requests collection
+ * @returns Promise with count of updated documents
+ */
+export const addRefidToExistingAdminWalletRequests = async (): Promise<number> => {
+  try {
+    console.log(
+      "🔄 Starting migration: Adding refid to existing admin wallet requests..."
+    );
+
+    const requestsRef = collection(db, "wallets-requests");
+    const requestsSnapshot = await getDocs(requestsRef);
+    console.log(`📦 Found ${requestsSnapshot.size} admin wallet requests`);
+
+    let updatedCount = 0;
+    const requestsToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    // First pass: Identify requests without refid and generate refids
+    for (const requestDoc of requestsSnapshot.docs) {
+      const requestData = requestDoc.data();
+      if (!requestData.refid) {
+        const refid = generateRefId();
+        const docRef = doc(db, "wallets-requests", requestDoc.id);
+        requestsToUpdate.push({ docRef, refid });
+      }
+    }
+
+    console.log(`📝 Found ${requestsToUpdate.length} requests without refid`);
+
+    // Second pass: Update all documents in batch
+    const updatePromises = requestsToUpdate.map(({ docRef, refid }) =>
+      updateDoc(docRef, { refid }).catch((error) => {
+        console.error(
+          `❌ Error updating refid for wallet request ${docRef.id}:`,
+          error
+        );
+        return null; // Return null for failed updates
+      })
+    );
+
+    const results = await Promise.all(updatePromises);
+    updatedCount = results.filter((result) => result !== null).length;
+
+    console.log(`✅ Successfully updated ${updatedCount} admin wallet requests with refid`);
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error adding refid to existing admin wallet requests:", error);
+    throw error;
+  }
+};
+
 /**
  * Fetch admin wallet reports data from wallets-requests collection
+ * - Checks if refid exists in each document
+ * - If refid exists, uses it as operationNumber
+ * - If refid doesn't exist, generates a unique 8-digit code and stores it in Firestore
  * @returns Promise with admin wallet reports data
  */
 export const fetchAdminWalletReports = async () => {
@@ -4332,6 +4387,7 @@ export const fetchAdminWalletReports = async () => {
     const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
 
     const allRequestsData: any[] = [];
+    const requestsToUpdate: Array<{ docRef: any; refid: string }> = [];
 
     const formatDate = (timestamp: any): string => {
       if (!timestamp) return "-";
@@ -4367,14 +4423,26 @@ export const fetchAdminWalletReports = async () => {
       }
     };
 
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
+    // Process each document and check for refid
+    querySnapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      const docRef = doc(db, "wallets-requests", docSnap.id);
+      
+      // Check if refid exists, if not generate and store it
+      let operationNumber = data.refid || data.refId; // Support both lowercase and camelCase
+      if (!operationNumber) {
+        // Generate unique refid
+        operationNumber = generateRefId();
+        // Store it for batch update
+        requestsToUpdate.push({ docRef, refid: operationNumber });
+      }
+
       allRequestsData.push({
-        id: doc.id,
+        id: docSnap.id,
         date: formatDate(data.actionDate),
         clientType: data.requestedUser?.type || "-",
         clientName: data.requestedUser?.name || "-",
-        operationNumber: doc.id,
+        operationNumber: operationNumber, // Use refid if exists, otherwise generated code
         operationType: "-",
         debit: data.value || "-",
         credit: "-",
@@ -4382,6 +4450,24 @@ export const fetchAdminWalletReports = async () => {
         rawDate: data.actionDate,
       });
     });
+
+    // Update documents that don't have refid (batch update in background)
+    if (requestsToUpdate.length > 0) {
+      console.log(`📝 Updating ${requestsToUpdate.length} documents with refid...`);
+      // Update in background without blocking the return
+      Promise.all(
+        requestsToUpdate.map(({ docRef, refid }) =>
+          updateDoc(docRef, { refid }).catch((error) => {
+            console.error(`❌ Error updating refid for document ${docRef.id}:`, error);
+            return null;
+          })
+        )
+      ).then(() => {
+        console.log(`✅ Updated ${requestsToUpdate.length} documents with refid`);
+      }).catch((error) => {
+        console.error("❌ Error in batch update:", error);
+      });
+    }
 
     console.log(
       `✅ Total admin wallet reports found: ${allRequestsData.length}`
