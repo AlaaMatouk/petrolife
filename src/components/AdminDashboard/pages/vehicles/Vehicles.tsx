@@ -9,6 +9,7 @@ import {
   deleteCarType,
 } from "../../../../services/firestore";
 import { useToast } from "../../../../context/ToastContext";
+import { exportDataTable } from "../../../../services/exportService";
 
 interface CarTypeRow {
   id: string;
@@ -399,8 +400,45 @@ const Vehicles = () => {
     [vehicles, currentPage]
   );
 
-  const handleExport = (format: string) => {
-    console.log(`Exporting vehicles as ${format}`);
+  const handleExport = async (format: string) => {
+    try {
+      // Define columns for export
+      const exportColumns = [
+        { key: "refid", label: "الرقم" },
+        { key: "brand", label: "الماركة" },
+        { key: "model", label: "الطراز" },
+        { key: "year", label: "سنة الاصدار" },
+        { key: "creator", label: "المنشئ" },
+        { key: "creationDate", label: "تاريخ الانشاء" },
+      ];
+
+      // Transform data for export (flatten creator object)
+      const exportData = vehicles.map((vehicle) => ({
+        ...vehicle,
+        creator: vehicle.creator?.name || "-",
+      }));
+
+      await exportDataTable(
+        exportData,
+        exportColumns,
+        "vehicles",
+        format as "excel" | "pdf",
+        "تقرير المركبات"
+      );
+
+      addToast({
+        type: "success",
+        title: "نجح التصدير",
+        message: `تم تصدير البيانات بنجاح كـ ${format === "excel" ? "Excel" : "PDF"}`,
+      });
+    } catch (error) {
+      console.error("Export error:", error);
+      addToast({
+        type: "error",
+        title: "فشل التصدير",
+        message: "حدث خطأ أثناء تصدير البيانات",
+      });
+    }
   };
 
   const handleDelete = async (id: string) => {

@@ -814,15 +814,15 @@ const exportToPDF = async (
       await new Promise((resolve) => setTimeout(resolve, 500)); // Give time for fonts to load
       
       canvas = await html2canvas(tempDiv, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
         logging: false,
         width: tempDiv.scrollWidth,
         height: tempDiv.scrollHeight,
         windowWidth: tempDiv.scrollWidth,
         windowHeight: tempDiv.scrollHeight,
-      });
+    });
     } catch (canvasError) {
       document.body.removeChild(iframe);
       console.error("html2canvas error:", canvasError);
@@ -1453,7 +1453,7 @@ const exportFinancialToPDF = async (
         const type = item.productType || "غير محدد";
         if (!acc[type]) {
           acc[type] = { count: 0, quantity: 0 };
-        }
+    }
         acc[type].count += 1;
         acc[type].quantity += parseFloat(item.quantity.replace(/,/g, "")) || 0;
         return acc;
@@ -1517,15 +1517,15 @@ const exportFinancialToPDF = async (
       await new Promise((resolve) => setTimeout(resolve, 500)); // Give time for fonts to load
       
       canvas = await html2canvas(tempDiv, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
         logging: false,
         width: tempDiv.scrollWidth,
         height: tempDiv.scrollHeight,
         windowWidth: tempDiv.scrollWidth,
         windowHeight: tempDiv.scrollHeight,
-      });
+    });
     } catch (canvasError) {
       document.body.removeChild(iframe);
       console.error("html2canvas error:", canvasError);
@@ -1810,7 +1810,7 @@ const exportTableToPDF = async (
     if (!data || data.length === 0) {
       throw new Error("لا توجد بيانات للتصدير");
     }
-    
+
     // Prepare table data
     const tableHeaders = columns.map((col) => col.label);
     const tableRows = data.map((item) =>
@@ -1825,7 +1825,7 @@ const exportTableToPDF = async (
         return value || "-";
       })
     );
-    
+
     // Debug: Log prepared data
     console.log("exportTableToPDF - Table headers:", tableHeaders);
     console.log("exportTableToPDF - Table rows:", tableRows);

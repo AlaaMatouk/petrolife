@@ -24,6 +24,7 @@ import {
   declineStationsCompanyRequest,
 } from "../../../services/firestore";
 import { useToast } from "../../../context/ToastContext";
+import { exportDataTable } from "../../../services/exportService";
 
 // Generic props interface for DataTableSection
 export interface DataTableSectionProps<T> {
@@ -55,6 +56,7 @@ export interface DataTableSectionProps<T> {
   showFuelDeliveryButton?: boolean; // New prop to show fuel delivery requests button
   showModifyButton?: boolean; // New prop to show Modify button instead of action menu
   refreshTrigger?: number; // New prop to trigger data refresh when changed
+  customExportHandler?: (data: any[], filters: Record<string, string>, format: "excel" | "pdf") => Promise<void>; // Custom export handler for specialized reports
 }
 
 // Generic Action Menu Component
@@ -359,14 +361,103 @@ const ActionMenu = <
 };
 
 // Export Menu Component
-const ExportMenu = () => {
+interface ExportMenuProps {
+  data: any[];
+  columns: any[];
+  title: string;
+  entityNamePlural: string;
+  filters?: Record<string, string>;
+  customExportHandler?: (data: any[], filters: Record<string, string>, format: "excel" | "pdf") => Promise<void>;
+}
+
+const ExportMenu = ({
+  data,
+  columns,
+  title,
+  entityNamePlural,
+  filters = {},
+  customExportHandler,
+}: ExportMenuProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [buttonRef, setButtonRef] = useState<HTMLButtonElement | null>(null);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+  const { addToast } = useToast();
 
-  const handleExport = (format: string) => {
-    console.log(`Exporting as ${format}`);
-    setIsOpen(false);
+  const handleExport = async (format: string) => {
+    try {
+      // If custom export handler is provided, use it
+      if (customExportHandler) {
+        await customExportHandler(data, filters, format as "excel" | "pdf");
+        addToast({
+          type: "success",
+          title: "نجح التصدير",
+          message: `تم تصدير التقرير ${filters.reportType === "تحليلي" ? "التفصيلي" : filters.reportType === "تفصيلي" || filters.reportType === "ملخص" ? "الإجمالي" : ""} بنجاح كـ ${
+            format === "excel" ? "Excel" : "PDF"
+          }`,
+        });
+        setIsOpen(false);
+        return;
+      }
+
+      // Default export logic
+      // Transform columns to export format (exclude actions column)
+      const exportColumns = columns
+        .filter((col) => col.key !== "actions")
+        .map((col) => ({
+          key: col.key,
+          label: col.label || col.key,
+        }));
+
+      // Transform data for export (flatten nested objects)
+      const exportData = data.map((item: any) => {
+        const flattened: any = {};
+        exportColumns.forEach((col) => {
+          const value = item[col.key];
+          if (value && typeof value === "object" && !Array.isArray(value)) {
+            // Handle accountStatus, stationStatus, etc.
+            if (value.text !== undefined) {
+              flattened[col.key] = value.text;
+            } else if (value.name !== undefined) {
+              flattened[col.key] = value.name;
+            } else if (value.active !== undefined) {
+              flattened[col.key] = value.active ? "مفعل" : "معطل";
+            } else {
+              flattened[col.key] = JSON.stringify(value);
+            }
+          } else if (Array.isArray(value)) {
+            flattened[col.key] = value.join(", ");
+          } else {
+            flattened[col.key] = value || "-";
+          }
+        });
+        return flattened;
+      });
+
+      await exportDataTable(
+        exportData,
+        exportColumns,
+        entityNamePlural.toLowerCase().replace(/\s+/g, "-"),
+        format as "excel" | "pdf",
+        `تقرير ${title}`
+      );
+
+      addToast({
+        type: "success",
+        title: "نجح التصدير",
+        message: `تم تصدير البيانات بنجاح كـ ${
+          format === "excel" ? "Excel" : "PDF"
+        }`,
+      });
+    } catch (error) {
+      console.error("Export error:", error);
+      addToast({
+        type: "error",
+        title: "فشل التصدير",
+        message: "حدث خطأ أثناء تصدير البيانات",
+      });
+    } finally {
+      setIsOpen(false);
+    }
   };
 
   const updateMenuPosition = () => {
@@ -499,6 +590,7 @@ export const DataTableSection = <
   showModifyButton = false,
   onDelete,
   refreshTrigger = 0,
+  customExportHandler,
 }: DataTableSectionProps<T>): JSX.Element => {
   const navigate = useNavigate();
   const [data, setData] = useState<T[]>([]);
@@ -531,6 +623,28 @@ export const DataTableSection = <
         ? "clientType"
         : filter.label === "نوع المركبة"
         ? "vehicleType"
+        : filter.label === "كود المندوب"
+        ? "agentCode"
+        : filter.label === "اسم المندوب"
+        ? "agentName"
+        : filter.label === "نوع المنتج"
+        ? "productType"
+        : filter.label === "اسم العميل"
+        ? "clientName"
+        : filter.label === "نوع العملية"
+        ? "operationType"
+        : filter.label === "رسوم الخدمة"
+        ? "serviceFees"
+        : filter.label === "اسم مزود الخدمة"
+        ? "serviceProviderName"
+        : filter.label === "رقم المنتج"
+        ? "productNumber"
+        : filter.label === "كود السائق"
+        ? "driverCode"
+        : filter.label === "رقم المركبة"
+        ? "carNumber"
+        : filter.label === "كود"
+        ? "refId"
         : filter.label.toLowerCase().replace(/\s+/g, "");
     acc[key] = filter.value;
     return acc;
@@ -612,10 +726,131 @@ export const DataTableSection = <
     }
   };
 
-  // Calculate paginated data
-  const paginatedData = Array.isArray(data)
-    ? data.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-    : [];
+  // Apply all filters to data
+  const filteredData = useMemo(() => {
+    if (!Array.isArray(data)) return [];
+
+    let filtered = [...data];
+
+    // Apply each filter
+    Object.keys(filters).forEach((filterKey) => {
+      const filterValue = filters[filterKey];
+
+      // Skip reportType - it's for export only, not data filtering
+      if (filterKey === "reportType") {
+        return;
+      }
+
+      // Skip if filter is "الكل" or empty
+      if (!filterValue || filterValue === "الكل" || filterValue.trim() === "") {
+        return;
+      }
+
+      // Map filter keys to data field names
+      const fieldMap: Record<string, string> = {
+        productName: "productName",
+        stationList: "stationList",
+        city: "city",
+        operationNumber: "operationNumber",
+        clientCode: "clientCode",
+        clientType: "clientType",
+        vehicleType: "vehicleType",
+        agentCode: "agentCode",
+        agentName: "agentName",
+        productType: "productType",
+        operationType: "operationType",
+        clientName: "clientName",
+        serviceFees: "serviceFees",
+        serviceProviderName: "serviceProviderName",
+        productNumber: "productNumber",
+        driverCode: "driverCode",
+        carNumber: "carNumber",
+        refId: "refId",
+        // Additional mappings for service provider reports
+        service: "service",
+        // Additional mappings for financial reports
+        carType: "carType",
+        driverName: "driverName",
+      };
+
+      const fieldName = fieldMap[filterKey] || filterKey;
+
+      // Apply filter based on field type
+      filtered = filtered.filter((item: any) => {
+        const itemValue = item[fieldName];
+
+        // Handle nested objects
+        let actualValue: any = itemValue;
+        if (
+          itemValue &&
+          typeof itemValue === "object" &&
+          !Array.isArray(itemValue)
+        ) {
+          if (itemValue.text !== undefined) {
+            actualValue = itemValue.text;
+          } else if (itemValue.name !== undefined) {
+            actualValue = itemValue.name;
+          } else if (itemValue.ar !== undefined) {
+            actualValue = itemValue.ar;
+          } else if (itemValue.en !== undefined) {
+            actualValue = itemValue.en;
+          } else {
+            actualValue = String(itemValue);
+          }
+        }
+
+        // Handle arrays
+        if (Array.isArray(itemValue)) {
+          actualValue = itemValue.join(", ");
+        }
+
+        // Convert to string for comparison
+        const itemStr = String(actualValue || "")
+          .toLowerCase()
+          .trim();
+        const filterStr = String(filterValue).toLowerCase().trim();
+
+        // Skip if filter is empty or "الكل"
+        if (!filterStr || filterStr === "الكل") {
+          return true;
+        }
+
+        // Special handling for clientType: map "افؤاد" to "فرد"
+        if (fieldName === "clientType") {
+          const normalizedItemValue =
+            itemStr === "افؤاد" || itemStr === "فرد" ? "فرد" : itemStr;
+          const normalizedFilterValue =
+            filterStr === "افؤاد" || filterStr === "فرد" ? "فرد" : filterStr;
+          return normalizedItemValue === normalizedFilterValue;
+        }
+
+        // For code fields (agentCode, clientCode, etc.), use exact match
+        if (
+          fieldName.includes("Code") ||
+          fieldName.includes("Number") ||
+          fieldName === "refId" ||
+          fieldName === "operationNumber"
+        ) {
+          return (
+            itemStr === filterStr || String(actualValue) === String(filterValue)
+          );
+        }
+
+        // For text fields, use partial match (includes)
+        return itemStr.includes(filterStr) || itemStr === filterStr;
+      });
+    });
+
+    return filtered;
+  }, [data, filters]);
+
+  // Calculate paginated data from filtered data
+  const paginatedData = useMemo(() => {
+    return filteredData.slice(
+      (currentPage - 1) * itemsPerPage,
+      currentPage * itemsPerPage
+    );
+  }, [filteredData, currentPage, itemsPerPage]);
 
   // Enhance columns with ActionMenu - memoized to prevent unnecessary rerenders
   const enhancedColumns = useMemo(() => {
@@ -652,7 +887,15 @@ export const DataTableSection = <
       }
       return col;
     });
-  }, [columns, entityName, viewDetailsRoute, customActionButtons, showModifyButton, onDelete, onToggleStatus]);
+  }, [
+    columns,
+    entityName,
+    viewDetailsRoute,
+    customActionButtons,
+    showModifyButton,
+    onDelete,
+    onToggleStatus,
+  ]);
 
   return (
     <section className="flex flex-col items-start gap-5 w-full">
@@ -749,7 +992,14 @@ export const DataTableSection = <
                   </button>
                 )}
 
-                <ExportMenu />
+                <ExportMenu
+                  data={filteredData}
+                  columns={columns}
+                  title={title}
+                  entityNamePlural={entityNamePlural}
+                  filters={filters}
+                  customExportHandler={customExportHandler}
+                />
               </div>
             )}
 
@@ -800,6 +1050,28 @@ export const DataTableSection = <
                                 ? "clientType"
                                 : filter.label === "نوع المركبة"
                                 ? "vehicleType"
+                                : filter.label === "كود المندوب"
+                                ? "agentCode"
+                                : filter.label === "اسم المندوب"
+                                ? "agentName"
+                                : filter.label === "نوع المنتج"
+                                ? "productType"
+                                : filter.label === "اسم العميل"
+                                ? "clientName"
+                                : filter.label === "نوع العملية"
+                                ? "operationType"
+                                : filter.label === "رسوم الخدمة"
+                                ? "serviceFees"
+                                : filter.label === "اسم مزود الخدمة"
+                                ? "serviceProviderName"
+                                : filter.label === "رقم المنتج"
+                                ? "productNumber"
+                                : filter.label === "كود السائق"
+                                ? "driverCode"
+                                : filter.label === "رقم المركبة"
+                                ? "carNumber"
+                                : filter.label === "كود"
+                                ? "refId"
                                 : filter.label.toLowerCase().replace(/\s+/g, "")
                             ]
                           }
@@ -821,6 +1093,28 @@ export const DataTableSection = <
                                 ? "clientType"
                                 : filter.label === "نوع المركبة"
                                 ? "vehicleType"
+                                : filter.label === "كود المندوب"
+                                ? "agentCode"
+                                : filter.label === "اسم المندوب"
+                                ? "agentName"
+                                : filter.label === "نوع المنتج"
+                                ? "productType"
+                                : filter.label === "اسم العميل"
+                                ? "clientName"
+                                : filter.label === "نوع العملية"
+                                ? "operationType"
+                                : filter.label === "رسوم الخدمة"
+                                ? "serviceFees"
+                                : filter.label === "اسم مزود الخدمة"
+                                ? "serviceProviderName"
+                                : filter.label === "رقم المنتج"
+                                ? "productNumber"
+                                : filter.label === "كود السائق"
+                                ? "driverCode"
+                                : filter.label === "رقم المركبة"
+                                ? "carNumber"
+                                : filter.label === "كود"
+                                ? "refId"
                                 : filter.label
                                     .toLowerCase()
                                     .replace(/\s+/g, ""),
@@ -893,7 +1187,7 @@ export const DataTableSection = <
           {!isLoading && (
             <Pagination
               currentPage={currentPage}
-              totalPages={Math.ceil(data.length / itemsPerPage) || 1}
+              totalPages={Math.ceil(filteredData.length / itemsPerPage) || 1}
               onPageChange={handlePageChange}
             />
           )}

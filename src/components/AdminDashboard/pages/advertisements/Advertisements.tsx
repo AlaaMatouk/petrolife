@@ -8,6 +8,8 @@ import {
   fetchAdvertisements,
   Advertisement,
 } from "../../../../services/firestore";
+import { exportDataTable } from "../../../../services/exportService";
+import { useToast } from "../../../../context/ToastContext";
 
 // Action Menu Component for each row
 interface ActionMenuProps {
@@ -107,6 +109,7 @@ const ActionMenu = ({ item, navigate }: ActionMenuProps) => {
 
 const Advertisements = () => {
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [currentPage, setCurrentPage] = useState(1);
   const [ads, setAds] = useState<Advertisement[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -296,8 +299,52 @@ const Advertisements = () => {
     return paginated;
   }, [ads, currentPage]);
 
-  const handleExport = (format: string) => {
-    console.log(`Exporting advertisements as ${format}`);
+  const handleExport = async (format: string) => {
+    try {
+      const exportColumns = [
+        { key: "refid", label: "الرقم" },
+        { key: "title", label: "العنوان" },
+        { key: "description", label: "الوصف" },
+        { key: "status", label: "حالة الاعلان" },
+        { key: "creator", label: "المنشئ" },
+        { key: "creationDate", label: "تاريخ الانشاء" },
+      ];
+
+      // Transform data for export
+      const exportData = ads.map((ad) => {
+        const safeTitle = typeof ad.title === "string" ? ad.title : ad.title && typeof ad.title === "object" ? ad.title.ar || ad.title.en || "" : "";
+        const safeDescription = typeof ad.description === "string" ? ad.description : ad.description && typeof ad.description === "object" ? ad.description.ar || ad.description.en || "" : "";
+        return {
+          refid: ad.refid || ad.id || "-",
+          title: safeTitle,
+          description: safeDescription,
+          status: ad.isActive ? "مفعل" : "معطل",
+          creator: ad.creatorDisplayName || ad.createdUserId || "غير معروف",
+          creationDate: ad.createdDate ? new Date(ad.createdDate).toLocaleDateString("ar-SA") : "-",
+        };
+      });
+
+      await exportDataTable(
+        exportData,
+        exportColumns,
+        "advertisements",
+        format as "excel" | "pdf",
+        "تقرير الاعلانات"
+      );
+
+      addToast({
+        type: "success",
+        title: "نجح التصدير",
+        message: `تم تصدير البيانات بنجاح كـ ${format === "excel" ? "Excel" : "PDF"}`,
+      });
+    } catch (error) {
+      console.error("Export error:", error);
+      addToast({
+        type: "error",
+        title: "فشل التصدير",
+        message: "حدث خطأ أثناء تصدير البيانات",
+      });
+    }
   };
 
   return (

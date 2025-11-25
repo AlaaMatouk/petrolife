@@ -547,9 +547,6 @@ const FAQ = () => {
     [currentPage, filteredFAQ]
   );
 
-  const handleExport = (format: string) => {
-    console.log(`Exporting FAQ as ${format}`);
-  };
 
   return (
     <div
@@ -594,7 +591,6 @@ const FAQ = () => {
               <CirclePlus className="w-4 h-4 text-white" />
             </div>
           </button>
-          <ExportButton onExport={handleExport} buttonText="تصدير" />
         </div>
       </div>
 

@@ -75,6 +75,16 @@ const PAGE_CONFIGS: Record<string, PageConfig> = {
     searchPlaceholder:
       "بحث برقم العميل / العملية السجل التجاري / رقم الهاتف...",
   },
+  "/technical-support": {
+    title: "الدعم الفني",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
+  "/company-faq": {
+    title: "الأسئلة الشائعة",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
   "/adddriver": {
     title: "إضافة سائق",
     titleIcon: <img src="/img/side-icons-3.svg" alt="" className="w-5 h-5" />,
@@ -150,6 +160,7 @@ export const LayoutWrapper: React.FC = () => {
         sections: navigationMenuData.sections,
         topItems: navigationMenuData.topItems,
         bottomItems: navigationMenuData.bottomItems,
+        anotherSections: navigationMenuData.anotherSections,
         userInfo: userInfo,
       }}
     >

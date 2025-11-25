@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { DataTableSection } from "../../../sections/DataTableSection/DataTableSection";
 import { FileText } from "lucide-react";
+import { exportFinancialReport, FinancialReportData, FinancialReportFilters, getFilteredFinancialData } from "../../../../services/exportService";
 import { fetchAllOrders } from "../../../../services/firestore";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
 import { db } from "../../../../config/firebase";
@@ -326,14 +327,14 @@ export const FinancialReport: React.FC = () => {
               { value: "الكل", label: "الكل" },
               ...companies
                 .map((company) => ({
-                  value: company.uId || company.id,
-                  label: company.uId || company.id,
+                  value: company.refid || company.uId || company.id,
+                  label: company.refid || company.uId || company.id,
                 }))
                 .filter((option) => option.value),
               ...clients
                 .map((client) => ({
-                  value: client.uId || client.id,
-                  label: client.uId || client.id,
+                  value: client.refid || client.uId || client.id,
+                  label: client.refid || client.uId || client.id,
                 }))
                 .filter((option) => option.value),
             ],
@@ -365,8 +366,8 @@ export const FinancialReport: React.FC = () => {
               { value: "الكل", label: "الكل" },
               ...drivers
                 .map((driver) => ({
-                  value: driver.uId || driver.id,
-                  label: driver.uId || driver.id,
+                  value: driver.refid || driver.uId || driver.id,
+                  label: driver.refid || driver.uId || driver.id,
                 }))
                 .filter((option) => option.value),
             ],
@@ -403,6 +404,109 @@ export const FinancialReport: React.FC = () => {
     loadFilterOptions();
   }, []);
 
+  // Custom export handler for financial reports
+  const handleFinancialExport = useCallback(async (
+    data: any[],
+    filters: Record<string, string>,
+    format: "excel" | "pdf"
+  ) => {
+    // Fetch all orders for admin (not filtered by company)
+    const orders = await fetchAllOrders();
+    
+    // Create a map of order IDs from filtered data
+    const filteredOrderIds = new Set(
+      data.map(item => item.id).filter(Boolean)
+    );
+    
+    // Filter orders to only include those in the current filtered view
+    const filteredOrders = orders.filter(order => filteredOrderIds.has(order.id));
+    
+    // Transform orders to FinancialReportData format
+    const financialData: FinancialReportData[] = filteredOrders.map((order) => {
+      // Extract city from order
+      const city = 
+        order.document?.carStation?.address ||
+        order.carStation?.address ||
+        order.city?.name ||
+        "-";
+
+      // Extract station name
+      const stationName = extractText(order.carStation?.name) || "-";
+
+      // Extract date
+      const date = order.createdDate || order.orderDate || null;
+
+      // Extract operation number
+      const operationNumber = 
+        order.document?.refId || 
+        order.refId || 
+        order.id || 
+        "-";
+
+      // Extract quantity
+      const quantity = 
+        order.cartItems?.[0]?.quantity ||
+        order.totalLitre ||
+        "0";
+
+      // Extract product name
+      const productName = extractText(order.service?.title) || "-";
+
+      // Extract product number
+      const productNumber = order.service?.serviceId || "-";
+
+      // Extract product type
+      const productType = extractText(order.selectedOption?.category?.name) || "-";
+
+      // Extract driver name
+      const driverName = extractText(order.assignedDriver?.name) || "-";
+
+      // Extract driver code (refid) - need to fetch drivers for this
+      const driverCode = order.assignedDriver?.refid || order.assignedDriver?.refId || "-";
+
+      return {
+        city,
+        stationName,
+        date: date ? (date.toDate ? date.toDate().toLocaleString("ar-EG", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        }) : new Date(date).toLocaleString("ar-EG", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })) : "-",
+        operationNumber: String(operationNumber),
+        quantity: String(quantity),
+        productName,
+        productNumber: String(productNumber),
+        productType,
+        driverName,
+        driverCode: String(driverCode),
+        rawDate: date,
+      };
+    });
+
+    // Map filters to FinancialReportFilters format
+    const exportFilters: FinancialReportFilters = {
+      timePeriod: "الكل", // Admin reports don't have time period filter in the same way
+      driverCode: filters.driverCode || "الكل",
+      city: filters.city || "الكل",
+      productType: filters.productName || "الكل",
+      reportType: filters.reportType || "تحليلي",
+    };
+
+    // Get filtered financial data (applies time period and other filters)
+    const filteredData = getFilteredFinancialData(financialData, exportFilters);
+
+    // Export using the financial report export function
+    await exportFinancialReport(filteredData, exportFilters, format);
+  }, []);
+
   return (
     <div className="flex flex-col w-full items-start gap-5">
       <DataTableSection
@@ -422,6 +526,7 @@ export const FinancialReport: React.FC = () => {
         showTimeFilter={false}
         showAddButton={false}
         filterOptions={filterOptions}
+        customExportHandler={handleFinancialExport}
       />
     </div>
   );

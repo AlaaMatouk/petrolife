@@ -99,6 +99,20 @@ export const navigationMenuData = {
       href: ROUTES.CHARGE_REQUESTS,
     },
   ],
+  anotherSections: [
+    {
+      title: "الدعم الفني",
+      items: [
+        {
+          id: "technical-support",
+          label: "الدعم الفني",
+          icon: "/img/side-icons-7.svg",
+          hasBackground: false,
+          href: ROUTES.TECHNICAL_SUPPORT,
+        },
+      ],
+    },
+  ],
 };
 
 // Service Distributer Navigation Menu Data
