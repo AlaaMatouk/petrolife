@@ -75,6 +75,11 @@ const PAGE_CONFIGS: Record<string, PageConfig> = {
     searchPlaceholder:
       "بحث برقم العميل / العملية السجل التجاري / رقم الهاتف...",
   },
+  "/technical-support": {
+    title: "الدعم الفني",
+    titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
+    showSearch: false,
+  },
   "/company-faq": {
     title: "الأسئلة الشائعة",
     titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,

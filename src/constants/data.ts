@@ -104,11 +104,11 @@ export const navigationMenuData = {
       title: "الدعم الفني",
       items: [
         {
-          id: "faq",
-          label: "الاسئلة الشائعة",
-          icon: "/img/side-icons-3.svg",
+          id: "technical-support",
+          label: "الدعم الفني",
+          icon: "/img/side-icons-7.svg",
           hasBackground: false,
-          href: ROUTES.COMPANY_FAQ,
+          href: ROUTES.TECHNICAL_SUPPORT,
         },
       ],
     },
