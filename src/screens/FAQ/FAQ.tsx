@@ -3,6 +3,10 @@ import { Pagination } from "../../components/shared";
 import { ChevronDown, ChevronUp, HelpCircle, Loader2 } from "lucide-react";
 import { fetchFAQQuestions, FAQQuestion, fetchUserDisplayNameByEmail } from "../../services/firestore";
 
+interface FAQProps {
+  noFrame?: boolean;
+}
+
 // User type options for display (mapping userType to Arabic labels)
 const userTypeOptions = [
   { value: "all", label: "الأسئلة الشائعة" },
@@ -101,7 +105,7 @@ const FAQItem = ({ item, isExpanded, onToggle }: FAQItemProps) => {
   );
 };
 
-const FAQ = () => {
+const FAQ = ({ noFrame = false }: FAQProps = {}) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [faqData, setFaqData] = useState<FAQQuestion[]>([]);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
@@ -171,7 +175,11 @@ const FAQ = () => {
 
   return (
     <div
-      className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder"
+      className={`flex flex-col items-start gap-[var(--corner-radius-extra-large)] relative self-stretch w-full flex-[0_0_auto] ${
+        noFrame 
+          ? "" 
+          : "pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder"
+      }`}
       dir="rtl"
     >
       {/* Header */}
