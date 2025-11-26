@@ -33,6 +33,7 @@ export const ROUTES = {
 
   // Invoices
   INVOICES: "/invoices",
+  INVOICE_DETAIL: "/invoices/:id",
 
   // Settings
   SETTINGS: "/settings",

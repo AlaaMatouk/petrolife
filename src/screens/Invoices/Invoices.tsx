@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useLayoutContext } from "../../hooks/useLayoutContext";
 import {
   Table,
@@ -7,10 +8,11 @@ import {
   LoadingSpinner,
   RTLSelect,
 } from "../../components/shared";
-import { FileText } from "lucide-react";
+import { FileText, Eye } from "lucide-react";
 import { exportDataTable } from "../../services/exportService";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../hooks/useGlobalState";
+import { ROUTES } from "../../constants/routes";
 
 // Dummy invoice data
 const dummyInvoices = [
@@ -145,6 +147,7 @@ export const Invoices = (): JSX.Element => {
   const { searchQuery } = useLayoutContext();
   const { addToast } = useToast();
   const { company } = useAuth();
+  const navigate = useNavigate();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -247,6 +250,22 @@ export const Invoices = (): JSX.Element => {
 
   // Define table columns
   const invoiceColumns = [
+    {
+      key: "actions",
+      label: "الإجراءات",
+      width: "w-32 min-w-[120px]",
+      priority: "high",
+      render: (_value: any, row: any) => (
+        <button
+          onClick={() => navigate(`/invoices/${row.id}`)}
+          className="inline-flex items-center justify-center gap-2 px-3 py-2 bg-color-mode-surface-primary-blue text-white rounded-[var(--corner-radius-small)] hover:opacity-90 transition-opacity font-[number:var(--subtitle-subtitle-3-font-weight)] text-[length:var(--subtitle-subtitle-3-font-size)] tracking-[var(--subtitle-subtitle-3-letter-spacing)] leading-[var(--subtitle-subtitle-3-line-height)] [font-style:var(--subtitle-subtitle-3-font-style)]"
+          title="عرض تفاصيل الفاتورة"
+        >
+          <Eye className="w-4 h-4" />
+          <span>عرض</span>
+        </button>
+      ),
+    },
     {
       key: "amount",
       label: "مبلغ الفاتورة (ر.س)",
