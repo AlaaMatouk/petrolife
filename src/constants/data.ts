@@ -349,12 +349,6 @@ export const adminNavigationMenuData = {
       href: ROUTES.APPLICATION_SERVICES,
     },
     {
-      id: "default-accounts",
-      label: "الحسابات الافتراضية",
-      icon: "/img/side-icons-7.svg",
-      href: ROUTES.DEFAULT_ACCOUNTS,
-    },
-    {
       id: "advertisements",
       label: "الإعلانات",
       icon: "/img/side-icons-7.svg",
