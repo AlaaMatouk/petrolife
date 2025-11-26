@@ -99,7 +99,7 @@ export const FrameWrapperSubsection = (): JSX.Element => {
       </div>
 
       <h1 className="relative w-fit font-extrabold text-[#5a66c1] text-lg text-left tracking-[0.16px] leading-6 whitespace-nowrap [font-family:'Tajawal',Helvetica] [direction:rtl]">
-        المبيعات
+        المشتريات
       </h1>
     </section>
   );

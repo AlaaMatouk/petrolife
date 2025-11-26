@@ -674,7 +674,7 @@ const ConsumptionSection = () => {
         );
         if (!cancelled) {
           setSalesTrends(null);
-          setSalesError("تعذر تحميل بيانات المبيعات الخاصة بالشركة.");
+          setSalesError("تعذر تحميل بيانات المشتريات الخاصة بالشركة.");
         }
       } finally {
         if (!cancelled) {
@@ -831,7 +831,7 @@ const ConsumptionSection = () => {
             {/* Title */}
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-bold text-[var(--form-section-title-color)]">
-                المبيعات
+                المشتريات
               </h2>
               <Fuel className="w-5 h-5 text-gray-500" />
             </div>
