@@ -110,6 +110,13 @@ export const navigationMenuData = {
           hasBackground: false,
           href: ROUTES.TECHNICAL_SUPPORT,
         },
+        {
+          id: "settings",
+          label: "الإعدادات العامة",
+          icon: "/img/side-icons-7.svg",
+          hasBackground: false,
+          href: ROUTES.SETTINGS,
+        },
       ],
     },
   ],

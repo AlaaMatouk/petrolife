@@ -114,6 +114,7 @@ import SubscriptionDetails from "../components/AdminDashboard/pages/subscription
 import { ServiceDistributerGeneralInformation } from "../screens/ServiceDistributerGeneralInformation";
 import CompanyFAQ from "../screens/FAQ/FAQ";
 import TechnicalSupport from "../screens/TechnicalSupport/TechnicalSupport";
+import { Settings } from "../screens/Settings/Settings";
 
 // 404 Component
 const NotFound = () => (
@@ -331,7 +332,7 @@ export const AppRouter = () => {
         <Route path={ROUTES.FUEL_INVOICE_DETAIL} element={<FuelInvoiceDetail />} />
 
         {/* Settings */}
-        <Route path={ROUTES.SETTINGS} element={<NotFound />} />
+        <Route path={ROUTES.SETTINGS} element={<Settings />} />
 
         {/* Technical Support */}
         <Route path={ROUTES.TECHNICAL_SUPPORT} element={<TechnicalSupport />} />
