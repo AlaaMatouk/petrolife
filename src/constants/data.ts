@@ -110,6 +110,13 @@ export const navigationMenuData = {
           hasBackground: false,
           href: ROUTES.TECHNICAL_SUPPORT,
         },
+        {
+          id: "settings",
+          label: "الإعدادات العامة",
+          icon: "/img/side-icons-7.svg",
+          hasBackground: false,
+          href: ROUTES.SETTINGS,
+        },
       ],
     },
   ],
@@ -347,12 +354,6 @@ export const adminNavigationMenuData = {
       label: "خدمات التطبيق",
       icon: "/img/side-icons-7.svg",
       href: ROUTES.APPLICATION_SERVICES,
-    },
-    {
-      id: "default-accounts",
-      label: "الحسابات الافتراضية",
-      icon: "/img/side-icons-7.svg",
-      href: ROUTES.DEFAULT_ACCOUNTS,
     },
     {
       id: "advertisements",

@@ -48,7 +48,7 @@ const createRedPinIcon = (): L.DivIcon => {
         <svg width="32" height="40" viewBox="0 0 40 50" style="position: absolute; top: 0; left: 0; z-index: 1;">
           <path d="M20 0 C30 0, 38 8, 38 18 C38 28, 20 48, 20 48 C20 48, 2 28, 2 18 C2 8, 10 0, 20 0 Z" fill="#ef4444" stroke="#dc2626" stroke-width="1"/>
         </svg>
-        <div style="position: absolute; top: 3px; left: 50%; transform: translateX(-50%); width: 20px; height: 20px; background-color: white; border: 1px solid #e5e7eb; border-radius: 3px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.2); z-index: 2; overflow: hidden;">
+        <div style="position: absolute; top: 3px; left: 50%; transform: translateX(-50%); width: 20px; height: 20px; background-color: white; border: 1px solid #e5e7eb; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.2); z-index: 2; overflow: hidden;">
           <img src="/img/logo-2.png" alt="P" style="width: 14px; height: 14px; object-fit: contain; display: block;" crossorigin="anonymous" />
         </div>
       </div>
@@ -71,7 +71,7 @@ const createYellowPinIcon = (): L.DivIcon => {
         <svg width="32" height="40" viewBox="0 0 40 50" style="position: absolute; top: 0; left: 0; z-index: 1;">
           <path d="M20 0 C30 0, 38 8, 38 18 C38 28, 20 48, 20 48 C20 48, 2 28, 2 18 C2 8, 10 0, 20 0 Z" fill="#fbbf24" stroke="#f59e0b" stroke-width="1"/>
         </svg>
-        <div style="position: absolute; top: 3px; left: 50%; transform: translateX(-50%); width: 20px; height: 20px; background-color: white; border: 1px solid #e5e7eb; border-radius: 3px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.2); z-index: 2; overflow: hidden;">
+        <div style="position: absolute; top: 3px; left: 50%; transform: translateX(-50%); width: 20px; height: 20px; background-color: white; border: 1px solid #e5e7eb; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.2); z-index: 2; overflow: hidden;">
           <img src="/img/logo-2.png" alt="P" style="width: 14px; height: 14px; object-fit: contain; display: block;" crossorigin="anonymous" />
         </div>
       </div>

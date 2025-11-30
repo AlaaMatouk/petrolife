@@ -34,7 +34,7 @@ import { FuelStationRequests } from "../screens/FuelStationRequests";
 import { ServiceDistributerFinancialReports } from "../screens/ServiceDistributerFinancialReports";
 import { ServiceDistributerStationLocations } from "../screens/ServiceDistributerStationLocations";
 import { ServiceDistributerInvoices } from "../screens/ServiceDistributerInvoices";
-import { Invoices } from "../screens/Invoices";
+import { Invoices, InvoiceDetail, FuelInvoiceDetail } from "../screens/Invoices";
 import { IconPreview } from "../screens/IconPreview";
 // admin dashboard
 import { AdminDashboard } from "../components/AdminDashboard/AdminDashboard";
@@ -114,6 +114,7 @@ import SubscriptionDetails from "../components/AdminDashboard/pages/subscription
 import { ServiceDistributerGeneralInformation } from "../screens/ServiceDistributerGeneralInformation";
 import CompanyFAQ from "../screens/FAQ/FAQ";
 import TechnicalSupport from "../screens/TechnicalSupport/TechnicalSupport";
+import { Settings } from "../screens/Settings/Settings";
 
 // 404 Component
 const NotFound = () => (
@@ -327,9 +328,11 @@ export const AppRouter = () => {
 
         {/* Invoices */}
         <Route path={ROUTES.INVOICES} element={<Invoices />} />
+        <Route path={ROUTES.SUBSCRIPTION_INVOICE_DETAIL} element={<InvoiceDetail />} />
+        <Route path={ROUTES.FUEL_INVOICE_DETAIL} element={<FuelInvoiceDetail />} />
 
         {/* Settings */}
-        <Route path={ROUTES.SETTINGS} element={<NotFound />} />
+        <Route path={ROUTES.SETTINGS} element={<Settings />} />
 
         {/* Technical Support */}
         <Route path={ROUTES.TECHNICAL_SUPPORT} element={<TechnicalSupport />} />
