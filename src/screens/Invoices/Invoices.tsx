@@ -34,12 +34,31 @@ export const Invoices = (): JSX.Element => {
   const [timePeriod, setTimePeriod] = useState("الكل");
   const ITEMS_PER_PAGE = 10;
 
-  // Load invoices from Firestore
+  // Load invoices from Firestore - only for the current company
   useEffect(() => {
     const loadData = async () => {
+      if (!company) {
+        setIsLoading(false);
+        setInvoices([]);
+        return;
+      }
+
       setIsLoading(true);
       try {
-        const fetchedInvoices = await fetchInvoices();
+        // Get company identifier (prefer uid, then email, then id)
+        const companyIdentifier = company.uid || company.email || company.id;
+        
+        if (!companyIdentifier) {
+          console.warn("No company identifier found");
+          setInvoices([]);
+          setIsLoading(false);
+          return;
+        }
+
+        // Fetch only invoices for this company
+        const fetchedInvoices = await fetchInvoices({
+          companyUid: companyIdentifier,
+        });
         setInvoices(fetchedInvoices);
       } catch (error) {
         console.error("Error loading invoices:", error);
@@ -55,7 +74,7 @@ export const Invoices = (): JSX.Element => {
     };
 
     loadData();
-  }, [addToast]);
+  }, [addToast, company]);
 
   // Map invoices to table format
   const mappedInvoices = invoices.map((invoice) => {

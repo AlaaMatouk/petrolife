@@ -556,7 +556,8 @@ export const fetchInvoices = async (filters?: {
         invoices = invoices.filter(
           (inv) =>
             inv.companyData?.uid === filters.companyUid ||
-            inv.companyData?.email === filters.companyUid
+            inv.companyData?.email === filters.companyUid ||
+            inv.companyData?.id === filters.companyUid
         );
       }
       if (filters.clientId) {
