@@ -22,6 +22,7 @@ import { ChargeWallet } from "../screens/ChargeWallet";
 import { PerolifeStationLocations } from "../screens/PerolifeStationLocations/perolifestationlocations";
 import { StoreScreen } from "../screens/Store";
 import { SubscriptionsScreen } from "../screens/Subscriptions";
+import { SubscriptionPlansScreen } from "../screens/Subscriptions/SubscriptionPlansScreen";
 import { DeliveryFuelRequests } from "../screens/DeliveryFuelRequests";
 import { CreateDeliveryRequest } from "../screens/CreateDeliveryRequest";
 import LoginAndRegister from "../screens/Login And Register/LoginAndRegister";
@@ -325,6 +326,7 @@ export const AppRouter = () => {
         {/* Store and Subscriptions */}
         <Route path={ROUTES.STORE} element={<StoreScreen />} />
         <Route path={ROUTES.SUBSCRIPTIONS} element={<SubscriptionsScreen />} />
+        <Route path={ROUTES.SUBSCRIPTION_PLANS} element={<SubscriptionPlansScreen />} />
 
         {/* Invoices */}
         <Route path={ROUTES.INVOICES} element={<Invoices />} />

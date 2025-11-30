@@ -30,6 +30,7 @@ export const ROUTES = {
   // Store and Subscriptions
   STORE: "/store",
   SUBSCRIPTIONS: "/subscriptions",
+  SUBSCRIPTION_PLANS: "/subscription-plans",
 
   // Invoices
   INVOICES: "/invoices",

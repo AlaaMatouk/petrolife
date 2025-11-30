@@ -68,6 +68,10 @@ const PAGE_CONFIGS: Record<string, PageConfig> = {
     title: "اشتراكاتي",
     titleIcon: <img src="/img/side-icons-11.svg" alt="" className="w-5 h-5" />,
   },
+  "/subscription-plans": {
+    title: "الباقات",
+    titleIcon: <img src="/img/side-icons-11.svg" alt="" className="w-5 h-5" />,
+  },
   "/invoices": {
     title: "الفواتير",
     titleIcon: <img src="/img/side-icons-5.svg" alt="" className="w-5 h-5" />,

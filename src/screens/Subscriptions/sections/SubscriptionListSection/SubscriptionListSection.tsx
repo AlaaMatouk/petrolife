@@ -4,6 +4,8 @@ import { Table, Pagination, ExportButton } from "../../../../components/shared";
 import { fetchUserSubscriptions } from "../../../../services/firestore";
 import { LoadingSpinner } from "../../../../components/shared/Spinner/LoadingSpinner";
 import { useAuth } from "../../../../hooks/useGlobalState";
+import { useNavigation } from "../../../../hooks/useNavigation";
+import { ROUTES } from "../../../../constants/routes";
 
 const historyTableData = [
   {
@@ -112,6 +114,7 @@ const paginationData = [
 
 export const SubscriptionListSection = (): JSX.Element => {
   const { company } = useAuth();
+  const { goTo } = useNavigation();
   const [currentPage, setCurrentPage] = useState(1);
   const [subscriptions, setSubscriptions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -365,7 +368,10 @@ export const SubscriptionListSection = (): JSX.Element => {
 </div>
 </div>
 </div>
-<div className="flex flex-col w-[138px] items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] bg-orange-100 rounded-[var(--corner-radius-small)]">
+<button
+  onClick={() => goTo(ROUTES.SUBSCRIPTION_PLANS)}
+  className="flex flex-col w-[138px] items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] bg-orange-100 rounded-[var(--corner-radius-small)] hover:bg-orange-200 transition-colors cursor-pointer"
+>
 <div className="items-center justify-center gap-[var(--corner-radius-small)] self-stretch w-full flex-[0_0_auto] flex relative">
 <div className="inline-flex items-center justify-center gap-2.5 pt-1 pb-0 px-0 relative flex-[0_0_auto]">
 <span className="w-fit mt-[-1.00px] font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-orange text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] relative font-body-body-2 text-[length:var(--body-body-2-font-size)] whitespace-nowrap [font-style:var(--body-body-2-font-style)]">
@@ -374,7 +380,7 @@ export const SubscriptionListSection = (): JSX.Element => {
 </div>
             <Star className="relative w-[18px] h-[18px] text-orange-500" />
 </div>
-</div>
+</button>
 </article>
 <article className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder">
 <div className="flex flex-col items-end gap-[var(--corner-radius-extra-large)] relative self-stretch w-full flex-[0_0_auto]">
