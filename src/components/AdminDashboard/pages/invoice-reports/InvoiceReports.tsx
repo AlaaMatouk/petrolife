@@ -1,34 +1,14 @@
-import { useState, useMemo } from "react";
-import { Table, Pagination, ExportButton } from "../../../shared";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useLocation } from "react-router-dom";
+import { Table, Pagination, ExportButton, LoadingSpinner } from "../../../shared";
 import { FileText, MoreVertical, Trash2, Eye, Download } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { Input, Select } from "../../../shared/Form";
 import { exportDataTable } from "../../../../services/exportService";
 import { useToast } from "../../../../context/ToastContext";
-
-// Mock data for 48 invoices
-const mockInvoices = Array.from({ length: 48 }).map((_, i) => {
-  const statusTypes = ["مدفوعة", "معلقة", "ملغاة"];
-  const statusColors = {
-    مدفوعة: "bg-green-100 text-green-800 border-green-200",
-    معلقة: "bg-yellow-100 text-yellow-800 border-yellow-200",
-    ملغاة: "bg-red-100 text-red-800 border-red-200",
-  };
-  const status = statusTypes[i % 3];
-  
-  return {
-    id: i + 1,
-    referenceNumber: `INV${(i + 1).toString().padStart(3, "0")}`,
-    clientName: i % 5 === 0 ? "محمد علي" : i % 5 === 1 ? "أحمد خالد" : i % 5 === 2 ? "سارة أحمد" : i % 5 === 3 ? "خالد مالك" : "فاطمة إبراهيم",
-    invoiceValue: `${(i + 1) * 1000} ر.س`,
-    creationDate: "21 فبراير 2024 - 10:30 ص",
-    invoiceStatus: {
-      text: status,
-      className: statusColors[status as keyof typeof statusColors],
-    },
-  };
-});
+import { fetchInvoices } from "../../../../services/invoiceService";
+import { Invoice } from "../../../../types/invoice";
 
 // Action Menu Component for each row
 interface ActionMenuProps {
@@ -57,12 +37,17 @@ const ActionMenu = ({ item }: ActionMenuProps) => {
 
   const handleAction = (action: string) => {
     if (action === "view") {
-      console.log("View invoice details:", item.id);
-      // Navigate to invoice details page
-      // navigate(`/invoices/${item.id}`);
+      // Determine route based on invoice type
+      if (item.type === "Subscription") {
+        navigate(`/subscription-invoice/${item.id}`);
+      } else {
+        navigate(`/fuel-invoice/${item.id}`);
+      }
     } else if (action === "download") {
+      // Handle download - can be implemented later
       console.log("Download invoice:", item.id);
     } else if (action === "delete") {
+      // Handle delete - can be implemented later
       console.log("Delete invoice:", item.id);
     }
     setIsOpen(false);
@@ -124,6 +109,7 @@ const ActionMenu = ({ item }: ActionMenuProps) => {
 
 const InvoiceReports = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { addToast } = useToast();
   const [currentPage, setCurrentPage] = useState(1);
   const [filters, setFilters] = useState({
@@ -132,27 +118,189 @@ const InvoiceReports = () => {
     operationCode: "",
   });
   const itemsPerPage = 10;
+  const STORAGE_KEY = "admin_invoice_reports_cache";
+
+  // Initialize state from cache if available
+  const getCachedInvoices = (): Invoice[] => {
+    try {
+      const cachedData = sessionStorage.getItem(STORAGE_KEY);
+      if (cachedData) {
+        const parsedInvoices = JSON.parse(cachedData);
+        // Restore dates from strings
+        return parsedInvoices.map((inv: any) => ({
+          ...inv,
+          createdAt: inv.createdAt ? new Date(inv.createdAt) : new Date(),
+        }));
+      }
+    } catch (error) {
+      console.error("Error parsing cached invoices:", error);
+      sessionStorage.removeItem(STORAGE_KEY);
+    }
+    return [];
+  };
+
+  // Initialize with cached data if available
+  const cachedInvoices = getCachedInvoices();
+  const [invoices, setInvoices] = useState<Invoice[]>(cachedInvoices);
+  const [isLoading, setIsLoading] = useState(cachedInvoices.length === 0);
+
+  // Load invoices from Firestore
+  useEffect(() => {
+    let isMounted = true;
+
+    // If we already have cached data, don't show loading
+    if (invoices.length > 0) {
+      setIsLoading(false);
+    }
+
+    const loadData = async () => {
+      // Only show loading if we don't have cached data
+      if (invoices.length === 0) {
+        setIsLoading(true);
+      }
+      try {
+        const fetchedInvoices = await fetchInvoices();
+        // Only update state if component is still mounted
+        if (isMounted) {
+          setInvoices(fetchedInvoices);
+          // Cache the data (convert dates to strings for storage)
+          const dataToCache = fetchedInvoices.map((inv) => ({
+            ...inv,
+            createdAt: inv.createdAt instanceof Date 
+              ? inv.createdAt.toISOString() 
+              : inv.createdAt?.toDate 
+              ? inv.createdAt.toDate().toISOString()
+              : new Date().toISOString(),
+          }));
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(dataToCache));
+        }
+      } catch (error) {
+        console.error("Error loading invoices:", error);
+        if (isMounted) {
+          addToast({
+            title: "خطأ في التحميل",
+            message: "فشل في تحميل الفواتير",
+            type: "error",
+          });
+          // Only clear if we don't have cached data
+          if (invoices.length === 0) {
+            setInvoices([]);
+          }
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    // Always fetch fresh data, but show cached data immediately
+    loadData();
+
+    // Cleanup function to prevent state updates if component unmounts
+    return () => {
+      isMounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
+
+  // Map invoices to table format
+  const mappedInvoices = useMemo(() => {
+    return invoices.map((invoice) => {
+      const clientName =
+        invoice.clientData?.name ||
+        invoice.clientData?.brandName ||
+        invoice.companyData?.name ||
+        invoice.companyData?.brandName ||
+        "غير محدد";
+
+      const invoiceDate =
+        invoice.createdAt instanceof Date
+          ? invoice.createdAt
+          : typeof invoice.createdAt === "string"
+          ? new Date(invoice.createdAt)
+          : invoice.createdAt?.toDate
+          ? invoice.createdAt.toDate()
+          : new Date();
+
+      // Format date in Gregorian calendar
+      const formattedDate = invoiceDate.toLocaleDateString(
+        "ar-SA-u-ca-gregory",
+        {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        }
+      );
+
+      // Get invoice code (refId)
+      let invoiceCode = invoice.invoiceNumber; // Fallback to invoice number
+      if (invoice.type === "Client") {
+        invoiceCode =
+          invoice.refId ||
+          invoice.clientData?.refId ||
+          invoice.clientData?.refid ||
+          invoice.clientData?.clientRefId ||
+          invoice.invoiceNumber;
+      } else if (invoice.type === "Company Monthly Invoice") {
+        invoiceCode =
+          invoice.orders?.[0]?.refId ||
+          invoice.orders?.[0]?.refid ||
+          invoice.refId ||
+          invoice.invoiceNumber;
+      } else {
+        invoiceCode = invoice.refId || invoice.invoiceNumber;
+      }
+
+      // Determine invoice status (all invoices are considered paid/active for now)
+      const invoiceStatus = {
+        text: "مدفوعة",
+        className: "bg-green-100 text-green-800 border-green-200",
+      };
+
+      return {
+        id: invoice.id,
+        invoiceId: invoice.id,
+        referenceNumber: invoiceCode,
+        clientName,
+        invoiceValue: `${invoice.total.toLocaleString("en-US")} ر.س`,
+        creationDate: formattedDate,
+        invoiceStatus,
+        type: invoice.type,
+        invoice, // Store full invoice object for actions
+      };
+    });
+  }, [invoices]);
 
   // Filter invoices based on filter state
   const filteredInvoices = useMemo(() => {
-    let filtered = mockInvoices;
+    let filtered = mappedInvoices;
 
-    // Filter by operation code
+    // Filter by operation code (invoice code/reference number)
     if (filters.operationCode && filters.operationCode.trim()) {
       filtered = filtered.filter((inv) =>
-        inv.referenceNumber.includes(filters.operationCode)
+        inv.referenceNumber
+          .toLowerCase()
+          .includes(filters.operationCode.toLowerCase())
       );
     }
 
-    // Filter by operation type
+    // Filter by operation type (invoice type)
     if (filters.operationType && filters.operationType.trim()) {
       filtered = filtered.filter((inv) => {
-        // Check if operationType field exists and matches
-        if (inv.operationType) {
-          return inv.operationType.toLowerCase().includes(filters.operationType.toLowerCase());
-        }
-        // If field doesn't exist, include it (don't filter out)
-        return true;
+        const invoiceType =
+          inv.type === "Client"
+            ? "عميل"
+            : inv.type === "Company Monthly Invoice"
+            ? "شركة"
+            : inv.type === "Subscription"
+            ? "اشتراك"
+            : "";
+        return invoiceType
+          .toLowerCase()
+          .includes(filters.operationType.toLowerCase());
       });
     }
 
@@ -233,7 +381,10 @@ const InvoiceReports = () => {
       ];
 
       const exportData = filteredInvoices.map((item) => ({
-        ...item,
+        referenceNumber: item.referenceNumber,
+        clientName: item.clientName,
+        invoiceValue: item.invoiceValue,
+        creationDate: item.creationDate,
         invoiceStatus: item.invoiceStatus?.text || "-",
       }));
 
@@ -259,6 +410,15 @@ const InvoiceReports = () => {
       });
     }
   };
+
+  // Show loading only on initial load when we have no data
+  if (isLoading && invoices.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px]">
+        <LoadingSpinner size="lg" message="جاري تحميل الفواتير..." />
+      </div>
+    );
+  }
 
   return (
     <div
