@@ -1,0 +1,2 @@
+export { GeneralInformationSection } from "./GeneralInformationSection";
+

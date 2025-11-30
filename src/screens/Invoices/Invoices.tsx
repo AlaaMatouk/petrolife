@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useLayoutContext } from "../../hooks/useLayoutContext";
 import {
@@ -8,135 +9,14 @@ import {
   LoadingSpinner,
   RTLSelect,
 } from "../../components/shared";
-import { FileText, Eye } from "lucide-react";
+import { FileText, Eye, MoreVertical, Download } from "lucide-react";
 import { exportDataTable } from "../../services/exportService";
+import { exportInvoiceToPDF } from "../../services/invoiceExportService";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../hooks/useGlobalState";
 import { ROUTES } from "../../constants/routes";
-
-// Dummy invoice data
-const dummyInvoices = [
-  {
-    id: "INV-001",
-    invoiceCode: "FAT-2024-001",
-    clientName: "شركة النفط الوطنية",
-    clientType: "شركات",
-    date: "15 يناير 2024 - 02:30 م",
-    invoiceNumber: "20240001",
-    amount: 15000,
-    rawDate: new Date("2024-01-15"),
-  },
-  {
-    id: "INV-002",
-    invoiceCode: "FAT-2024-002",
-    clientName: "مؤسسة النقل السريع",
-    clientType: "مؤسسات",
-    date: "18 يناير 2024 - 10:15 ص",
-    invoiceNumber: "20240002",
-    amount: 8500,
-    rawDate: new Date("2024-01-18"),
-  },
-  {
-    id: "INV-003",
-    invoiceCode: "FAT-2024-003",
-    clientName: "شركة المواصلات الحديثة",
-    clientType: "شركات",
-    date: "22 يناير 2024 - 04:45 م",
-    invoiceNumber: "20240003",
-    amount: 22000,
-    rawDate: new Date("2024-01-22"),
-  },
-  {
-    id: "INV-004",
-    invoiceCode: "FAT-2024-004",
-    clientName: "مؤسسة التوصيل الذكي",
-    clientType: "مؤسسات",
-    date: "25 يناير 2024 - 11:20 ص",
-    invoiceNumber: "20240004",
-    amount: 12500,
-    rawDate: new Date("2024-01-25"),
-  },
-  {
-    id: "INV-005",
-    invoiceCode: "FAT-2024-005",
-    clientName: "شركة الشحن السريع",
-    clientType: "شركات",
-    date: "28 يناير 2024 - 03:00 م",
-    invoiceNumber: "20240005",
-    amount: 18750,
-    rawDate: new Date("2024-01-28"),
-  },
-  {
-    id: "INV-006",
-    invoiceCode: "FAT-2024-006",
-    clientName: "مؤسسة الخدمات اللوجستية",
-    clientType: "مؤسسات",
-    date: "01 فبراير 2024 - 09:30 ص",
-    invoiceNumber: "20240006",
-    amount: 9800,
-    rawDate: new Date("2024-02-01"),
-  },
-  {
-    id: "INV-007",
-    invoiceCode: "FAT-2024-007",
-    clientName: "شركة التوزيع المتقدم",
-    clientType: "شركات",
-    date: "05 فبراير 2024 - 01:15 م",
-    invoiceNumber: "20240007",
-    amount: 16200,
-    rawDate: new Date("2024-02-05"),
-  },
-  {
-    id: "INV-008",
-    invoiceCode: "FAT-2024-008",
-    clientName: "مؤسسة النقل الجوي",
-    clientType: "مؤسسات",
-    date: "08 فبراير 2024 - 11:45 ص",
-    invoiceNumber: "20240008",
-    amount: 27500,
-    rawDate: new Date("2024-02-08"),
-  },
-  {
-    id: "INV-009",
-    invoiceCode: "FAT-2024-009",
-    clientName: "شركة الإمداد والتموين",
-    clientType: "شركات",
-    date: "12 فبراير 2024 - 04:20 م",
-    invoiceNumber: "20240009",
-    amount: 14300,
-    rawDate: new Date("2024-02-12"),
-  },
-  {
-    id: "INV-010",
-    invoiceCode: "FAT-2024-010",
-    clientName: "مؤسسة الخدمات الميدانية",
-    clientType: "مؤسسات",
-    date: "15 فبراير 2024 - 10:00 ص",
-    invoiceNumber: "20240010",
-    amount: 11000,
-    rawDate: new Date("2024-02-15"),
-  },
-  {
-    id: "INV-011",
-    invoiceCode: "FAT-2024-011",
-    clientName: "شركة النقل البحري",
-    clientType: "شركات",
-    date: "18 فبراير 2024 - 02:30 م",
-    invoiceNumber: "20240011",
-    amount: 19800,
-    rawDate: new Date("2024-02-18"),
-  },
-  {
-    id: "INV-012",
-    invoiceCode: "FAT-2024-012",
-    clientName: "مؤسسة الشحن الدولي",
-    clientType: "مؤسسات",
-    date: "22 فبراير 2024 - 03:45 م",
-    invoiceNumber: "20240012",
-    amount: 23400,
-    rawDate: new Date("2024-02-22"),
-  },
-];
+import { fetchInvoices } from "../../services/invoiceService";
+import { Invoice } from "../../types/invoice";
 
 // Helper function to format number with thousands separator
 const formatNumber = (num: number) => {
@@ -148,29 +28,124 @@ export const Invoices = (): JSX.Element => {
   const { addToast } = useToast();
   const { company } = useAuth();
   const navigate = useNavigate();
-  const [invoices, setInvoices] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [reportType, setReportType] = useState("تحليلي");
   const [timePeriod, setTimePeriod] = useState("الكل");
   const ITEMS_PER_PAGE = 10;
 
-  // Load dummy data on mount
+  // Load invoices from Firestore - only for the current company
   useEffect(() => {
-    // Simulate loading
     const loadData = async () => {
+      if (!company) {
+        setIsLoading(false);
+        setInvoices([]);
+        return;
+      }
+
       setIsLoading(true);
-      // Simulate API call delay
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      setInvoices(dummyInvoices);
-      setIsLoading(false);
+      try {
+        // Get company identifier (prefer uid, then email, then id)
+        const companyIdentifier = company.uid || company.email || company.id;
+        
+        if (!companyIdentifier) {
+          console.warn("No company identifier found");
+          setInvoices([]);
+          setIsLoading(false);
+          return;
+        }
+
+        // Fetch only invoices for this company
+        const fetchedInvoices = await fetchInvoices({
+          companyUid: companyIdentifier,
+        });
+        setInvoices(fetchedInvoices);
+      } catch (error) {
+        console.error("Error loading invoices:", error);
+        addToast({
+          title: "خطأ في التحميل",
+          message: "فشل في تحميل الفواتير",
+          type: "error",
+        });
+        setInvoices([]);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     loadData();
-  }, []);
+  }, [addToast, company]);
+
+  // Map invoices to table format
+  const mappedInvoices = invoices.map((invoice) => {
+    const clientName =
+      invoice.clientData?.name ||
+      invoice.clientData?.brandName ||
+      invoice.companyData?.name ||
+      invoice.companyData?.brandName ||
+      "غير محدد";
+
+    const clientType =
+      invoice.type === "Client"
+        ? "أفراد"
+        : invoice.type === "Company Monthly Invoice"
+        ? "شركات"
+        : "اشتراك";
+
+    const invoiceDate =
+      invoice.createdAt instanceof Date
+        ? invoice.createdAt
+        : invoice.createdAt?.toDate
+        ? invoice.createdAt.toDate()
+        : new Date();
+
+    // Format date in Gregorian calendar (not Hijri)
+    const formattedDate = invoiceDate.toLocaleDateString("ar-SA-u-ca-gregory", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    // Get refId for invoice code
+    let invoiceCode = invoice.invoiceNumber; // Fallback to invoice number
+    if (invoice.type === "Client") {
+      // For client invoices, get refId from clientData or invoice
+      invoiceCode = 
+        invoice.refId || 
+        invoice.clientData?.refId || 
+        invoice.clientData?.refid || 
+        invoice.clientData?.clientRefId ||
+        invoice.invoiceNumber;
+    } else if (invoice.type === "Company Monthly Invoice") {
+      // For company monthly invoices, get refId from first order
+      invoiceCode = 
+        invoice.orders?.[0]?.refId || 
+        invoice.orders?.[0]?.refid || 
+        invoice.refId ||
+        invoice.invoiceNumber;
+    } else {
+      // For subscription invoices, use refId if available
+      invoiceCode = invoice.refId || invoice.invoiceNumber;
+    }
+
+    return {
+      id: invoice.id,
+      invoiceCode,
+      clientName,
+      clientType,
+      date: formattedDate,
+      invoiceNumber: invoice.invoiceNumber,
+      amount: invoice.total,
+      rawDate: invoiceDate,
+      invoice, // Store full invoice object for detail view
+    };
+  });
 
   // Filter invoices based on search query and time period
-  const filteredInvoices = invoices.filter((invoice) => {
+  const filteredInvoices = mappedInvoices.filter((invoice) => {
     // Search filter
     if (searchQuery && searchQuery.trim() !== "") {
       const query = searchQuery.toLowerCase().trim();
@@ -226,7 +201,10 @@ export const Invoices = (): JSX.Element => {
       ];
 
       await exportDataTable(
-        filteredInvoices,
+        filteredInvoices.map((inv) => ({
+          ...inv,
+          amount: formatNumber(inv.amount),
+        })),
         exportColumns,
         "invoices-report",
         format as "excel" | "pdf",
@@ -248,6 +226,122 @@ export const Invoices = (): JSX.Element => {
     }
   };
 
+  // Handle single invoice export
+  const handleExportInvoice = async (invoice: Invoice) => {
+    try {
+      // Export the actual invoice UI as PDF
+      await exportInvoiceToPDF(invoice);
+
+      addToast({
+        title: "نجح التصدير",
+        message: `تم تصدير الفاتورة بنجاح`,
+        type: "success",
+      });
+    } catch (error) {
+      console.error("Export error:", error);
+      addToast({
+        title: "فشل التصدير",
+        message: "حدث خطأ أثناء تصدير الفاتورة",
+        type: "error",
+      });
+    }
+  };
+
+  // Action Dropdown Component
+  const ActionDropdown = ({ invoice }: { invoice: any }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [buttonRef, setButtonRef] = useState<HTMLButtonElement | null>(null);
+    const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+
+    const updateMenuPosition = () => {
+      if (!buttonRef) return;
+      const rect = buttonRef.getBoundingClientRect();
+      const menuWidth = 192; // w-48 = 192px
+      let left = rect.right + 4;
+      if (left + menuWidth > window.innerWidth) {
+        left = rect.left - menuWidth - 4;
+      }
+      setMenuPosition({
+        top: rect.bottom + 4,
+        left: Math.max(4, left),
+      });
+    };
+
+    useEffect(() => {
+      if (isOpen && buttonRef) {
+        updateMenuPosition();
+        // Update position on scroll or resize
+        window.addEventListener("scroll", updateMenuPosition, true);
+        window.addEventListener("resize", updateMenuPosition);
+        return () => {
+          window.removeEventListener("scroll", updateMenuPosition, true);
+          window.removeEventListener("resize", updateMenuPosition);
+        };
+      }
+    }, [isOpen, buttonRef]);
+
+    return (
+      <div className="relative">
+        <button
+          ref={setButtonRef}
+          onClick={() => {
+            setIsOpen(!isOpen);
+            setTimeout(updateMenuPosition, 0);
+          }}
+          className="inline-flex items-center justify-center w-8 h-8 rounded-[var(--corner-radius-small)] hover:bg-color-mode-surface-secondary-gray transition-colors"
+          title="الإجراءات"
+          aria-label="الإجراءات"
+        >
+          <MoreVertical className="w-4 h-4 text-color-mode-text-icons-t-primary-gray" />
+        </button>
+
+        {isOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setIsOpen(false)}
+            />
+            {createPortal(
+              <div
+                className="fixed w-48 bg-white border border-color-mode-text-icons-t-placeholder rounded-lg shadow-xl z-50 overflow-hidden"
+                style={{ top: menuPosition.top, left: menuPosition.left }}
+              >
+                <div className="py-1">
+                  <button
+                    onClick={() => {
+                      // Determine route based on invoice type
+                      if (invoice.type === "Subscription") {
+                        navigate(`/subscription-invoice/${invoice.id}`);
+                      } else {
+                        navigate(`/fuel-invoice/${invoice.id}`);
+                      }
+                      setIsOpen(false);
+                    }}
+                    className="w-full px-4 py-2 text-right text-sm text-color-mode-text-icons-t-primary-gray hover:bg-color-mode-surface-secondary-gray transition-colors flex items-center justify-end gap-2"
+                  >
+                    <Eye className="w-4 h-4" />
+                    <span>عرض الفاتورة</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleExportInvoice(invoice);
+                      setIsOpen(false);
+                    }}
+                    className="w-full px-4 py-2 text-right text-sm text-color-mode-text-icons-t-primary-gray hover:bg-color-mode-surface-secondary-gray transition-colors flex items-center justify-end gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>تصدير الفاتورة</span>
+                  </button>
+                </div>
+              </div>,
+              document.body
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
+
   // Define table columns
   const invoiceColumns = [
     {
@@ -256,14 +350,7 @@ export const Invoices = (): JSX.Element => {
       width: "w-32 min-w-[120px]",
       priority: "high",
       render: (_value: any, row: any) => (
-        <button
-          onClick={() => navigate(`/invoices/${row.id}`)}
-          className="inline-flex items-center justify-center gap-2 px-3 py-2 bg-color-mode-surface-primary-blue text-white rounded-[var(--corner-radius-small)] hover:opacity-90 transition-opacity font-[number:var(--subtitle-subtitle-3-font-weight)] text-[length:var(--subtitle-subtitle-3-font-size)] tracking-[var(--subtitle-subtitle-3-letter-spacing)] leading-[var(--subtitle-subtitle-3-line-height)] [font-style:var(--subtitle-subtitle-3-font-style)]"
-          title="عرض تفاصيل الفاتورة"
-        >
-          <Eye className="w-4 h-4" />
-          <span>عرض</span>
-        </button>
+        <ActionDropdown invoice={row.invoice || row} />
       ),
     },
     {

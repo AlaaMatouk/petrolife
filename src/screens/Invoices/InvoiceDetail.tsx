@@ -1,35 +1,107 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Printer, ArrowLeft } from "lucide-react";
+import { fetchInvoiceById } from "../../services/invoiceService";
+import { Invoice } from "../../types/invoice";
+import { LoadingSpinner } from "../../components/shared";
+import { useToast } from "../../context/ToastContext";
 
 export const InvoiceDetail = (): JSX.Element => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { addToast } = useToast();
+  const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Sample invoice data - in real app, this would come from API
+  useEffect(() => {
+    const loadInvoice = async () => {
+      if (!id) {
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        const fetchedInvoice = await fetchInvoiceById(id);
+        if (!fetchedInvoice) {
+          addToast({
+            title: "خطأ",
+            message: "الفاتورة غير موجودة",
+            type: "error",
+          });
+          navigate(-1);
+          return;
+        }
+        setInvoice(fetchedInvoice);
+      } catch (error) {
+        console.error("Error loading invoice:", error);
+        addToast({
+          title: "خطأ في التحميل",
+          message: "فشل في تحميل الفاتورة",
+          type: "error",
+        });
+        navigate(-1);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadInvoice();
+  }, [id, navigate, addToast]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center w-full h-screen">
+        <LoadingSpinner size="lg" message="جاري تحميل الفاتورة..." />
+      </div>
+    );
+  }
+
+  if (!invoice) {
+    return null;
+  }
+
+  // Map invoice data to component format
+  const invoiceDate = invoice.createdAt instanceof Date
+    ? invoice.createdAt
+    : invoice.createdAt?.toDate
+    ? invoice.createdAt.toDate()
+    : new Date();
+
+  const formattedDate = `${invoiceDate.getDate()} - ${invoiceDate.getMonth() + 1} - ${invoiceDate.getFullYear()}`;
+
+  const customerData = invoice.clientData || invoice.companyData || {};
+  const subscriptionData = invoice.items[0] || {
+    description: "اشتراك نظام إدارة الأسطول",
+    packageName: "كلاسيك",
+    period: "سنة",
+    startDate: "01/01/2024",
+    endDate: "31/12/2024",
+  };
+
   const invoiceData = {
-    invoiceNumber: "SUB-2024-001",
-    invoiceDate: "12 - 11 - 2025",
+    invoiceNumber: invoice.invoiceNumber,
+    invoiceDate: formattedDate,
     customer: {
-      name: "شركة النقل السريع",
-      customerId: "CUST-5654656",
-      address: "جدة - المملكة العربية السعودية",
-      phone: "05123154654",
-      email: "contact@innovation-trade.sa",
-      taxNumber: "300000000000003",
+      name: customerData.name || customerData.brandName || "غير محدد",
+      customerId: customerData.id || customerData.uid || "غير محدد",
+      address: customerData.address || customerData.location || "غير محدد",
+      phone: customerData.phoneNumber || customerData.phone || "غير محدد",
+      email: customerData.email || "غير محدد",
+      taxNumber: customerData.taxNumber || customerData.vatNumber || "غير محدد",
     },
     subscription: {
-      description: "اشتراك نظام إدارة الأسطول",
-      packageName: "كلاسيك",
-      period: "سنة",
-      startDate: "01/01/2024",
-      endDate: "31/12/2024",
+      description: subscriptionData.product || subscriptionData.description || "اشتراك نظام إدارة الأسطول",
+      packageName: subscriptionData.packageName || "كلاسيك",
+      period: subscriptionData.period || "سنة",
+      startDate: subscriptionData.startDate || "01/01/2024",
+      endDate: subscriptionData.endDate || "31/12/2024",
     },
     financial: {
-      subtotal: 15000.0,
+      subtotal: invoice.subtotal,
       vat: 15,
-      vatAmount: 2250.0,
-      total: 17250.0,
+      vatAmount: invoice.vatAmount,
+      total: invoice.total,
     },
   };
 
