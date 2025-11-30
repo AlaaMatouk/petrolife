@@ -11,6 +11,7 @@ import {
 } from "../../components/shared";
 import { FileText, Eye, MoreVertical, Download } from "lucide-react";
 import { exportDataTable } from "../../services/exportService";
+import { exportInvoiceToPDF } from "../../services/invoiceExportService";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../hooks/useGlobalState";
 import { ROUTES } from "../../constants/routes";
@@ -228,81 +229,8 @@ export const Invoices = (): JSX.Element => {
   // Handle single invoice export
   const handleExportInvoice = async (invoice: Invoice) => {
     try {
-      const clientName =
-        invoice.clientData?.name ||
-        invoice.clientData?.brandName ||
-        invoice.companyData?.name ||
-        invoice.companyData?.brandName ||
-        "غير محدد";
-
-      const clientType =
-        invoice.type === "Client"
-          ? "أفراد"
-          : invoice.type === "Company Monthly Invoice"
-          ? "شركات"
-          : "اشتراك";
-
-      const invoiceDate =
-        invoice.createdAt instanceof Date
-          ? invoice.createdAt
-          : invoice.createdAt?.toDate
-          ? invoice.createdAt.toDate()
-          : new Date();
-
-      // Format date in Gregorian calendar (not Hijri)
-      const formattedDate = invoiceDate.toLocaleDateString(
-        "ar-SA-u-ca-gregory",
-        {
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        }
-      );
-
-      // Get refId for invoice code (same logic as in mappedInvoices)
-      let invoiceCode = invoice.invoiceNumber; // Fallback to invoice number
-      if (invoice.type === "Client") {
-        invoiceCode = 
-          invoice.refId || 
-          invoice.clientData?.refId || 
-          invoice.clientData?.refid || 
-          invoice.clientData?.clientRefId ||
-          invoice.invoiceNumber;
-      } else if (invoice.type === "Company Monthly Invoice") {
-        invoiceCode = 
-          invoice.orders?.[0]?.refId || 
-          invoice.orders?.[0]?.refid || 
-          invoice.refId ||
-          invoice.invoiceNumber;
-      } else {
-        invoiceCode = invoice.refId || invoice.invoiceNumber;
-      }
-
-      const exportData = {
-        invoiceCode,
-        clientName,
-        clientType,
-        date: formattedDate,
-        invoiceNumber: invoice.invoiceNumber,
-        amount: formatNumber(invoice.total),
-      };
-
-      const exportColumns = [
-        { key: "invoiceCode", label: "كود الفاتورة" },
-        { key: "clientName", label: "اسم العميل" },
-        { key: "clientType", label: "نوع العميل" },
-        { key: "date", label: "التاريخ" },
-        { key: "invoiceNumber", label: "رقم الفاتورة" },
-        { key: "amount", label: "مبلغ الفاتورة (ر.س)" },
-      ];
-
-      await exportDataTable(
-        [exportData],
-        exportColumns,
-        `invoice-${invoice.invoiceNumber}`,
-        "pdf",
-        `فاتورة ${invoice.invoiceNumber}`
-      );
+      // Export the actual invoice UI as PDF
+      await exportInvoiceToPDF(invoice);
 
       addToast({
         title: "نجح التصدير",

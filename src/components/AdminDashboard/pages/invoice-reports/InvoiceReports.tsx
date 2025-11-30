@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { Input, Select } from "../../../shared/Form";
 import { exportDataTable } from "../../../../services/exportService";
+import { exportInvoiceToPDF } from "../../../../services/invoiceExportService";
 import { useToast } from "../../../../context/ToastContext";
 import { fetchInvoices } from "../../../../services/invoiceService";
 import { Invoice } from "../../../../types/invoice";
@@ -20,6 +21,7 @@ const ActionMenu = ({ item }: ActionMenuProps) => {
   const [buttonRef, setButtonRef] = useState<HTMLButtonElement | null>(null);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const navigate = useNavigate();
+  const { addToast } = useToast();
 
   const updateMenuPosition = () => {
     if (!buttonRef) return;
@@ -35,7 +37,7 @@ const ActionMenu = ({ item }: ActionMenuProps) => {
     });
   };
 
-  const handleAction = (action: string) => {
+  const handleAction = async (action: string) => {
     if (action === "view") {
       // Determine route based on invoice type
       if (item.type === "Subscription") {
@@ -44,8 +46,24 @@ const ActionMenu = ({ item }: ActionMenuProps) => {
         navigate(`/fuel-invoice/${item.id}`);
       }
     } else if (action === "download") {
-      // Handle download - can be implemented later
-      console.log("Download invoice:", item.id);
+      try {
+        // Get the full invoice object (it's stored in the item)
+        const invoice = item.invoice || item;
+        // Export the actual invoice UI as PDF
+        await exportInvoiceToPDF(invoice);
+        addToast({
+          title: "نجح التصدير",
+          message: `تم تصدير الفاتورة بنجاح`,
+          type: "success",
+        });
+      } catch (error) {
+        console.error("Export error:", error);
+        addToast({
+          title: "فشل التصدير",
+          message: "حدث خطأ أثناء تصدير الفاتورة",
+          type: "error",
+        });
+      }
     } else if (action === "delete") {
       // Handle delete - can be implemented later
       console.log("Delete invoice:", item.id);
