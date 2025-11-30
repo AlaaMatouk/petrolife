@@ -1,16 +1,104 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Printer, ArrowLeft } from "lucide-react";
+import { fetchInvoiceById } from "../../services/invoiceService";
+import { Invoice } from "../../types/invoice";
+import { LoadingSpinner } from "../../components/shared";
+import { useToast } from "../../context/ToastContext";
 
 export const FuelInvoiceDetail = (): JSX.Element => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { addToast } = useToast();
+  const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Sample invoice data - in real app, this would come from API
+  useEffect(() => {
+    const loadInvoice = async () => {
+      if (!id) {
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        const fetchedInvoice = await fetchInvoiceById(id);
+        if (!fetchedInvoice) {
+          addToast({
+            title: "خطأ",
+            message: "الفاتورة غير موجودة",
+            type: "error",
+          });
+          navigate(-1);
+          return;
+        }
+        setInvoice(fetchedInvoice);
+      } catch (error) {
+        console.error("Error loading invoice:", error);
+        addToast({
+          title: "خطأ في التحميل",
+          message: "فشل في تحميل الفاتورة",
+          type: "error",
+        });
+        navigate(-1);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadInvoice();
+  }, [id, navigate, addToast]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center w-full h-screen">
+        <LoadingSpinner size="lg" message="جاري تحميل الفاتورة..." />
+      </div>
+    );
+  }
+
+  if (!invoice) {
+    return null;
+  }
+
+  // Map invoice data to component format
+  const invoiceDate = invoice.createdAt instanceof Date
+    ? invoice.createdAt
+    : invoice.createdAt?.toDate
+    ? invoice.createdAt.toDate()
+    : new Date();
+
+  const formattedDate = `${invoiceDate.getDate()}-${String(invoiceDate.getMonth() + 1).padStart(2, "0")}-${invoiceDate.getFullYear()}`;
+
+  const companyData = invoice.companyData || {};
+  const customerData = invoice.clientData || invoice.companyData || {};
+
+  // Get refId from client data (for client invoices) or from orders (for company invoices)
+  let refId = "غير محدد";
+  if (invoice.type === "Client" && invoice.clientData) {
+    // For client invoices, get refId from clientData
+    refId = 
+      customerData.refId || 
+      customerData.refid || 
+      customerData.clientRefId ||
+      customerData.id || 
+      customerData.uid || 
+      "غير محدد";
+  } else if (invoice.orders && invoice.orders.length > 0) {
+    // For company monthly invoices, get refId from first order
+    refId = invoice.orders[0]?.refId || invoice.orders[0]?.refid || "غير محدد";
+  } else if (invoice.refId) {
+    // Fallback to refId stored in invoice
+    refId = invoice.refId;
+  } else if (invoice.orderId) {
+    // Final fallback to orderId
+    refId = invoice.orderId;
+  }
+
   const invoiceData = {
-    invoiceNumber: "INV-2024-001",
-    invoiceDate: "30-01-2025",
-    invoicePeriod: "يناير - 2025",
+    invoiceNumber: invoice.invoiceNumber,
+    invoiceDate: formattedDate,
+    invoicePeriod: invoice.monthName || `${invoiceDate.toLocaleDateString("ar-SA", { month: "long", year: "numeric" })}`,
     company: {
       name: "شركة إنجازات الحلول التقنية المعلومات",
       address: "الرياض - طريق خريص 12245",
@@ -18,44 +106,19 @@ export const FuelInvoiceDetail = (): JSX.Element => {
       taxNumber: "300000000000003",
     },
     customer: {
-      name: "شركة النقل المتطورة",
-      customerId: "أحمد محمد العلي",
-      address: "جدة، المملكة العربية السعودية",
-      phone: "+966 12 987 6543",
-      email: "billing@transport-co.com",
-      taxNumber: "312456789000003",
+      name: customerData.name || customerData.brandName || "غير محدد",
+      customerId: refId,
+      address: customerData.address || customerData.location || "غير محدد",
+      phone: customerData.phoneNumber || customerData.phone || "غير محدد",
+      email: customerData.email || "غير محدد",
+      taxNumber: customerData.taxNumber || customerData.vatNumber || "غير محدد",
     },
-    items: [
-      {
-        product: "بنزين ٩١",
-        quantity: 5000,
-        pricePerLiter: 2.0,
-        amountBeforeTax: 10000.0,
-        tax: 1500.0,
-        total: 11500.0,
-      },
-      {
-        product: "بنزين ٩٥",
-        quantity: 2000,
-        pricePerLiter: 2.2,
-        amountBeforeTax: 4400.0,
-        tax: 660.0,
-        total: 5060.0,
-      },
-      {
-        product: "ديزل",
-        quantity: 3000,
-        pricePerLiter: 1.8,
-        amountBeforeTax: 5480.0,
-        tax: 810.0,
-        total: 6210.0,
-      },
-    ],
+    items: invoice.items || [],
     financial: {
-      subtotal: 19800.0,
+      subtotal: invoice.subtotal,
       vat: 15,
-      vatAmount: 2970.0,
-      total: 22770.0,
+      vatAmount: invoice.vatAmount,
+      total: invoice.total,
     },
     contact: {
       phone: "8001240513",
@@ -185,68 +248,78 @@ export const FuelInvoiceDetail = (): JSX.Element => {
                 </tr>
               </thead>
               <tbody>
-                {invoiceData.items.map((item, index) => (
-                  <tr key={index}>
-                    <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:ltr] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                      <span className="flex items-center gap-1 justify-center">
-                        <img
-                          src="/img/Group 33.svg"
-                          alt="SAR"
-                          className="w-4 h-4"
-                        />
-                        {item.total.toLocaleString("en-US", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:ltr] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                      <span className="flex items-center gap-1 justify-center">
-                        <img
-                          src="/img/Group 33.svg"
-                          alt="SAR"
-                          className="w-4 h-4"
-                        />
-                        {item.tax.toLocaleString("en-US", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:ltr] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                      <span className="flex items-center gap-1 justify-center">
-                        <img
-                          src="/img/Group 33.svg"
-                          alt="SAR"
-                          className="w-4 h-4"
-                        />
-                        {item.amountBeforeTax.toLocaleString("en-US", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:ltr] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                      <span className="flex items-center gap-1 justify-center">
-                        <img
-                          src="/img/Group 33.svg"
-                          alt="SAR"
-                          className="w-4 h-4"
-                        />
-                        {item.pricePerLiter.toLocaleString("en-US", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                      {item.quantity.toLocaleString("en-US")}
-                    </td>
-                    <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                      {item.product}
-                    </td>
-                  </tr>
-                ))}
+                {invoiceData.items.map((item, index) => {
+                  // Ensure all values are numbers and handle undefined/null
+                  const total = Number(item.total || 0);
+                  const vat = Number(item.vat || 0);
+                  const amountBeforeTax = Number(item.amountBeforeTax || 0);
+                  const pricePerUnit = Number(item.pricePerUnit || 0);
+                  const quantity = Number(item.quantity || 0);
+                  const product = item.product || "غير محدد";
+
+                  return (
+                    <tr key={index}>
+                      <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:ltr] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+                        <span className="flex items-center gap-1 justify-center">
+                          <img
+                            src="/img/Group 33.svg"
+                            alt="SAR"
+                            className="w-4 h-4"
+                          />
+                          {total.toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:ltr] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+                        <span className="flex items-center gap-1 justify-center">
+                          <img
+                            src="/img/Group 33.svg"
+                            alt="SAR"
+                            className="w-4 h-4"
+                          />
+                          {vat.toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:ltr] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+                        <span className="flex items-center gap-1 justify-center">
+                          <img
+                            src="/img/Group 33.svg"
+                            alt="SAR"
+                            className="w-4 h-4"
+                          />
+                          {amountBeforeTax.toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:ltr] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+                        <span className="flex items-center gap-1 justify-center">
+                          <img
+                            src="/img/Group 33.svg"
+                            alt="SAR"
+                            className="w-4 h-4"
+                          />
+                          {pricePerUnit.toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+                        {quantity.toLocaleString("en-US")}
+                      </td>
+                      <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+                        {product}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
