@@ -131,10 +131,9 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
         <p className="text-base text-gray-600">قم بإدارة وتجديد اشتراكاتك بكل سهولة</p>
       </div>
 
-      {/* Main Content Card */}
-      <div className="w-full bg-white rounded-xl shadow-sm border border-gray-200 p-6 lg:p-8">
-        {/* Vehicle Count Input and Subscription Type Toggle Row */}
-        <div className="w-full flex items-start justify-between gap-8 mb-8">
+      {/* Vehicle Count Input and Subscription Type Toggle Section - Framed */}
+      <div className="w-full bg-white rounded-xl shadow-sm border-2 border-gray-300 p-6 lg:p-8 mb-8">
+        <div className="w-full flex items-start justify-between gap-8">
           {/* Vehicle Count Input - Left Side */}
           <div className="flex flex-col gap-3 flex-1">
             <label className="text-sm font-medium text-gray-700">أدخل عدد المركبات</label>
@@ -180,6 +179,10 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Main Content Card for Plans */}
+      <div className="w-full bg-white rounded-xl shadow-sm border border-gray-200 p-6 lg:p-8">
 
         {/* Loading State */}
         {isLoading && (
