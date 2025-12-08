@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { Car, Check } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Car, Check, FileText, Tag, Receipt, Percent, Wallet, ArrowRight } from "lucide-react";
 import { fetchSubscriptions } from "../../services/firestore";
 import { LoadingSpinner } from "../../components/shared";
 
@@ -10,6 +11,7 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [showSummaryModal, setShowSummaryModal] = useState(false);
 
   // Fetch subscriptions on mount
   useEffect(() => {
@@ -107,12 +109,59 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
     return features;
   };
 
+  // Get selected subscription details
+  const selectedSubscription = useMemo(() => {
+    return subscriptions.find((sub) => sub.id === selectedPlanId);
+  }, [subscriptions, selectedPlanId]);
+
+  // Calculate subscription summary
+  const subscriptionSummary = useMemo(() => {
+    if (!selectedSubscription) {
+      return {
+        vehicleCount: vehicleCount,
+        subscriptionPrice: 0,
+        totalWithoutVAT: 0,
+        vat: 0,
+        totalWithVAT: 0,
+      };
+    }
+
+    const subscriptionPrice = selectedSubscription.price || 0;
+    const vatRate = 0.15; // 15% VAT
+    const vat = subscriptionPrice * vatRate;
+    const totalWithVAT = subscriptionPrice + vat;
+
+    return {
+      vehicleCount: vehicleCount,
+      subscriptionPrice: subscriptionPrice,
+      totalWithoutVAT: subscriptionPrice,
+      vat: vat,
+      totalWithVAT: totalWithVAT,
+    };
+  }, [selectedSubscription, vehicleCount]);
+
   // Handle Next button click
   const handleNext = () => {
     if (selectedPlanId) {
-      console.log("Selected plan:", selectedPlanId, "Vehicle count:", vehicleCount);
-      // TODO: Navigate to subscription payment/confirmation screen
+      setShowSummaryModal(true);
     }
+  };
+
+  // Handle confirm subscription
+  const handleConfirmSubscription = () => {
+    // TODO: Implement subscription confirmation logic
+    console.log("Confirming subscription:", {
+      planId: selectedPlanId,
+      vehicleCount: vehicleCount,
+      summary: subscriptionSummary,
+    });
+    setShowSummaryModal(false);
+    // Navigate or show success message
+  };
+
+  // Handle go back
+  const handleGoBack = () => {
+    setShowSummaryModal(false);
   };
 
   const getBadgeColorClass = (status: string) => {
@@ -305,6 +354,132 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
           </div>
         )}
       </div>
+
+      {/* Subscription Summary Modal */}
+      {showSummaryModal && createPortal(
+        <>
+          {/* Overlay */}
+          <div
+            className="fixed inset-0 bg-black/50 z-50"
+            onClick={handleGoBack}
+          />
+          
+          {/* Modal */}
+          <div
+            className="fixed top-1/2 left-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white shadow-xl"
+            dir="rtl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 lg:p-8">
+              {/* Header Section */}
+              <div className="flex flex-col items-center gap-4 mb-8">
+                {/* Icon */}
+                <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center">
+                  <FileText className="w-8 h-8 text-[#5A66C1]" />
+                </div>
+                
+                {/* Title */}
+                <h2 className="text-2xl font-bold text-[#5A66C1]">
+                  ملخص الإشتراك
+                </h2>
+                
+                {/* Subtitle */}
+                <p className="text-sm text-gray-600 text-center">
+                  مراجعة تفاصيل اشتراكك قبل التأكيد
+                </p>
+              </div>
+
+              {/* Information Display Section */}
+              <div className="flex flex-col gap-4 mb-6">
+                {/* Number of Vehicles */}
+                <div className="flex items-center justify-between py-3 border-b border-gray-200">
+                  <div className="flex items-center gap-2">
+                    <Car className="w-5 h-5 text-gray-500" />
+                    <span className="text-sm text-gray-700">عدد المركبات</span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-900">
+                    {subscriptionSummary.vehicleCount}
+                  </span>
+                </div>
+
+                {/* Subscription Price */}
+                <div className="flex items-center justify-between py-3 border-b border-gray-200">
+                  <div className="flex items-center gap-2">
+                    <Tag className="w-5 h-5 text-gray-500" />
+                    <span className="text-sm text-gray-700">سعر الإشتراك</span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-900">
+                    {subscriptionSummary.subscriptionPrice.toFixed(2)} ر.س
+                  </span>
+                </div>
+
+                {/* Total without VAT */}
+                <div className="flex items-center justify-between py-3 border-b border-gray-200">
+                  <div className="flex items-center gap-2">
+                    <Receipt className="w-5 h-5 text-gray-500" />
+                    <span className="text-sm text-gray-700">الإجمالي بدون ضريبة القيمة المضافة</span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-900">
+                    {subscriptionSummary.totalWithoutVAT.toFixed(2)} ر.س
+                  </span>
+                </div>
+
+                {/* VAT (15%) */}
+                <div className="flex items-center justify-between py-3 border-b border-gray-200">
+                  <div className="flex items-center gap-2">
+                    <Percent className="w-5 h-5 text-gray-500" />
+                    <span className="text-sm text-gray-700">الضريبة ( 15 %)</span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-900">
+                    {subscriptionSummary.vat.toFixed(2)} ر.س
+                  </span>
+                </div>
+
+                {/* Total including VAT - Highlighted */}
+                <div className="flex items-center justify-between py-4 px-4 bg-white rounded-lg border-2 border-solid border-gray-500">
+                  <div className="flex items-center gap-2">
+                    <Receipt className="w-5 h-5 text-gray-700" />
+                    <span className="text-sm font-medium text-gray-700">إجمالي شامل الضريبة</span>
+                  </div>
+                  <span className="text-xl font-bold text-gray-900">
+                    {subscriptionSummary.totalWithVAT.toFixed(2)} ر.س
+                  </span>
+                </div>
+              </div>
+
+              {/* Wallet Deduction Message */}
+              <div className="flex items-center gap-3 p-4 bg-blue-50 rounded-lg mb-6 shadow-[0_0_20px_rgba(90,102,193,0.3)]">
+                <Wallet className="w-5 h-5 text-[#5A66C1] flex-shrink-0" />
+                <p className="text-sm font-medium text-[#5A66C1]">
+                  سيتم خصم مبلغ الإشتراك من رصيد المحفظة
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-between gap-4">
+                {/* Go Back Button */}
+                <button
+                  onClick={handleGoBack}
+                  className="flex items-center justify-center gap-2 px-6 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors border border-gray-200"
+                >
+                  <ArrowRight className="w-5 h-5" />
+                  <span>العودة للخلف</span>
+                </button>
+
+                {/* Confirm Subscription Button */}
+                <button
+                  onClick={handleConfirmSubscription}
+                  className="flex items-center justify-center gap-2 px-6 py-3 bg-[#1e3a8a] text-white rounded-lg font-medium hover:bg-[#1e40af] transition-colors shadow-md"
+                >
+                  <Check className="w-5 h-5" />
+                  <span>تأكيد الإشتراك</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
     </div>
   );
 };
