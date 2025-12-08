@@ -105,6 +105,10 @@ const PAGE_CONFIGS: Record<string, PageConfig> = {
     title: "بيانات النقل المفلترة",
     titleIcon: <img src="/img/side-icons-1.svg" alt="" className="w-5 h-5" />,
   },
+  "/test-insufficient-balance": {
+    title: "اختبار الرصيد غير الكافي",
+    titleIcon: <img src="/img/side-icons-6.svg" alt="" className="w-5 h-5" />,
+  },
 };
 
 // Helper to get config for dynamic routes

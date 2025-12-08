@@ -45,7 +45,7 @@ import { SupervisorDetails } from "../components/AdminDashboard/pages/supervisor
 import { Companies } from "../components/AdminDashboard/pages/companies/Companies";
 import { AddCompany } from "../components/AdminDashboard/pages/companies/AddCompany";
 import { CompanyDetails } from "../components/AdminDashboard/pages/companies/CompanyDetails";
-import { Test, TestChartLegendHighlight } from "../screens/Test";
+import { Test, TestChartLegendHighlight, TestInsufficientBalance } from "../screens/Test";
 import { Individuals } from "../components/AdminDashboard/pages/Individuals/Individuals";
 // @ts-ignore - JSX component imports
 import { AddIndividuals } from "../components/AdminDashboard/pages/Individuals/AddIndividuals";
@@ -347,6 +347,7 @@ export const AppRouter = () => {
           path={ROUTES.TEST_CHART}
           element={<TestChartLegendHighlight />}
         />
+        <Route path={ROUTES.TEST_INSUFFICIENT_BALANCE} element={<TestInsufficientBalance />} />
         <Route path="/test-transfer" element={<TestTransfer />} />
 
         {/* Developer Tools */}
