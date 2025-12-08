@@ -11,6 +11,9 @@ import {
   Battery,
   FileText,
   Download,
+  Rocket,
+  AlertTriangle,
+  ArrowLeft,
 } from "lucide-react";
 import { useAuth } from "../../hooks/useGlobalState";
 import {
@@ -486,9 +489,36 @@ const StatsCardsSection = () => {
 // Subscription and Locations Section
 const SubscriptionAndLocationsSection = () => {
   const { company } = useAuth();
+  const { goTo } = useNavigation();
 
   // Extract current subscription from company data
   const currentSubscription = company?.selectedSubscription;
+
+  // Check if subscription is expired
+  const isSubscriptionExpired = () => {
+    if (!currentSubscription) return false;
+
+    const createdDate = currentSubscription?.createdDate;
+    const periodValueInDays = currentSubscription?.periodValueInDays;
+    
+    if (!createdDate || !periodValueInDays) return false;
+    
+    try {
+      const startDate = createdDate.toDate
+        ? createdDate.toDate()
+        : new Date(createdDate);
+      const expiryDate = new Date(startDate);
+      expiryDate.setDate(expiryDate.getDate() + periodValueInDays);
+      
+      const now = new Date();
+      return expiryDate.getTime() < now.getTime();
+    } catch (error) {
+      return false;
+    }
+  };
+
+  // Only show subscription if it's active (not expired)
+  const hasActiveSubscription = currentSubscription && !isSubscriptionExpired();
 
   // Get subscription details using correct field names:
   // نوع الباقة = periodName (extract Arabic text from object)
@@ -560,12 +590,16 @@ const SubscriptionAndLocationsSection = () => {
 
   return (
     <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-      {/* Subscription Card */}
+      {/* Subscription Card - Show details only if active (not expired) */}
+      {hasActiveSubscription ? (
       <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-lg lg:col-span-1">
         {/* Main Title */}
         <div className="text-right mb-6">
           <h3 className="text-lg font-bold text-purple-800 [direction:rtl] text-right">
             اشتراكي الحالي
+            {!hasActiveSubscription && (
+              <span className="text-sm text-red-500 mr-2">(منتهي)</span>
+            )}
           </h3>
         </div>
 
@@ -602,14 +636,29 @@ const SubscriptionAndLocationsSection = () => {
 
         {/* Remaining Days Section */}
         <div className="text-center">
-          <div className="text-sm text-purple-800 mb-3 [direction:rtl] text-center">
-            الأيام المتبقية من الاشتراك
-          </div>
+          {hasActiveSubscription ? (
+            <>
+              <div className="text-sm text-purple-800 mb-3 [direction:rtl] text-center">
+                الأيام المتبقية من الاشتراك
+              </div>
 
-          {/* Countdown Numbers */}
-          <div className="text-2xl font-bold text-orange-500 mb-2 [direction:rtl] text-center">
-            {daysRemaining} يوم
-          </div>
+              {/* Countdown Numbers */}
+              <div className="text-2xl font-bold text-orange-500 mb-2 [direction:rtl] text-center">
+                {daysRemaining} يوم
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-sm text-red-500 mb-3 [direction:rtl] text-center">
+                انتهى الاشتراك
+              </div>
+
+              {/* Expired Message */}
+              <div className="text-2xl font-bold text-red-500 mb-2 [direction:rtl] text-center">
+                منتهي
+              </div>
+            </>
+          )}
 
           {/* Package Name */}
           <div className="text-sm text-gray-600 mt-2 [direction:rtl] text-center">
@@ -617,9 +666,60 @@ const SubscriptionAndLocationsSection = () => {
           </div>
         </div>
       </div>
+      ) : (
+        /* No Subscription Card - Show when no subscription or expired */
+        <div className="bg-white rounded-xl border border-gray-200 shadow-lg lg:col-span-1 relative overflow-hidden">
+          {/* Multi-colored gradient bar at top */}
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-600 via-purple-600 to-orange-500"></div>
+          
+          {/* Content */}
+          <div className="flex flex-col items-center text-center p-8 pt-12">
+            {/* Rocket Icon */}
+            <div className="w-20 h-20 rounded-full bg-orange-50 flex items-center justify-center mb-6">
+              <Rocket className="w-10 h-10 text-orange-500" />
+            </div>
+
+            {/* Title */}
+            <h3 className="text-xl font-bold text-gray-800 mb-8 [direction:rtl]">
+              اشتراكي الحالي
+            </h3>
+
+            {/* Dotted Border Box */}
+            <div className="w-full border-2 border-dashed border-gray-300 rounded-lg p-8 mb-8 bg-gray-50">
+              {/* Warning Icon */}
+              <div className="flex justify-center mb-4">
+                <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center">
+                  <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center">
+                    <AlertTriangle className="w-8 h-8 text-red-500" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Message */}
+              <p className="text-base font-semibold text-gray-800 mb-4 [direction:rtl]">
+                ليس لديك إشتراك حالي
+              </p>
+
+              {/* Instructional Text */}
+              <p className="text-sm text-gray-600 [direction:rtl] leading-relaxed">
+                قم بالضغط على إشتراك لإستعراض باقاتنا المميزه وإختيار الباقه المناسبة لإسطولك
+              </p>
+            </div>
+
+            {/* Subscribe Button */}
+            <button
+              onClick={() => goTo(ROUTES.SUBSCRIPTION_PLANS)}
+              className="w-full px-6 py-3 bg-[#5A66C1] text-white rounded-lg font-medium hover:bg-[#4f5ab0] transition-colors flex items-center justify-center gap-2 [direction:rtl] shadow-md"
+            >
+              <span>إشتراك</span>
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Station Locations Card */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm lg:col-span-2 overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden lg:col-span-2">
         <Map />
       </div>
     </section>

@@ -181,6 +181,27 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
     }
   };
 
+  // Check if subscription is expired
+  const isSubscriptionExpired = useMemo(() => {
+    if (!currentSubscription) return false;
+
+    const createdDate = currentSubscription?.createdDate;
+    const periodValueInDays = currentSubscription?.periodValueInDays;
+    
+    if (!createdDate || !periodValueInDays) return false;
+    
+    try {
+      const startDate = createdDate.toDate ? createdDate.toDate() : new Date(createdDate);
+      const expiryDate = new Date(startDate);
+      expiryDate.setDate(expiryDate.getDate() + periodValueInDays);
+      
+      const now = new Date();
+      return expiryDate.getTime() < now.getTime();
+    } catch (error) {
+      return false;
+    }
+  }, [currentSubscription]);
+
   // Get current subscription details
   const currentSubscriptionDetails = useMemo(() => {
     if (!currentSubscription) return null;
@@ -205,8 +226,8 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
   // Handle Next button click
   const handleNext = () => {
     if (selectedPlanId) {
-      // Check if user already has a subscription
-      if (currentSubscription) {
+      // Check if user already has an active (non-expired) subscription
+      if (currentSubscription && !isSubscriptionExpired) {
         setShowAlreadySubscribedModal(true);
         return;
       }
