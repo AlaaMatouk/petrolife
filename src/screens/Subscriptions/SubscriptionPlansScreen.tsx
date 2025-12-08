@@ -8,7 +8,7 @@ import { useNavigation } from "../../hooks/useNavigation";
 import { ROUTES } from "../../constants/routes";
 
 export const SubscriptionPlansScreen = (): JSX.Element => {
-  const [subscriptionType, setSubscriptionType] = useState<"annual" | "monthly">("annual");
+  const [subscriptionType, setSubscriptionType] = useState<"annual" | "monthly">("monthly");
   const [vehicleCount, setVehicleCount] = useState<number>(150);
   const [subscriptions, setSubscriptions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -16,8 +16,12 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [showInsufficientBalanceModal, setShowInsufficientBalanceModal] = useState(false);
+  const [showAlreadySubscribedModal, setShowAlreadySubscribedModal] = useState(false);
   const { company } = useAuth();
   const { goTo } = useNavigation();
+
+  // Get current subscription
+  const currentSubscription = company?.selectedSubscription;
 
   // Fetch subscriptions on mount
   useEffect(() => {
@@ -146,9 +150,66 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
     };
   }, [selectedSubscription, vehicleCount]);
 
+  // Format dates for current subscription
+  const formatDate = (date: any): string => {
+    if (!date) return 'N/A';
+    try {
+      const dateObj = date.toDate ? date.toDate() : new Date(date);
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const year = dateObj.getFullYear();
+      return `${day}/${month}/${year}`;
+    } catch (error) {
+      return 'N/A';
+    }
+  };
+
+  // Calculate expiry date from createdDate + periodValueInDays
+  const calculateExpiryDate = (): string => {
+    const createdDate = currentSubscription?.createdDate;
+    const periodValueInDays = currentSubscription?.periodValueInDays;
+    
+    if (!createdDate || !periodValueInDays) return 'N/A';
+    
+    try {
+      const startDate = createdDate.toDate ? createdDate.toDate() : new Date(createdDate);
+      const expiryDate = new Date(startDate);
+      expiryDate.setDate(expiryDate.getDate() + periodValueInDays);
+      return formatDate(expiryDate);
+    } catch (error) {
+      return 'N/A';
+    }
+  };
+
+  // Get current subscription details
+  const currentSubscriptionDetails = useMemo(() => {
+    if (!currentSubscription) return null;
+
+    return {
+      packageName: currentSubscription?.title?.ar || currentSubscription?.title?.en || 'N/A',
+      packageType: currentSubscription?.periodName?.ar || 
+                  currentSubscription?.periodName?.en || 
+                  (typeof currentSubscription?.periodName === 'string' ? currentSubscription?.periodName : 'N/A'),
+      price: String(currentSubscription?.price || 0),
+      vehicleCount: String(company?.maxCarNumber || 
+                          company?.numberOfVehicles || 
+                          company?.vehicleCount || 
+                          company?.carsLimit || 
+                          currentSubscription?.maxCarNumber || 
+                          0),
+      subscriptionDate: formatDate(currentSubscription?.createdDate),
+      expiryDate: calculateExpiryDate(),
+    };
+  }, [currentSubscription, company]);
+
   // Handle Next button click
   const handleNext = () => {
     if (selectedPlanId) {
+      // Check if user already has a subscription
+      if (currentSubscription) {
+        setShowAlreadySubscribedModal(true);
+        return;
+      }
       setShowSummaryModal(true);
     }
   };
@@ -188,6 +249,11 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
   // Handle go back from insufficient balance modal
   const handleInsufficientBalanceGoBack = () => {
     setShowInsufficientBalanceModal(false);
+  };
+
+  // Handle close already subscribed modal
+  const handleAlreadySubscribedClose = () => {
+    setShowAlreadySubscribedModal(false);
   };
 
   // Handle go back
@@ -606,6 +672,106 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
                 >
                   <ArrowRight className="w-5 h-5" />
                   <span>العودة للخلف</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
+
+      {/* Already Subscribed Modal */}
+      {showAlreadySubscribedModal && currentSubscriptionDetails && createPortal(
+        <>
+          {/* Overlay */}
+          <div
+            className="fixed inset-0 bg-black/50 z-50"
+            onClick={handleAlreadySubscribedClose}
+          />
+          
+          {/* Modal */}
+          <div
+            className="fixed top-1/2 left-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white shadow-xl"
+            dir="rtl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 lg:p-8">
+              {/* Header Section */}
+              <div className="flex flex-col items-center gap-4 mb-6">
+                {/* Icon */}
+                <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center">
+                  <FileText className="w-8 h-8 text-[#5A66C1]" />
+                </div>
+                
+                {/* Title */}
+                <h2 className="text-2xl font-bold text-[#5A66C1]">
+                  لديك اشتراك نشط بالفعل
+                </h2>
+                
+                {/* Subtitle */}
+                <p className="text-sm text-gray-600 text-center">
+                  أنت مشترك حالياً في إحدى الباقات. يمكنك مراجعة تفاصيل اشتراكك الحالي أدناه.
+                </p>
+              </div>
+
+              {/* Current Subscription Details */}
+              <div className="flex flex-col gap-4 mb-6">
+                {/* Package Name */}
+                <div className="flex items-center justify-between py-3 border-b border-gray-200">
+                  <span className="text-sm text-gray-700">اسم الباقة</span>
+                  <span className="text-sm font-medium text-gray-900">
+                    {currentSubscriptionDetails.packageName}
+                  </span>
+                </div>
+
+                {/* Package Type */}
+                <div className="flex items-center justify-between py-3 border-b border-gray-200">
+                  <span className="text-sm text-gray-700">نوع الباقة</span>
+                  <span className="text-sm font-medium text-gray-900">
+                    {currentSubscriptionDetails.packageType}
+                  </span>
+                </div>
+
+                {/* Price */}
+                <div className="flex items-center justify-between py-3 border-b border-gray-200">
+                  <span className="text-sm text-gray-700">السعر</span>
+                  <span className="text-sm font-medium text-gray-900">
+                    {currentSubscriptionDetails.price} ر.س
+                  </span>
+                </div>
+
+                {/* Vehicle Count */}
+                <div className="flex items-center justify-between py-3 border-b border-gray-200">
+                  <span className="text-sm text-gray-700">عدد المركبات</span>
+                  <span className="text-sm font-medium text-gray-900">
+                    {currentSubscriptionDetails.vehicleCount}
+                  </span>
+                </div>
+
+                {/* Subscription Date */}
+                <div className="flex items-center justify-between py-3 border-b border-gray-200">
+                  <span className="text-sm text-gray-700">تاريخ الاشتراك</span>
+                  <span className="text-sm font-medium text-gray-900">
+                    {currentSubscriptionDetails.subscriptionDate}
+                  </span>
+                </div>
+
+                {/* Expiry Date */}
+                <div className="flex items-center justify-between py-4 px-4 bg-blue-50 rounded-lg border-2 border-blue-200">
+                  <span className="text-sm font-medium text-[#5A66C1]">تاريخ الانتهاء</span>
+                  <span className="text-lg font-bold text-[#5A66C1]">
+                    {currentSubscriptionDetails.expiryDate}
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Button */}
+              <div className="flex items-center justify-center">
+                <button
+                  onClick={handleAlreadySubscribedClose}
+                  className="flex items-center justify-center gap-2 px-8 py-3 bg-[#5A66C1] text-white rounded-lg font-medium hover:bg-[#4f5ab0] transition-colors shadow-md"
+                >
+                  <span>حسناً</span>
                 </button>
               </div>
             </div>
