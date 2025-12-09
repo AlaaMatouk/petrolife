@@ -1,11 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Car, Check, FileText, Tag, Receipt, Percent, Wallet, ArrowRight, AlertCircle, Plus } from "lucide-react";
-import { fetchSubscriptions } from "../../services/firestore";
+import { fetchSubscriptions, processSubscriptionPayment, fetchCurrentCompany } from "../../services/firestore";
 import { LoadingSpinner } from "../../components/shared";
 import { useAuth } from "../../hooks/useGlobalState";
 import { useNavigation } from "../../hooks/useNavigation";
 import { ROUTES } from "../../constants/routes";
+import { useToast } from "../../hooks/useToast";
+import { generateRoute } from "../../constants/routes";
 
 export const SubscriptionPlansScreen = (): JSX.Element => {
   const [subscriptionType, setSubscriptionType] = useState<"annual" | "monthly">("monthly");
@@ -17,8 +19,10 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
   const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [showInsufficientBalanceModal, setShowInsufficientBalanceModal] = useState(false);
   const [showAlreadySubscribedModal, setShowAlreadySubscribedModal] = useState(false);
-  const { company } = useAuth();
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const { company, setCompany } = useAuth();
   const { goTo } = useNavigation();
+  const { addToast } = useToast();
 
   // Get current subscription
   const currentSubscription = company?.selectedSubscription;
@@ -241,7 +245,7 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
   }, [company]);
 
   // Handle confirm subscription
-  const handleConfirmSubscription = () => {
+  const handleConfirmSubscription = async () => {
     // Check if wallet has sufficient balance
     if (walletBalance < subscriptionSummary.totalWithVAT) {
       // Show insufficient balance modal
@@ -250,15 +254,70 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
       return;
     }
 
-    // TODO: Implement subscription confirmation logic
-    console.log("Confirming subscription:", {
-      planId: selectedPlanId,
-      vehicleCount: vehicleCount,
-      summary: subscriptionSummary,
-      walletBalance: walletBalance,
-    });
-    setShowSummaryModal(false);
-    // Navigate or show success message
+    if (!selectedPlanId || !selectedSubscription || !company) {
+      addToast({
+        title: 'خطأ',
+        message: 'البيانات غير مكتملة',
+        type: 'error'
+      });
+      return;
+    }
+
+    setIsProcessingPayment(true);
+
+    try {
+      // Ensure we have company ID (might be id, email, or doc ID)
+      const companyIdToUse = company.id || company.email || "";
+      
+      if (!companyIdToUse) {
+        addToast({
+          title: 'خطأ',
+          message: 'بيانات الشركة غير مكتملة. يرجى تسجيل الخروج والدخول مرة أخرى.',
+          type: 'error'
+        });
+        return;
+      }
+
+      // Process subscription payment
+      const result = await processSubscriptionPayment({
+        subscriptionId: selectedPlanId,
+        subscription: selectedSubscription,
+        vehicleCount: vehicleCount,
+        totalWithVAT: subscriptionSummary.totalWithVAT,
+        totalWithoutVAT: subscriptionSummary.totalWithoutVAT,
+        vat: subscriptionSummary.vat,
+        companyId: companyIdToUse,
+        company: company,
+      });
+
+      // Refresh company data
+      const updatedCompany = await fetchCurrentCompany();
+      if (updatedCompany && setCompany) {
+        setCompany(updatedCompany);
+      }
+
+      // Show success message
+      addToast({
+        title: 'نجح',
+        message: 'تم الاشتراك بنجاح',
+        type: 'success'
+      });
+
+      // Close summary modal
+      setShowSummaryModal(false);
+
+      // Navigate to invoice detail page
+      goTo(generateRoute(ROUTES.SUBSCRIPTION_INVOICE_DETAIL, { id: result.invoiceId }));
+    } catch (error: any) {
+      console.error("Error processing subscription payment:", error);
+      addToast({
+        title: 'خطأ',
+        message: error.message || 'فشل في معالجة الاشتراك',
+        type: 'error'
+      });
+    } finally {
+      setIsProcessingPayment(false);
+    }
   };
 
   // Handle recharge wallet
@@ -587,10 +646,20 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
                 {/* Confirm Subscription Button */}
                 <button
                   onClick={handleConfirmSubscription}
-                  className="flex items-center justify-center gap-2 px-6 py-3 bg-[#1e3a8a] text-white rounded-lg font-medium hover:bg-[#1e40af] transition-colors shadow-md"
+                  disabled={isProcessingPayment}
+                  className="flex items-center justify-center gap-2 px-6 py-3 bg-[#1e3a8a] text-white rounded-lg font-medium hover:bg-[#1e40af] transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <Check className="w-5 h-5" />
-                  <span>تأكيد الإشتراك</span>
+                  {isProcessingPayment ? (
+                    <>
+                      <LoadingSpinner size="sm" />
+                      <span>جاري المعالجة...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-5 h-5" />
+                      <span>تأكيد الإشتراك</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>

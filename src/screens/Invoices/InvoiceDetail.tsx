@@ -71,12 +71,61 @@ export const InvoiceDetail = (): JSX.Element => {
   const formattedDate = `${invoiceDate.getDate()} - ${invoiceDate.getMonth() + 1} - ${invoiceDate.getFullYear()}`;
 
   const customerData = invoice.clientData || invoice.companyData || {};
-  const subscriptionData = invoice.items[0] || {
-    description: "اشتراك نظام إدارة الأسطول",
-    packageName: "كلاسيك",
-    period: "سنة",
-    startDate: "01/01/2024",
-    endDate: "31/12/2024",
+  const subscriptionItem = invoice.items[0] || {};
+  
+  // Calculate dates from invoice createdAt if not available in item
+  let subscriptionStartDate = subscriptionItem.startDate;
+  let subscriptionEndDate = subscriptionItem.endDate;
+  
+  if (!subscriptionStartDate || !subscriptionEndDate) {
+    // If dates are not in item, calculate from invoice date and period
+    const invoiceDate = invoice.createdAt instanceof Date
+      ? invoice.createdAt
+      : invoice.createdAt?.toDate
+      ? invoice.createdAt.toDate()
+      : new Date();
+    
+    const periodValueInDays = subscriptionItem.periodValueInDays || 365;
+    subscriptionStartDate = `${String(invoiceDate.getDate()).padStart(2, '0')}/${String(invoiceDate.getMonth() + 1).padStart(2, '0')}/${invoiceDate.getFullYear()}`;
+    
+    const endDateCalc = new Date(invoiceDate);
+    endDateCalc.setDate(endDateCalc.getDate() + periodValueInDays);
+    subscriptionEndDate = `${String(endDateCalc.getDate()).padStart(2, '0')}/${String(endDateCalc.getMonth() + 1).padStart(2, '0')}/${endDateCalc.getFullYear()}`;
+  }
+
+  // Determine period display - use "شهري" or "سنوي"
+  // PRIORITIZE periodValueInDays first, as it's the most reliable indicator
+  let periodDisplay = subscriptionItem.period;
+  
+  // First check periodValueInDays (most reliable)
+  if (subscriptionItem.periodValueInDays === 30) {
+    periodDisplay = "شهري";
+  } else if (subscriptionItem.periodValueInDays === 365 || subscriptionItem.periodValueInDays === 360) {
+    periodDisplay = "سنوي";
+  } else if (!periodDisplay) {
+    // Fallback: determine from periodValueInDays (if not 30 or 365)
+    if (subscriptionItem.periodValueInDays && subscriptionItem.periodValueInDays <= 31) {
+      periodDisplay = "شهري";
+    } else {
+      periodDisplay = "سنوي";
+    }
+  } else {
+    // Normalize period display string
+    const periodStr = String(periodDisplay).toLowerCase();
+    if (periodStr.includes("شهري") || periodStr.includes("monthly")) {
+      periodDisplay = "شهري";
+    } else if (periodStr.includes("سنوي") || periodStr.includes("yearly") || periodStr.includes("annual")) {
+      periodDisplay = "سنوي";
+    }
+    // Otherwise keep the original value
+  }
+
+  const subscriptionData = {
+    description: subscriptionItem.description || subscriptionItem.product || "اشتراك نظام إدارة الأسطول",
+    packageName: subscriptionItem.packageName || subscriptionItem.product || "غير محدد",
+    period: periodDisplay, // "شهري" or "سنوي"
+    startDate: subscriptionStartDate,
+    endDate: subscriptionEndDate,
   };
 
   const invoiceData = {
@@ -90,13 +139,7 @@ export const InvoiceDetail = (): JSX.Element => {
       email: customerData.email || "غير محدد",
       taxNumber: customerData.taxNumber || customerData.vatNumber || "غير محدد",
     },
-    subscription: {
-      description: subscriptionData.product || subscriptionData.description || "اشتراك نظام إدارة الأسطول",
-      packageName: subscriptionData.packageName || "كلاسيك",
-      period: subscriptionData.period || "سنة",
-      startDate: subscriptionData.startDate || "01/01/2024",
-      endDate: subscriptionData.endDate || "31/12/2024",
-    },
+    subscription: subscriptionData,
     financial: {
       subtotal: invoice.subtotal,
       vat: 15,
@@ -242,8 +285,10 @@ export const InvoiceDetail = (): JSX.Element => {
                   <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
                     {invoiceData.subscription.packageName}
                   </td>
-                  <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 whitespace-nowrap [font-style:var(--body-body-2-font-style)]">
-                    {invoiceData.subscription.description}
+                  <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+                    <div className="max-w-md mx-auto text-right">
+                      {invoiceData.subscription.description}
+                    </div>
                   </td>
                 </tr>
               </tbody>
