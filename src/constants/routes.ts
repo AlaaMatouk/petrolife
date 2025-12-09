@@ -30,6 +30,7 @@ export const ROUTES = {
   // Store and Subscriptions
   STORE: "/store",
   SUBSCRIPTIONS: "/subscriptions",
+  SUBSCRIPTION_PLANS: "/subscription-plans",
 
   // Invoices
   INVOICES: "/invoices",
@@ -46,6 +47,7 @@ export const ROUTES = {
   // Test
   TEST: "/test",
   TEST_CHART: "/test-chart",
+  TEST_INSUFFICIENT_BALANCE: "/test-insufficient-balance",
 
   // Service Distributer Dashboard
   SERVICE_DISTRIBUTER_DASHBOARD: "/service-distributer",

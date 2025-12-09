@@ -22,6 +22,7 @@ import { ChargeWallet } from "../screens/ChargeWallet";
 import { PerolifeStationLocations } from "../screens/PerolifeStationLocations/perolifestationlocations";
 import { StoreScreen } from "../screens/Store";
 import { SubscriptionsScreen } from "../screens/Subscriptions";
+import { SubscriptionPlansScreen } from "../screens/Subscriptions/SubscriptionPlansScreen";
 import { DeliveryFuelRequests } from "../screens/DeliveryFuelRequests";
 import { CreateDeliveryRequest } from "../screens/CreateDeliveryRequest";
 import LoginAndRegister from "../screens/Login And Register/LoginAndRegister";
@@ -44,7 +45,7 @@ import { SupervisorDetails } from "../components/AdminDashboard/pages/supervisor
 import { Companies } from "../components/AdminDashboard/pages/companies/Companies";
 import { AddCompany } from "../components/AdminDashboard/pages/companies/AddCompany";
 import { CompanyDetails } from "../components/AdminDashboard/pages/companies/CompanyDetails";
-import { Test, TestChartLegendHighlight } from "../screens/Test";
+import { Test, TestChartLegendHighlight, TestInsufficientBalance } from "../screens/Test";
 import { Individuals } from "../components/AdminDashboard/pages/Individuals/Individuals";
 // @ts-ignore - JSX component imports
 import { AddIndividuals } from "../components/AdminDashboard/pages/Individuals/AddIndividuals";
@@ -325,6 +326,7 @@ export const AppRouter = () => {
         {/* Store and Subscriptions */}
         <Route path={ROUTES.STORE} element={<StoreScreen />} />
         <Route path={ROUTES.SUBSCRIPTIONS} element={<SubscriptionsScreen />} />
+        <Route path={ROUTES.SUBSCRIPTION_PLANS} element={<SubscriptionPlansScreen />} />
 
         {/* Invoices */}
         <Route path={ROUTES.INVOICES} element={<Invoices />} />
@@ -345,6 +347,7 @@ export const AppRouter = () => {
           path={ROUTES.TEST_CHART}
           element={<TestChartLegendHighlight />}
         />
+        <Route path={ROUTES.TEST_INSUFFICIENT_BALANCE} element={<TestInsufficientBalance />} />
         <Route path="/test-transfer" element={<TestTransfer />} />
 
         {/* Developer Tools */}

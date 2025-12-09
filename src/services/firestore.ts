@@ -17,6 +17,7 @@ import {
   limit,
   deleteDoc,
   Timestamp,
+  runTransaction,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getFunctions, httpsCallable } from "firebase/functions";
@@ -3628,6 +3629,330 @@ export const deleteSubscription = async (
     console.log("✅ Subscription deleted successfully from Firestore");
   } catch (error) {
     console.error("Error deleting subscription:", error);
+    throw error;
+  }
+};
+
+/**
+ * Process subscription payment: deduct wallet balance, create subscription payment, order, and invoice
+ * @param subscriptionData - Subscription payment data
+ * @returns Promise with invoice ID and subscription payment ID
+ */
+export const processSubscriptionPayment = async (subscriptionData: {
+  subscriptionId: string;
+  subscription: any;
+  vehicleCount: number;
+  totalWithVAT: number;
+  totalWithoutVAT: number;
+  vat: number;
+  companyId: string;
+  company: any;
+}): Promise<{ invoiceId: string; subscriptionPaymentId: string; orderId: string }> => {
+  try {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      throw new Error("No user is currently logged in");
+    }
+
+    const { subscriptionId, subscription, vehicleCount, totalWithVAT, totalWithoutVAT, vat, companyId, company } = subscriptionData;
+
+    // Validate required data with detailed error messages
+    if (!subscriptionId) {
+      throw new Error("Missing subscription ID");
+    }
+    if (!subscription) {
+      throw new Error("Missing subscription data");
+    }
+    if (!company) {
+      throw new Error("Missing company data");
+    }
+
+    // Construct finalCompanyId from available sources
+    // companyId from parameter, or company.id, or company.email (which might be the doc ID)
+    const finalCompanyId = companyId || company.id || company.email || "";
+    
+    if (!finalCompanyId) {
+      console.error("Company data received:", company);
+      throw new Error("Company ID is missing - cannot proceed with subscription. Please ensure company data is loaded.");
+    }
+
+    // Get email from company data (may be in different fields)
+    const companyEmail = company.email || company.userEmail || "";
+    if (!companyEmail) {
+      console.warn("Company email not found, but continuing with subscription payment");
+    }
+
+    // Calculate dates
+    const subscriptionStartDate = new Date();
+    
+    // Safely determine periodValueInDays
+    let periodValueInDays = subscription.periodValueInDays;
+    if (!periodValueInDays) {
+      // Try to determine from periodName
+      let periodNameStr = "";
+      if (subscription.periodName) {
+        if (typeof subscription.periodName === "string") {
+          periodNameStr = subscription.periodName.toLowerCase();
+        } else if (subscription.periodName.ar) {
+          periodNameStr = String(subscription.periodName.ar).toLowerCase();
+        } else if (subscription.periodName.en) {
+          periodNameStr = String(subscription.periodName.en).toLowerCase();
+        }
+      }
+      
+      // Check if it's monthly
+      if (periodNameStr.includes("شهري") || periodNameStr.includes("monthly")) {
+        periodValueInDays = 30;
+      } else {
+        periodValueInDays = 365; // Default to annual
+      }
+    }
+    
+    const subscriptionEndDate = new Date(subscriptionStartDate);
+    subscriptionEndDate.setDate(subscriptionEndDate.getDate() + periodValueInDays);
+
+    // Validate finalCompanyId is not null/empty
+    if (!finalCompanyId || typeof finalCompanyId !== "string" || finalCompanyId.trim() === "") {
+      throw new Error("Invalid company ID");
+    }
+
+    // Get company document reference (use finalCompanyId which might be email or doc ID)
+    const companyDocRef = doc(db, "companies", finalCompanyId);
+
+    // Use transaction to ensure atomicity
+    const result = await runTransaction(db, async (transaction) => {
+      // 1. Read company document within transaction
+      const companyDoc = await transaction.get(companyDocRef);
+
+      if (!companyDoc.exists()) {
+        throw new Error("Company not found");
+      }
+
+      const companyData = companyDoc.data();
+      const currentBalance = companyData.balance || companyData.walletBalance || 0;
+
+      // Verify sufficient balance
+      if (currentBalance < totalWithVAT) {
+        throw new Error("Insufficient balance");
+      }
+
+      // Calculate new balance
+      const newBalance = currentBalance - totalWithVAT;
+
+      // 2. Create subscription payment document
+      const subscriptionPaymentRef = doc(collection(db, "subscriptions-payment"));
+      const subscriptionPaymentData = {
+        company: {
+          id: company.id || finalCompanyId,
+          email: companyEmail || companyData.email || "",
+          name: company.name || company.brandName || companyData.name || companyData.brandName || "",
+        },
+        selectedSubscription: {
+          id: subscriptionId,
+          title: subscription.title,
+          description: subscription.description,
+          status: subscription.status,
+          price: subscription.price,
+          options: subscription.options,
+          periodName: subscription.periodName,
+          periodValueInDays: periodValueInDays,
+          logo: subscription.logo,
+        },
+        vehicleCount: vehicleCount,
+        subscriptionStartDate: Timestamp.fromDate(subscriptionStartDate),
+        subscriptionEndDate: Timestamp.fromDate(subscriptionEndDate),
+        isPaid: true,
+        price: subscription.price,
+        totalPrice: totalWithVAT,
+        vat: vat,
+        createdDate: serverTimestamp(),
+        createdUserId: currentUser.uid,
+      };
+      transaction.set(subscriptionPaymentRef, subscriptionPaymentData);
+
+      // 3. Create order document
+      const orderRef = doc(collection(db, "orders"));
+      const orderData = {
+        companyUid: currentUser.uid,
+        createdUserId: currentUser.uid,
+        orderDate: serverTimestamp(),
+        createdDate: serverTimestamp(),
+        service: {
+          title: {
+            ar: "اشتراك",
+            en: "Subscription",
+          },
+          desc: {
+            ar: "اشتراك في باقة",
+            en: "Subscription package",
+          },
+        },
+        selectedOption: {
+          name: {
+            ar: subscription.title?.ar || subscription.title?.en || "اشتراك",
+            en: subscription.title?.en || subscription.title?.ar || "Subscription",
+          },
+        },
+        totalPrice: totalWithVAT,
+        fuelCost: 0,
+        deliveryFees: 0,
+        status: "completed",
+        subscriptionPaymentId: subscriptionPaymentRef.id,
+      };
+      transaction.set(orderRef, orderData);
+
+      // 4. Update company's balance, selectedSubscription, and maxCarNumber in one update
+      transaction.update(companyDocRef, {
+        balance: newBalance,
+        selectedSubscription: {
+          id: subscriptionId,
+          title: subscription.title,
+          description: subscription.description,
+          status: subscription.status,
+          price: subscription.price,
+          options: subscription.options,
+          periodName: subscription.periodName,
+          periodValueInDays: periodValueInDays,
+          logo: subscription.logo,
+          createdDate: Timestamp.fromDate(subscriptionStartDate),
+          vehicleCount: vehicleCount,
+        },
+        maxCarNumber: vehicleCount,
+      });
+
+      return {
+        subscriptionPaymentId: subscriptionPaymentRef.id,
+        orderId: orderRef.id,
+      };
+    });
+
+    // 5. Generate invoice (outside transaction)
+    const { generateInvoiceNumber, calculateVAT } = await import("./invoiceService");
+    const invoiceNumber = await generateInvoiceNumber();
+    const vatRate = 15;
+
+    // Safely extract subscription title
+    let subscriptionTitle = "اشتراك";
+    if (subscription.title) {
+      if (typeof subscription.title === "string") {
+        subscriptionTitle = subscription.title;
+      } else if (subscription.title.ar) {
+        subscriptionTitle = subscription.title.ar;
+      } else if (subscription.title.en) {
+        subscriptionTitle = subscription.title.en;
+      }
+    }
+
+    // Safely extract period name - use "شهري" for monthly, "سنوي" for yearly
+    // PRIORITIZE periodValueInDays first, as it's the most reliable indicator
+    let periodName = "سنوي"; // Default to yearly
+    
+    // First check periodValueInDays (most reliable)
+    if (periodValueInDays === 30) {
+      periodName = "شهري";
+    } else if (periodValueInDays === 365 || periodValueInDays === 360) {
+      periodName = "سنوي";
+    } else if (subscription.periodName) {
+      // Fallback to periodName string matching if periodValueInDays is not standard
+      if (typeof subscription.periodName === "string") {
+        const periodStr = subscription.periodName.toLowerCase();
+        if (periodStr.includes("شهري") || periodStr.includes("monthly")) {
+          periodName = "شهري";
+        } else if (periodStr.includes("سنوي") || periodStr.includes("yearly") || periodStr.includes("annual")) {
+          periodName = "سنوي";
+        } else {
+          periodName = subscription.periodName;
+        }
+      } else if (subscription.periodName.ar) {
+        const periodStr = String(subscription.periodName.ar).toLowerCase();
+        if (periodStr.includes("شهري") || periodStr.includes("monthly")) {
+          periodName = "شهري";
+        } else if (periodStr.includes("سنوي") || periodStr.includes("yearly") || periodStr.includes("annual")) {
+          periodName = "سنوي";
+        } else {
+          periodName = subscription.periodName.ar;
+        }
+      } else if (subscription.periodName.en) {
+        const periodStr = String(subscription.periodName.en).toLowerCase();
+        if (periodStr.includes("monthly") || periodStr.includes("شهري")) {
+          periodName = "شهري";
+        } else if (periodStr.includes("yearly") || periodStr.includes("annual") || periodStr.includes("سنوي")) {
+          periodName = "سنوي";
+        } else {
+          periodName = subscription.periodName.en;
+        }
+      }
+    }
+    
+    // Safely extract subscription description
+    let subscriptionDescription = "اشتراك نظام إدارة الأسطول";
+    if (subscription.description) {
+      if (typeof subscription.description === "string") {
+        subscriptionDescription = subscription.description;
+      } else if (subscription.description.ar) {
+        subscriptionDescription = subscription.description.ar;
+      } else if (subscription.description.en) {
+        subscriptionDescription = subscription.description.en;
+      }
+    }
+
+    // Format dates for invoice
+    const formatDateForInvoice = (date: Date): string => {
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+      return `${day}/${month}/${year}`;
+    };
+
+    const invoiceItem: any = {
+      product: subscriptionTitle,
+      quantity: 1,
+      pricePerUnit: subscription.price || 0,
+      amountBeforeTax: totalWithoutVAT,
+      vat: vat,
+      total: totalWithVAT,
+      // Add subscription-specific fields
+      packageName: subscriptionTitle,
+      period: periodName, // "شهري" or "سنوي"
+      periodValueInDays: periodValueInDays,
+      startDate: formatDateForInvoice(subscriptionStartDate),
+      endDate: formatDateForInvoice(subscriptionEndDate),
+      description: subscriptionDescription, // Full plan description
+    };
+
+    // Get company data from transaction result or use passed company data
+    const companyDocRefForInvoice = doc(db, "companies", finalCompanyId);
+    const companyDocForInvoice = await getDoc(companyDocRefForInvoice);
+    const companyDataForInvoice = companyDocForInvoice.exists() ? companyDocForInvoice.data() : company || {};
+    
+    const cleanCompanyData = Object.fromEntries(
+      Object.entries(companyDataForInvoice).filter(([_, v]) => v !== undefined && v !== null)
+    );
+
+    const invoiceData: any = {
+      invoiceNumber,
+      type: "Subscription",
+      createdAt: Timestamp.fromDate(subscriptionStartDate),
+      companyData: cleanCompanyData,
+      orderId: result.orderId,
+      items: [invoiceItem],
+      subtotal: totalWithoutVAT,
+      vatAmount: vat,
+      total: totalWithVAT,
+      subscriptionPaymentId: result.subscriptionPaymentId,
+    };
+
+    const invoicesRef = collection(db, "invoices");
+    const invoiceDocRef = await addDoc(invoicesRef, invoiceData);
+
+    console.log("✅ Subscription payment processed successfully");
+    return {
+      invoiceId: invoiceDocRef.id,
+      subscriptionPaymentId: result.subscriptionPaymentId,
+      orderId: result.orderId,
+    };
+  } catch (error) {
+    console.error("❌ Error processing subscription payment:", error);
     throw error;
   }
 };
