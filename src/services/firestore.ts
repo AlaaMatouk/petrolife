@@ -18,6 +18,7 @@ import {
   deleteDoc,
   Timestamp,
   runTransaction,
+  writeBatch,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getFunctions, httpsCallable } from "firebase/functions";
@@ -8965,6 +8966,166 @@ export const createCarType = async (carTypeData: {
     };
   } catch (error) {
     console.error("Error creating car-type document:", error);
+    throw error;
+  }
+};
+
+/**
+ * Upload car brands from Excel data to car-models collection
+ * Checks for duplicates before creating
+ * @param brands - Array of brand names
+ * @param createdUserId - Optional user ID for createdUserId field
+ * @returns Object with created brands count and skipped (duplicate) count
+ */
+export const uploadCarBrandsFromExcel = async (
+  brands: string[],
+  createdUserId?: string | null
+): Promise<{ created: number; skipped: number; brandMap: Map<string, string> }> => {
+  try {
+    const currentUser = auth.currentUser;
+    const userEmail = currentUser?.email ?? createdUserId ?? null;
+
+    // Fetch existing brands to check for duplicates
+    const existingBrands = await fetchCarModels();
+    const existingBrandNames = new Set(
+      existingBrands
+        .map((brand) => brand.name?.ar?.trim().toLowerCase())
+        .filter((name): name is string => !!name)
+    );
+
+    const brandMap = new Map<string, string>(); // brand name -> document ID
+    let created = 0;
+    let skipped = 0;
+
+    // Process brands sequentially to avoid overwhelming Firestore
+    for (const brandName of brands) {
+      const normalizedName = brandName.trim().toLowerCase();
+      
+      // Check if brand already exists
+      if (existingBrandNames.has(normalizedName)) {
+        // Find the existing brand document ID
+        const existingBrand = existingBrands.find(
+          (b) => b.name?.ar?.trim().toLowerCase() === normalizedName
+        );
+        if (existingBrand?.id) {
+          brandMap.set(brandName.trim(), existingBrand.id);
+        }
+        skipped++;
+        continue;
+      }
+
+      try {
+        // Create new brand
+        const result = await createCarModel({
+          name: { ar: brandName.trim() },
+          createdUserId: userEmail,
+        });
+        
+        brandMap.set(brandName.trim(), result.id);
+        existingBrandNames.add(normalizedName); // Add to set to avoid duplicates in same batch
+        created++;
+      } catch (error) {
+        console.error(`Error creating brand "${brandName}":`, error);
+        // Continue with next brand even if one fails
+      }
+    }
+
+    return { created, skipped, brandMap };
+  } catch (error) {
+    console.error("Error uploading car brands:", error);
+    throw error;
+  }
+};
+
+/**
+ * Upload car types (models) from Excel data to car-types collection
+ * Links each model to its brand using the brandMap
+ * @param brandModels - Map of brand name to array of model names
+ * @param brandMap - Map of brand name to brand document ID
+ * @param defaultYear - Default year to use if not provided (default: "2020")
+ * @param defaultFuelType - Default fuel type to use if not provided (default: "fuel95")
+ * @param createdUserId - Optional user ID for createdUserId field
+ * @returns Object with created models count and skipped (duplicate) count
+ */
+export const uploadCarTypesFromExcel = async (
+  brandModels: Map<string, string[]>,
+  brandMap: Map<string, string>,
+  defaultYear: string = "2020",
+  defaultFuelType: string = "fuel95",
+  createdUserId?: string | null
+): Promise<{ created: number; skipped: number }> => {
+  try {
+    const currentUser = auth.currentUser;
+    const userEmail = currentUser?.email ?? createdUserId ?? null;
+
+    // Fetch existing car types to check for duplicates
+    const existingCarTypes = await fetchCarTypes();
+    const existingTypeKeys = new Set(
+      existingCarTypes.map((type) => {
+        const brandName = type.carModel?.name?.ar?.trim().toLowerCase() || "";
+        const modelName = type.name?.ar?.trim().toLowerCase() || "";
+        return `${brandName}::${modelName}`;
+      })
+    );
+
+    let created = 0;
+    let skipped = 0;
+
+    // Process each brand and its models
+    for (const [brandName, models] of brandModels.entries()) {
+      const brandDocId = brandMap.get(brandName.trim());
+      
+      if (!brandDocId) {
+        console.warn(`Brand "${brandName}" not found in brandMap, skipping models`);
+        continue;
+      }
+
+      // Get brand document to get brand name structure
+      const brandDoc = await getDoc(doc(db, "car-models", brandDocId));
+      if (!brandDoc.exists()) {
+        console.warn(`Brand document "${brandDocId}" not found, skipping models`);
+        continue;
+      }
+
+      const brandData = brandDoc.data();
+      const brandNameAr = brandData?.name?.ar || brandName.trim();
+      const brandNameEn = brandData?.name?.en || brandNameAr;
+
+      // Process models for this brand
+      for (const modelName of models) {
+        const normalizedKey = `${brandName.trim().toLowerCase()}::${modelName.trim().toLowerCase()}`;
+        
+        // Check if model already exists
+        if (existingTypeKeys.has(normalizedKey)) {
+          skipped++;
+          continue;
+        }
+
+        try {
+          // Create new car type
+          await createCarType({
+            name: { ar: modelName.trim() },
+            carModel: {
+              name: { ar: brandNameAr, en: brandNameEn },
+              carModelImageUrl: null,
+            },
+            year: defaultYear,
+            fuelType: defaultFuelType,
+            createdUserId: userEmail,
+          });
+
+          existingTypeKeys.add(normalizedKey); // Add to set to avoid duplicates in same batch
+          created++;
+        } catch (error) {
+          console.error(`Error creating model "${modelName}" for brand "${brandName}":`, error);
+          // Continue with next model even if one fails
+        }
+      }
+    }
+
+    return { created, skipped };
+  } catch (error) {
+    console.error("Error uploading car types:", error);
     throw error;
   }
 };
