@@ -1,9 +1,11 @@
 import React, { useState } from "react";
 import { CirclePlus, ArrowLeft, ChevronDown } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { RefundConfirmationModal } from "./RefundConfirmationModal";
 
 export const RequestFormSection = (): JSX.Element => {
   const navigate = useNavigate();
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [formData, setFormData] = useState({
     accountNumber: "",
     companyIban: "",
@@ -30,7 +32,25 @@ export const RequestFormSection = (): JSX.Element => {
   };
 
   const handleSubmit = () => {
-    console.log("Form submitted:", formData);
+    // Show confirmation modal instead of directly submitting
+    setShowConfirmationModal(true);
+  };
+
+  const handleConfirm = () => {
+    // Final submission logic
+    console.log("Form confirmed and submitted:", formData);
+    // Close modal
+    setShowConfirmationModal(false);
+    // TODO: Add actual submission logic here (e.g., API call)
+    // After successful submission, you might want to:
+    // - Reset the form
+    // - Show success message
+    // - Navigate to history page
+  };
+
+  const handleCancel = () => {
+    // Close modal and return to form
+    setShowConfirmationModal(false);
   };
 
   return (
@@ -300,6 +320,14 @@ export const RequestFormSection = (): JSX.Element => {
           </div>
         </form>
       </div>
+
+      {/* Confirmation Modal */}
+      <RefundConfirmationModal
+        open={showConfirmationModal}
+        formData={formData}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 };
