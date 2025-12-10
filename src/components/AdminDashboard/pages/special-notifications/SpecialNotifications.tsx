@@ -1,25 +1,11 @@
 import { useState, useMemo, useEffect } from "react";
-import { Table, Pagination, ExportButton } from "../../../shared";
+import { Table, Pagination, ExportButton, LoadingSpinner } from "../../../shared";
 import { Bell, MoreVertical, Send, Edit, Trash2, CirclePlus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { exportDataTable } from "../../../../services/exportService";
 import { useToast } from "../../../../context/ToastContext";
-
-// Mock data for special notifications
-const mockSpecialNotifications = Array.from({ length: 10 }).map((_, i) => ({
-  id: i + 1,
-  number: i + 1,
-  title: i === 1 ? "تغيير البطارية" : "وقود بالقرب منك",
-  description: "نصلك في أسرع وقت لتزويدك ب...",
-  creator: {
-    name: "أحمد محمد",
-    avatar: undefined,
-  },
-  targeting: i % 5 === 0 ? "عام" : i % 4 === 0 ? "شركات" : i % 4 === 1 ? "أفراد" : i % 4 === 2 ? "مزودو الخدمة" : "تطبيق السائق",
-  lastSendDate: i === 9 ? "--" : "21 فبراير 2025 - 5:05 ص",
-  creationDate: "21 فبراير 2025 - 5:05 ص",
-}));
+import { fetchAllNotifications, mapNotificationToTableFormat } from "../../../../services/notificationService";
 
 // Action Menu Component for each row
 interface ActionMenuProps {
@@ -131,7 +117,51 @@ const SpecialNotifications = () => {
   const navigate = useNavigate();
   const { addToast } = useToast();
   const [currentPage, setCurrentPage] = useState(1);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const itemsPerPage = 10;
+
+  // Fetch notifications from Firestore
+  useEffect(() => {
+    const loadNotifications = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        console.log("🔄 Starting to load notifications...");
+        
+        // Fetch notifications
+        const fetchedNotifications = await fetchAllNotifications();
+        console.log("📊 Fetched notifications:", fetchedNotifications.length);
+        
+        // Map to table format
+        const mappedNotifications = fetchedNotifications.map(mapNotificationToTableFormat);
+        console.log("📋 Mapped notifications:", mappedNotifications.length);
+        
+        setNotifications(mappedNotifications);
+        console.log("✅ Notifications state updated with", mappedNotifications.length, "items");
+      } catch (error: any) {
+        console.error("❌ Error loading notifications:", error);
+        console.error("Error type:", error?.constructor?.name);
+        console.error("Error message:", error?.message);
+        console.error("Error stack:", error?.stack);
+        
+        const errorMessage = error?.message || "فشل في تحميل الاشعارات المخصصة";
+        setError(errorMessage);
+        addToast({
+          type: "error",
+          title: "خطأ في تحميل البيانات",
+          message: errorMessage + ". يرجى التحقق من وحدة التحكم للمزيد من التفاصيل.",
+        });
+        setNotifications([]);
+      } finally {
+        setLoading(false);
+        console.log("🏁 Loading completed");
+      }
+    };
+
+    loadNotifications();
+  }, [addToast]);
 
   const columns = useMemo(
     () => [
@@ -204,11 +234,11 @@ const SpecialNotifications = () => {
 
   const paginatedData = useMemo(
     () =>
-      mockSpecialNotifications.slice(
+      notifications.slice(
         (currentPage - 1) * itemsPerPage,
         currentPage * itemsPerPage
       ),
-    [currentPage]
+    [currentPage, notifications]
   );
 
   const handleExport = async (format: string) => {
@@ -223,7 +253,7 @@ const SpecialNotifications = () => {
         { key: "creationDate", label: "تاريخ الانشاء" },
       ];
 
-      const exportData = mockSpecialNotifications.map((item) => ({
+      const exportData = notifications.map((item) => ({
         ...item,
         creator: item.creator?.name || "-",
       }));
@@ -262,7 +292,7 @@ const SpecialNotifications = () => {
         <div className="flex items-center justify-end gap-1.5" dir="rtl">
           <Bell className="w-5 h-5 text-gray-500" />
           <h1 className="font-subtitle-subtitle-2 text-[length:var(--subtitle-subtitle-2-font-size)] text-color-mode-text-icons-t-sec">
-            الاشعارات المخصصة ({mockSpecialNotifications.length})
+            الاشعارات المخصصة ({notifications.length})
           </h1>
         </div>
         {/* Buttons on left */}
@@ -284,17 +314,39 @@ const SpecialNotifications = () => {
         </div>
       </div>
 
-      {/* Table Section */}
-      <div className="w-full overflow-x-auto">
-        <Table columns={columns} data={paginatedData} />
-      </div>
+      {/* Error Display */}
+      {error && (
+        <div className="w-full p-4 bg-red-50 rounded-lg border border-red-200">
+          <p className="text-red-800 font-semibold">خطأ:</p>
+          <p className="text-red-600">{error}</p>
+        </div>
+      )}
 
-      {/* Pagination */}
-      <Pagination
-        currentPage={currentPage}
-        totalPages={Math.ceil(mockSpecialNotifications.length / itemsPerPage) || 1}
-        onPageChange={setCurrentPage}
-      />
+      {/* Table Section */}
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <LoadingSpinner />
+        </div>
+      ) : notifications.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12">
+          <Bell className="w-12 h-12 text-gray-400 mb-4" />
+          <p className="text-gray-500 text-lg">لا توجد اشعارات مخصصة</p>
+          <p className="text-gray-400 text-sm mt-2">لم يتم العثور على أي اشعارات في قاعدة البيانات</p>
+        </div>
+      ) : (
+        <>
+          <div className="w-full overflow-x-auto">
+            <Table columns={columns} data={paginatedData} />
+          </div>
+
+          {/* Pagination */}
+          <Pagination
+            currentPage={currentPage}
+            totalPages={Math.ceil(notifications.length / itemsPerPage) || 1}
+            onPageChange={setCurrentPage}
+          />
+        </>
+      )}
     </div>
   );
 };
