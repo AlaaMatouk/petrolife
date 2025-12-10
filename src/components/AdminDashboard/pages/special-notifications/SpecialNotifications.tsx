@@ -117,16 +117,45 @@ const SpecialNotifications = () => {
   const navigate = useNavigate();
   const { addToast } = useToast();
   const [currentPage, setCurrentPage] = useState(1);
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const itemsPerPage = 10;
+  const STORAGE_KEY = "admin_special_notifications_cache";
+
+  // Get cached notifications from sessionStorage
+  const getCachedNotifications = (): any[] => {
+    try {
+      const cachedData = sessionStorage.getItem(STORAGE_KEY);
+      if (cachedData) {
+        return JSON.parse(cachedData);
+      }
+    } catch (error) {
+      console.error("Error parsing cached notifications:", error);
+      sessionStorage.removeItem(STORAGE_KEY);
+    }
+    return [];
+  };
+
+  // Initialize with cached data if available
+  const cachedNotifications = getCachedNotifications();
+  const [notifications, setNotifications] = useState<any[]>(cachedNotifications);
+  const [loading, setLoading] = useState(cachedNotifications.length === 0);
 
   // Fetch notifications from Firestore
   useEffect(() => {
+    let isMounted = true;
+
+    // If we already have cached data, don't show loading
+    if (notifications.length > 0) {
+      setLoading(false);
+    }
+
     const loadNotifications = async () => {
-      try {
+      // Only show loading if we don't have cached data
+      if (notifications.length === 0) {
         setLoading(true);
+      }
+      
+      try {
         setError(null);
         console.log("🔄 Starting to load notifications...");
         
@@ -138,30 +167,49 @@ const SpecialNotifications = () => {
         const mappedNotifications = fetchedNotifications.map(mapNotificationToTableFormat);
         console.log("📋 Mapped notifications:", mappedNotifications.length);
         
-        setNotifications(mappedNotifications);
-        console.log("✅ Notifications state updated with", mappedNotifications.length, "items");
+        // Only update state if component is still mounted
+        if (isMounted) {
+          setNotifications(mappedNotifications);
+          // Cache the data
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(mappedNotifications));
+          console.log("✅ Notifications state updated with", mappedNotifications.length, "items");
+        }
       } catch (error: any) {
         console.error("❌ Error loading notifications:", error);
         console.error("Error type:", error?.constructor?.name);
         console.error("Error message:", error?.message);
         console.error("Error stack:", error?.stack);
         
-        const errorMessage = error?.message || "فشل في تحميل الاشعارات المخصصة";
-        setError(errorMessage);
-        addToast({
-          type: "error",
-          title: "خطأ في تحميل البيانات",
-          message: errorMessage + ". يرجى التحقق من وحدة التحكم للمزيد من التفاصيل.",
-        });
-        setNotifications([]);
+        if (isMounted) {
+          const errorMessage = error?.message || "فشل في تحميل الاشعارات المخصصة";
+          setError(errorMessage);
+          addToast({
+            type: "error",
+            title: "خطأ في تحميل البيانات",
+            message: errorMessage + ". يرجى التحقق من وحدة التحكم للمزيد من التفاصيل.",
+          });
+          // Only clear if we don't have cached data
+          if (notifications.length === 0) {
+            setNotifications([]);
+          }
+        }
       } finally {
-        setLoading(false);
-        console.log("🏁 Loading completed");
+        if (isMounted) {
+          setLoading(false);
+          console.log("🏁 Loading completed");
+        }
       }
     };
 
+    // Always fetch fresh data, but show cached data immediately
     loadNotifications();
-  }, [addToast]);
+
+    // Cleanup function to prevent state updates if component unmounts
+    return () => {
+      isMounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
 
   const columns = useMemo(
     () => [
