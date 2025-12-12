@@ -33,14 +33,16 @@ export const RTLSelect: React.FC<RTLSelectProps> = ({
 
       <div className="relative w-full">
         <div className="flex h-[46px] items-center justify-between gap-[var(--corner-radius-small)] pt-[var(--corner-radius-small)] pr-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] pl-[var(--corner-radius-small)] relative self-stretch w-full rounded-[var(--corner-radius-small)] border-[0.5px] border-solid border-color-mode-text-icons-t-placeholder hover:border-color-mode-text-icons-t-sec focus-within:border-color-mode-text-icons-t-blue transition-colors bg-transparent">
-          {/* Dropdown arrow on the left */}
-          <div className="flex items-center justify-center">
-            <img
-              src="/src/assets/imgs/icons/angle-left.svg"
-              alt=""
-              className="w-4 h-4"
-            />
-          </div>
+          {/* Icon on the right (if provided) */}
+          {options.find((opt) => opt.value === value)?.icon && (
+            <div className="flex items-center justify-center">
+              <img
+                className="w-[18px] h-[18px] aspect-[1]"
+                alt={`أيقونة ${label}`}
+                src={options.find((opt) => opt.value === value)?.icon}
+              />
+            </div>
+          )}
 
           {/* Select content */}
           <div className="flex items-center justify-end pt-[3px] pb-0 px-0 relative flex-1 grow">
@@ -60,16 +62,14 @@ export const RTLSelect: React.FC<RTLSelectProps> = ({
             </select>
           </div>
 
-          {/* Icon on the right (if provided) */}
-          {options.find((opt) => opt.value === value)?.icon && (
-            <div className="flex items-center justify-center">
-              <img
-                className="w-[18px] h-[18px] aspect-[1]"
-                alt={`أيقونة ${label}`}
-                src={options.find((opt) => opt.value === value)?.icon}
-              />
-            </div>
-          )}
+          {/* Dropdown arrow on the right */}
+          <div className="flex items-center justify-center">
+            <img
+              src="/src/assets/imgs/icons/angle-left.svg"
+              alt=""
+              className="w-4 h-4"
+            />
+          </div>
         </div>
       </div>
     </div>
