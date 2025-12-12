@@ -1,25 +1,39 @@
 import { Fuel, ChevronLeft } from "lucide-react";
-import React, { useState } from "react";
+import React from "react";
 
-export const DataDisplaySection = (): JSX.Element => {
-  const [selectedCompany, setSelectedCompany] = useState("كل الشركات");
-  const [selectedCity, setSelectedCity] = useState("كل المدن");
+interface DataDisplaySectionProps {
+  selectedCompany: string;
+  selectedCity: string;
+  onCompanyChange: (value: string) => void;
+  onCityChange: (value: string) => void;
+  companies: string[];
+  cities: string[];
+}
 
-  const filterOptions = [
-    {
-      id: "companies",
-      label: "كل الشركات",
-      value: selectedCompany,
-      onChange: setSelectedCompany,
-      icon: "/img/side-icons-1.svg",
-    },
-    {
-      id: "cities",
-      label: "كل المدن",
-      value: selectedCity,
-      onChange: setSelectedCity,
-      icon: "/img/side-icons-1.svg",
-    },
+export const DataDisplaySection = ({
+  selectedCompany,
+  selectedCity,
+  onCompanyChange,
+  onCityChange,
+  companies,
+  cities,
+}: DataDisplaySectionProps): JSX.Element => {
+  // Create options for company dropdown - include "كل الشركات" as first option
+  const companyOptions = [
+    { value: "كل الشركات", label: "كل الشركات" },
+    ...companies
+      .filter((company) => company && company !== "N/A" && company.trim() !== "")
+      .sort()
+      .map((company) => ({ value: company, label: company })),
+  ];
+
+  // Create options for city dropdown - include "كل المدن" as first option
+  const cityOptions = [
+    { value: "كل المدن", label: "كل المدن" },
+    ...cities
+      .filter((city) => city && city !== "N/A" && city.trim() !== "")
+      .sort()
+      .map((city) => ({ value: city, label: city })),
   ];
 
   return (
@@ -34,25 +48,43 @@ export const DataDisplaySection = (): JSX.Element => {
             role="group"
             aria-label="فلاتر البحث"
           >
-            {filterOptions.map((filter) => (
-              <div
-                key={filter.id}
-                className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] border-[0.5px] border-solid border-color-mode-text-icons-t-placeholder"
-              >
-                <button
-                  className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto] cursor-pointer hover:opacity-80 transition-opacity duration-200 focus:outline-none focus:ring-2 focus:ring-color-mode-surface-primary-blue focus:ring-opacity-50 rounded-[var(--corner-radius-small)]"
-                  onClick={() => filter.onChange(filter.value)}
-                  aria-label={`تغيير فلتر ${filter.label}`}
-                  type="button"
+            {/* Company Dropdown */}
+            <div className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] border-[0.5px] border-solid border-color-mode-text-icons-t-placeholder w-[140px]">
+              <div className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
+                <ChevronLeft className="relative w-[18px] h-[18px] text-gray-500 pointer-events-none" />
+                <select
+                  value={selectedCompany}
+                  onChange={(e) => onCompanyChange(e.target.value)}
+                  className="relative w-full mt-[-1.00px] font-body-body-2 font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-sec text-[length:var(--body-body-2-font-size)] text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)] bg-transparent border-none outline-none cursor-pointer appearance-none pr-1 pl-6"
+                  aria-label="فلتر الشركات"
                 >
-                  <ChevronLeft className="relative w-[18px] h-[18px] text-gray-500" />
-
-                  <span className="relative w-fit mt-[-1.00px] font-body-body-2 font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-sec text-[length:var(--body-body-2-font-size)] text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
-                    {filter.label}
-                  </span>
-                </button>
+                  {companyOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </div>
-            ))}
+            </div>
+
+            {/* City Dropdown */}
+            <div className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] border-[0.5px] border-solid border-color-mode-text-icons-t-placeholder w-[140px]">
+              <div className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
+                <ChevronLeft className="relative w-[18px] h-[18px] text-gray-500 pointer-events-none" />
+                <select
+                  value={selectedCity}
+                  onChange={(e) => onCityChange(e.target.value)}
+                  className="relative w-full mt-[-1.00px] font-body-body-2 font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-sec text-[length:var(--body-body-2-font-size)] text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)] bg-transparent border-none outline-none cursor-pointer appearance-none pr-1 pl-6"
+                  aria-label="فلتر المدن"
+                >
+                  {cityOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
         </div>
 
