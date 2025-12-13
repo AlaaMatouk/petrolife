@@ -2,32 +2,13 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, FileChartColumnIncreasing } from "lucide-react";
 import { Table, TimeFilter, ExportButton, Pagination, LoadingSpinner } from "../../../../components/shared";
-import { fetchWalletChargeRequests } from "../../../../services/firestore";
 
 // Helper function to format date
-const formatDate = (date: any): string => {
+const formatDate = (date: Date): string => {
   if (!date) return '-';
   
   try {
-    if (date.toDate && typeof date.toDate === 'function') {
-      return new Date(date.toDate()).toLocaleString('ar-EG', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    }
-    if (date instanceof Date) {
-      return date.toLocaleString('ar-EG', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    }
-    return new Date(date).toLocaleString('ar-EG', {
+    return date.toLocaleString('ar-EG', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
@@ -39,21 +20,58 @@ const formatDate = (date: any): string => {
   }
 };
 
-// Helper function to get status in Arabic
-const getStatusText = (status: string): { text: string; type: string } => {
-  const statusLower = status?.toLowerCase() || '';
+// Generate dummy refund requests data
+const generateDummyRequests = () => {
+  const requests: any[] = [];
+  const now = new Date();
+  const statuses = [
+    { text: 'مكتمل', type: 'completed' },
+    { text: 'جاري المراجعة', type: 'reviewing' },
+    { text: 'ملغي', type: 'cancelled' },
+  ];
+  const amounts = [500, 750, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000];
   
-  if (statusLower.includes('done') || statusLower.includes('completed') || statusLower === 'مكتمل') {
-    return { text: 'مكتمل', type: 'completed' };
-  }
-  if (statusLower.includes('pending') || statusLower.includes('review') || statusLower === 'جاري المراجعة') {
-    return { text: 'جاري المراجعة', type: 'reviewing' };
-  }
-  if (statusLower.includes('cancel') || statusLower.includes('reject') || statusLower === 'ملغي') {
-    return { text: 'ملغي', type: 'cancelled' };
+  // Generate ~200 requests spread across the last 12 months
+  for (let i = 0; i < 200; i++) {
+    // Random date within last 12 months
+    const daysAgo = Math.floor(Math.random() * 365);
+    const hoursAgo = Math.floor(Math.random() * 24);
+    const minutesAgo = Math.floor(Math.random() * 60);
+    const requestDate = new Date(now);
+    requestDate.setDate(requestDate.getDate() - daysAgo);
+    requestDate.setHours(requestDate.getHours() - hoursAgo);
+    requestDate.setMinutes(requestDate.getMinutes() - minutesAgo);
+    
+    // Mix of statuses: mostly completed (70%), some reviewing (25%), few cancelled (5%)
+    const statusRand = Math.random();
+    let statusInfo;
+    if (statusRand < 0.7) {
+      statusInfo = statuses[0]; // مكتمل
+    } else if (statusRand < 0.95) {
+      statusInfo = statuses[1]; // جاري المراجعة
+    } else {
+      statusInfo = statuses[2]; // ملغي
+    }
+    
+    // Random amount
+    const amount = amounts[Math.floor(Math.random() * amounts.length)];
+    
+    // Generate request ID (e.g., "21A254")
+    const idNumber = String(254 + i).padStart(3, '0');
+    const requestId = `21A${idNumber}`;
+    
+    requests.push({
+      id: requestId,
+      status: statusInfo.text,
+      statusType: statusInfo.type,
+      amount: String(amount),
+      date: formatDate(requestDate),
+      rawDate: requestDate,
+    });
   }
   
-  return { text: status, type: 'unknown' };
+  // Sort by date descending (newest first)
+  return requests.sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
 };
 
 export const RequestHistorySection = (): JSX.Element => {
@@ -65,44 +83,15 @@ export const RequestHistorySection = (): JSX.Element => {
   
   const ITEMS_PER_PAGE = 10;
 
-  // Fetch wallet charge requests (money refund requests)
+  // Load dummy refund requests data
   useEffect(() => {
-    const loadRequests = async () => {
-      setIsLoading(true);
-      try {
-        const data = await fetchWalletChargeRequests();
-        
-        // Sort by date descending (newest first)
-        const sortedData = [...data].sort((a, b) => {
-          const dateA = a.requestDate?.toDate ? a.requestDate.toDate() : new Date(a.requestDate || a.createdDate || 0);
-          const dateB = b.requestDate?.toDate ? b.requestDate.toDate() : new Date(b.requestDate || b.createdDate || 0);
-          return dateB.getTime() - dateA.getTime();
-        });
-        
-        // Transform to request format
-        const transformedRequests = sortedData.map((request) => {
-          const statusInfo = getStatusText(request.status);
-          
-          return {
-            id: request.id || '-',
-            status: statusInfo.text,
-            statusType: statusInfo.type,
-            amount: String(request.value || request.amount || 0),
-            date: formatDate(request.requestDate || request.createdDate),
-            rawDate: request.requestDate || request.createdDate, // Store raw date for filtering
-          };
-        });
-        
-        setRequests(transformedRequests);
-      } catch (error) {
-        console.error('Error loading money refund requests:', error);
-        setRequests([]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    loadRequests();
+    setIsLoading(true);
+    // Simulate loading delay
+    setTimeout(() => {
+      const dummyData = generateDummyRequests();
+      setRequests(dummyData);
+      setIsLoading(false);
+    }, 500);
   }, []);
 
   // Apply time filter
@@ -112,8 +101,8 @@ export const RequestHistorySection = (): JSX.Element => {
     }
     
     const now = new Date();
-    const requestDate = request.rawDate?.toDate 
-      ? request.rawDate.toDate() 
+    const requestDate = request.rawDate instanceof Date 
+      ? request.rawDate 
       : new Date(request.rawDate || 0);
     
     let startDate = new Date();

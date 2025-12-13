@@ -63,8 +63,7 @@ export const Pagination: React.FC<PaginationProps> = ({
   };
 
   const pageNumbers = generatePageNumbers();
-  // Reverse for RTL (right-to-left) display
-  const rtlPageNumbers = [...pageNumbers].reverse();
+  // Keep numbers in natural order (right to left in RTL)
 
   const handlePrevious = () => {
     if (currentPage > 1 && !disabled) {
@@ -91,25 +90,25 @@ export const Pagination: React.FC<PaginationProps> = ({
       aria-label="تنقل الصفحات"
     >
       <div className="flex items-center justify-center gap-2">
-        {/* Next Button - سهم يسار on the RIGHT of text */}
+        {/* Previous Button - السابق on the RIGHT with left arrow on left side */}
         <button
-          onClick={handleNext}
-          disabled={currentPage >= totalPages || disabled}
+          onClick={handlePrevious}
+          disabled={currentPage <= 1 || disabled}
           className="flex h-9 items-center justify-center gap-2 px-3 rounded-md border border-[color:var(--border-subtle)] bg-[var(--surface-control)] hover:bg-[var(--surface-control-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          aria-label="الصفحة التالية"
+          aria-label="الصفحة السابقة"
         >
           <img
-            className="mr-[-3.50px] relative w-4 h-4"
-            alt="سهم يمين"
-            src="/img/icon-16-arrow-right.svg"
+            className="relative w-4 h-4"
+            alt="سهم يسار"
+            src="/img/icon-16-arrow-left.svg"
           />
           <div className="relative font-body-body-2 font-[number:var(--body-body-2-font-weight)] text-[var(--text-secondary)] text-sm leading-[var(--body-body-2-line-height)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
-            {nextLabel}
+            {previousLabel}
           </div>
         </button>
 
-        {/* Page Numbers */}
-        {rtlPageNumbers.map((page, index) => {
+        {/* Page Numbers - Natural order (right to left) */}
+        {pageNumbers.map((page, index) => {
           if (page === "...") {
             return (
               <div
@@ -150,21 +149,20 @@ export const Pagination: React.FC<PaginationProps> = ({
           );
         })}
 
-        {/* Previous Button - سهم يمين on the LEFT of text */}
-
+        {/* Next Button - التالي on the LEFT with right arrow on right side */}
         <button
-          onClick={handlePrevious}
-          disabled={currentPage <= 1 || disabled}
+          onClick={handleNext}
+          disabled={currentPage >= totalPages || disabled}
           className="flex h-9 items-center justify-center gap-2 px-3 rounded-md border border-[color:var(--border-subtle)] bg-[var(--surface-control)] hover:bg-[var(--surface-control-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          aria-label="الصفحة السابقة"
+          aria-label="الصفحة التالية"
         >
           <div className="relative font-body-body-2 font-[number:var(--body-body-2-font-weight)] text-[var(--text-secondary)] text-sm leading-[var(--body-body-2-line-height)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
-            {previousLabel}
+            {nextLabel}
           </div>
           <img
             className="relative w-4 h-4"
-            alt="سهم يسار"
-            src="/img/icon-16-arrow-left.svg"
+            alt="سهم يمين"
+            src="/img/icon-16-arrow-right.svg"
           />
         </button>
       </div>

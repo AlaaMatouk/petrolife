@@ -45,7 +45,7 @@ const PAGE_CONFIGS: Record<string, PageConfig> = {
     titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
   },
   "/perolifestationlocations": {
-    title: "محطات البترول",
+    title: "محطات الوقود",
     titleIcon: <img src="/img/side-icons-8.svg" alt="" className="w-5 h-5" />,
   },
   "/moneyrefundrequests": {

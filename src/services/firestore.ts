@@ -18,6 +18,7 @@ import {
   deleteDoc,
   Timestamp,
   runTransaction,
+  writeBatch,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getFunctions, httpsCallable } from "firebase/functions";
@@ -8969,6 +8970,166 @@ export const createCarType = async (carTypeData: {
   }
 };
 
+/**
+ * Upload car brands from Excel data to car-models collection
+ * Checks for duplicates before creating
+ * @param brands - Array of brand names
+ * @param createdUserId - Optional user ID for createdUserId field
+ * @returns Object with created brands count and skipped (duplicate) count
+ */
+export const uploadCarBrandsFromExcel = async (
+  brands: string[],
+  createdUserId?: string | null
+): Promise<{ created: number; skipped: number; brandMap: Map<string, string> }> => {
+  try {
+    const currentUser = auth.currentUser;
+    const userEmail = currentUser?.email ?? createdUserId ?? null;
+
+    // Fetch existing brands to check for duplicates
+    const existingBrands = await fetchCarModels();
+    const existingBrandNames = new Set(
+      existingBrands
+        .map((brand) => brand.name?.ar?.trim().toLowerCase())
+        .filter((name): name is string => !!name)
+    );
+
+    const brandMap = new Map<string, string>(); // brand name -> document ID
+    let created = 0;
+    let skipped = 0;
+
+    // Process brands sequentially to avoid overwhelming Firestore
+    for (const brandName of brands) {
+      const normalizedName = brandName.trim().toLowerCase();
+      
+      // Check if brand already exists
+      if (existingBrandNames.has(normalizedName)) {
+        // Find the existing brand document ID
+        const existingBrand = existingBrands.find(
+          (b) => b.name?.ar?.trim().toLowerCase() === normalizedName
+        );
+        if (existingBrand?.id) {
+          brandMap.set(brandName.trim(), existingBrand.id);
+        }
+        skipped++;
+        continue;
+      }
+
+      try {
+        // Create new brand
+        const result = await createCarModel({
+          name: { ar: brandName.trim() },
+          createdUserId: userEmail,
+        });
+        
+        brandMap.set(brandName.trim(), result.id);
+        existingBrandNames.add(normalizedName); // Add to set to avoid duplicates in same batch
+        created++;
+      } catch (error) {
+        console.error(`Error creating brand "${brandName}":`, error);
+        // Continue with next brand even if one fails
+      }
+    }
+
+    return { created, skipped, brandMap };
+  } catch (error) {
+    console.error("Error uploading car brands:", error);
+    throw error;
+  }
+};
+
+/**
+ * Upload car types (models) from Excel data to car-types collection
+ * Links each model to its brand using the brandMap
+ * @param brandModels - Map of brand name to array of model names
+ * @param brandMap - Map of brand name to brand document ID
+ * @param defaultYear - Default year to use if not provided (default: "2020")
+ * @param defaultFuelType - Default fuel type to use if not provided (default: "fuel95")
+ * @param createdUserId - Optional user ID for createdUserId field
+ * @returns Object with created models count and skipped (duplicate) count
+ */
+export const uploadCarTypesFromExcel = async (
+  brandModels: Map<string, string[]>,
+  brandMap: Map<string, string>,
+  defaultYear: string = "2020",
+  defaultFuelType: string = "fuel95",
+  createdUserId?: string | null
+): Promise<{ created: number; skipped: number }> => {
+  try {
+    const currentUser = auth.currentUser;
+    const userEmail = currentUser?.email ?? createdUserId ?? null;
+
+    // Fetch existing car types to check for duplicates
+    const existingCarTypes = await fetchCarTypes();
+    const existingTypeKeys = new Set(
+      existingCarTypes.map((type) => {
+        const brandName = type.carModel?.name?.ar?.trim().toLowerCase() || "";
+        const modelName = type.name?.ar?.trim().toLowerCase() || "";
+        return `${brandName}::${modelName}`;
+      })
+    );
+
+    let created = 0;
+    let skipped = 0;
+
+    // Process each brand and its models
+    for (const [brandName, models] of brandModels.entries()) {
+      const brandDocId = brandMap.get(brandName.trim());
+      
+      if (!brandDocId) {
+        console.warn(`Brand "${brandName}" not found in brandMap, skipping models`);
+        continue;
+      }
+
+      // Get brand document to get brand name structure
+      const brandDoc = await getDoc(doc(db, "car-models", brandDocId));
+      if (!brandDoc.exists()) {
+        console.warn(`Brand document "${brandDocId}" not found, skipping models`);
+        continue;
+      }
+
+      const brandData = brandDoc.data();
+      const brandNameAr = brandData?.name?.ar || brandName.trim();
+      const brandNameEn = brandData?.name?.en || brandNameAr;
+
+      // Process models for this brand
+      for (const modelName of models) {
+        const normalizedKey = `${brandName.trim().toLowerCase()}::${modelName.trim().toLowerCase()}`;
+        
+        // Check if model already exists
+        if (existingTypeKeys.has(normalizedKey)) {
+          skipped++;
+          continue;
+        }
+
+        try {
+          // Create new car type
+          await createCarType({
+            name: { ar: modelName.trim() },
+            carModel: {
+              name: { ar: brandNameAr, en: brandNameEn },
+              carModelImageUrl: null,
+            },
+            year: defaultYear,
+            fuelType: defaultFuelType,
+            createdUserId: userEmail,
+          });
+
+          existingTypeKeys.add(normalizedKey); // Add to set to avoid duplicates in same batch
+          created++;
+        } catch (error) {
+          console.error(`Error creating model "${modelName}" for brand "${brandName}":`, error);
+          // Continue with next model even if one fails
+        }
+      }
+    }
+
+    return { created, skipped };
+  } catch (error) {
+    console.error("Error uploading car types:", error);
+    throw error;
+  }
+};
+
 export const updateVehicleWithSchema = async ({
   vehicleId,
   chassisNumber,
@@ -9609,9 +9770,254 @@ export const fetchCompaniesCars = async () => {
     throw error;
   }
 };
+
+/**
+ * Identify the current user's type and identifier
+ * Checks all user collections to determine where the user belongs
+ * @returns Object with userType, identifier, and collection name, or null if not found
+ */
+export const identifyCurrentUser = async (): Promise<{
+  userType: 'client' | 'company' | 'driver' | 'service-provider' | 'fuel-station-worker' | null;
+  identifier: string; // email or document ID
+  collection: string; // collection name
+  documentId?: string; // Firestore document ID
+} | null> => {
+  try {
+    const currentUser = auth.currentUser;
+    
+    if (!currentUser) {
+      console.log("❌ No user is currently logged in for identification.");
+      return null;
+    }
+
+    const userEmail = currentUser.email;
+    const userUid = currentUser.uid;
+    
+    console.log("🔍 Identifying current user:", { email: userEmail, uid: userUid });
+
+    // 1. Check companies collection
+    try {
+      const companiesRef = collection(db, "companies");
+      
+      // Check by email
+      if (userEmail) {
+        const companyQueryByEmail = query(companiesRef, where("email", "==", userEmail));
+        const companySnapshotByEmail = await getDocs(companyQueryByEmail);
+        
+        if (!companySnapshotByEmail.empty) {
+          const docId = companySnapshotByEmail.docs[0].id;
+          const identifier = userEmail || docId;
+          console.log("✅ User identified as company (by email):", identifier);
+          return {
+            userType: 'company',
+            identifier: identifier,
+            collection: 'companies',
+            documentId: docId,
+          };
+        }
+      }
+      
+      // Check by uid
+      if (userUid) {
+        const companyQueryByUid = query(companiesRef, where("uid", "==", userUid));
+        const companySnapshotByUid = await getDocs(companyQueryByUid);
+        
+        if (!companySnapshotByUid.empty) {
+          const docId = companySnapshotByUid.docs[0].id;
+          const data = companySnapshotByUid.docs[0].data();
+          const identifier = data.email || userUid || docId;
+          console.log("✅ User identified as company (by uid):", identifier);
+          return {
+            userType: 'company',
+            identifier: identifier,
+            collection: 'companies',
+            documentId: docId,
+          };
+        }
+      }
+    } catch (error) {
+      console.error("Error checking companies collection:", error);
+    }
+
+    // 2. Check clients collection
+    try {
+      const clientsRef = collection(db, "clients");
+      
+      if (userEmail) {
+        const clientQueryByEmail = query(clientsRef, where("email", "==", userEmail));
+        const clientSnapshotByEmail = await getDocs(clientQueryByEmail);
+        
+        if (!clientSnapshotByEmail.empty) {
+          const docId = clientSnapshotByEmail.docs[0].id;
+          const identifier = userEmail || docId;
+          console.log("✅ User identified as client (by email):", identifier);
+          return {
+            userType: 'client',
+            identifier: identifier,
+            collection: 'clients',
+            documentId: docId,
+          };
+        }
+      }
+      
+      if (userUid) {
+        const clientQueryByUid = query(clientsRef, where("uid", "==", userUid));
+        const clientSnapshotByUid = await getDocs(clientQueryByUid);
+        
+        if (!clientSnapshotByUid.empty) {
+          const docId = clientSnapshotByUid.docs[0].id;
+          const data = clientSnapshotByUid.docs[0].data();
+          const identifier = data.email || userUid || docId;
+          console.log("✅ User identified as client (by uid):", identifier);
+          return {
+            userType: 'client',
+            identifier: identifier,
+            collection: 'clients',
+            documentId: docId,
+          };
+        }
+      }
+    } catch (error) {
+      console.error("Error checking clients collection:", error);
+    }
+
+    // 3. Check stationscompany collection (service providers)
+    try {
+      const stationsCompanyRef = collection(db, "stationscompany");
+      
+      if (userEmail) {
+        const stationQueryByEmail = query(stationsCompanyRef, where("email", "==", userEmail));
+        const stationSnapshotByEmail = await getDocs(stationQueryByEmail);
+        
+        if (!stationSnapshotByEmail.empty) {
+          const docId = stationSnapshotByEmail.docs[0].id;
+          const identifier = userEmail || docId;
+          console.log("✅ User identified as service-provider (by email):", identifier);
+          return {
+            userType: 'service-provider',
+            identifier: identifier,
+            collection: 'stationscompany',
+            documentId: docId,
+          };
+        }
+      }
+      
+      if (userUid) {
+        const stationQueryByUid = query(stationsCompanyRef, where("uid", "==", userUid));
+        const stationSnapshotByUid = await getDocs(stationQueryByUid);
+        
+        if (!stationSnapshotByUid.empty) {
+          const docId = stationSnapshotByUid.docs[0].id;
+          const data = stationSnapshotByUid.docs[0].data();
+          const identifier = data.email || userUid || docId;
+          console.log("✅ User identified as service-provider (by uid):", identifier);
+          return {
+            userType: 'service-provider',
+            identifier: identifier,
+            collection: 'stationscompany',
+            documentId: docId,
+          };
+        }
+      }
+    } catch (error) {
+      console.error("Error checking stationscompany collection:", error);
+    }
+
+    // 4. Check companies-drivers collection
+    try {
+      const driversRef = collection(db, "companies-drivers");
+      
+      if (userEmail) {
+        const driverQueryByEmail = query(driversRef, where("email", "==", userEmail));
+        const driverSnapshotByEmail = await getDocs(driverQueryByEmail);
+        
+        if (!driverSnapshotByEmail.empty) {
+          const docId = driverSnapshotByEmail.docs[0].id;
+          const identifier = userEmail || docId;
+          console.log("✅ User identified as driver (by email):", identifier);
+          return {
+            userType: 'driver',
+            identifier: identifier,
+            collection: 'companies-drivers',
+            documentId: docId,
+          };
+        }
+      }
+      
+      if (userUid) {
+        const driverQueryByUid = query(driversRef, where("uid", "==", userUid));
+        const driverSnapshotByUid = await getDocs(driverQueryByUid);
+        
+        if (!driverSnapshotByUid.empty) {
+          const docId = driverSnapshotByUid.docs[0].id;
+          const data = driverSnapshotByUid.docs[0].data();
+          const identifier = data.email || userUid || docId;
+          console.log("✅ User identified as driver (by uid):", identifier);
+          return {
+            userType: 'driver',
+            identifier: identifier,
+            collection: 'companies-drivers',
+            documentId: docId,
+          };
+        }
+      }
+    } catch (error) {
+      console.error("Error checking companies-drivers collection:", error);
+    }
+
+    // 5. Check fuelStationsWorkers collection
+    try {
+      const workersRef = collection(db, "fuelStationsWorkers");
+      
+      if (userEmail) {
+        const workerQueryByEmail = query(workersRef, where("email", "==", userEmail));
+        const workerSnapshotByEmail = await getDocs(workerQueryByEmail);
+        
+        if (!workerSnapshotByEmail.empty) {
+          const docId = workerSnapshotByEmail.docs[0].id;
+          const identifier = userEmail || docId;
+          console.log("✅ User identified as fuel-station-worker (by email):", identifier);
+          return {
+            userType: 'fuel-station-worker',
+            identifier: identifier,
+            collection: 'fuelStationsWorkers',
+            documentId: docId,
+          };
+        }
+      }
+      
+      if (userUid) {
+        const workerQueryByUid = query(workersRef, where("uid", "==", userUid));
+        const workerSnapshotByUid = await getDocs(workerQueryByUid);
+        
+        if (!workerSnapshotByUid.empty) {
+          const docId = workerSnapshotByUid.docs[0].id;
+          const data = workerSnapshotByUid.docs[0].data();
+          const identifier = data.email || userUid || docId;
+          console.log("✅ User identified as fuel-station-worker (by uid):", identifier);
+          return {
+            userType: 'fuel-station-worker',
+            identifier: identifier,
+            collection: 'fuelStationsWorkers',
+            documentId: docId,
+          };
+        }
+      }
+    } catch (error) {
+      console.error("Error checking fuelStationsWorkers collection:", error);
+    }
+
+    console.warn("⚠️ User not found in any collection");
+    return null;
+  } catch (error) {
+    console.error("❌ Error identifying current user:", error);
+    return null;
+  }
+};
+
 /**
  * Fetch notifications from Firestore notifications collection
- * Filtered by current company ID in the companies array
+ * Filtered by current user based on targetedUsers structure
  * @returns Promise with filtered notifications data
  */
 export const fetchNotifications = async () => {
@@ -9626,16 +10032,35 @@ export const fetchNotifications = async () => {
       return [];
     }
 
-    // First, get the current company data
-    const companyData = await fetchCurrentCompany();
+    // Identify current user type and identifier
+    const userInfo = await identifyCurrentUser();
 
-    if (!companyData || !companyData.id) {
-      console.log("❌ No company found for current user.");
+    if (!userInfo) {
+      console.log("❌ Could not identify current user type.");
       return [];
     }
 
-    const companyId = companyData.id;
-    console.log("✅ Current Company ID:", companyId);
+    console.log("✅ User identified:", {
+      userType: userInfo.userType,
+      identifier: userInfo.identifier,
+      collection: userInfo.collection,
+    });
+
+    // Map user types to targetedUsers keys
+    const typeToTargetKey: Record<string, string> = {
+      'client': 'clients',
+      'company': 'companies',
+      'driver': 'companies-drivers',
+      'service-provider': 'stationscompany',
+      'fuel-station-worker': 'fuelStationsWorkers',
+    };
+
+    const targetKey = typeToTargetKey[userInfo.userType || ''];
+    
+    if (!targetKey) {
+      console.warn("⚠️ Unknown user type:", userInfo.userType);
+      return [];
+    }
 
     // Fetch all notifications
     const notificationsRef = collection(db, "notifications");
@@ -9655,28 +10080,51 @@ export const fetchNotifications = async () => {
       allNotifications.length
     );
 
-    // Filter notifications where companies array contains current company ID
+    // Filter notifications based on targetedUsers structure
     const filteredNotifications = allNotifications.filter((notification) => {
-      const companies = notification.companies || [];
-      const isForCompany = companies.includes(companyId);
+      const targetedUsers = notification.targetedUsers || {};
+      const targetArray = targetedUsers[targetKey];
 
-      if (isForCompany) {
-        console.log("✅ Notification matched for company:", {
-          id: notification.id,
-          body: notification.body?.substring(0, 50),
-          createdDate: notification.createdDate,
-        });
+      // If the target key doesn't exist in targetedUsers, skip this notification
+      if (!targetArray && !Array.isArray(targetArray)) {
+        return false;
       }
 
-      return isForCompany;
+      // Empty array means "all users of this type" - include the notification
+      if (Array.isArray(targetArray) && targetArray.length === 0) {
+        console.log("✅ Notification matched (all users of type):", {
+          id: notification.id,
+          title: notification.title?.substring(0, 50),
+          targetKey: targetKey,
+        });
+        return true;
+      }
+
+      // Check if user's identifier is in the array
+      if (Array.isArray(targetArray)) {
+        const isIncluded = targetArray.includes(userInfo.identifier);
+        
+        if (isIncluded) {
+          console.log("✅ Notification matched (specific user):", {
+            id: notification.id,
+            title: notification.title?.substring(0, 50),
+            targetKey: targetKey,
+            identifier: userInfo.identifier,
+          });
+        }
+        
+        return isIncluded;
+      }
+
+      return false;
     });
 
     console.log(
-      "✅ Filtered notifications for current company:",
+      "✅ Filtered notifications for current user:",
       filteredNotifications.length
     );
 
-    // Sort by createdDate (most recent first)
+    // Sort by createdDate (most recent first) - already sorted by query, but ensure
     filteredNotifications.sort((a, b) => {
       const dateA = a.createdDate?.toDate?.() || new Date(a.createdDate || 0);
       const dateB = b.createdDate?.toDate?.() || new Date(b.createdDate || 0);

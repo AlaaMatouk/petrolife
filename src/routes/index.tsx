@@ -35,7 +35,11 @@ import { FuelStationRequests } from "../screens/FuelStationRequests";
 import { ServiceDistributerFinancialReports } from "../screens/ServiceDistributerFinancialReports";
 import { ServiceDistributerStationLocations } from "../screens/ServiceDistributerStationLocations";
 import { ServiceDistributerInvoices } from "../screens/ServiceDistributerInvoices";
-import { Invoices, InvoiceDetail, FuelInvoiceDetail } from "../screens/Invoices";
+import {
+  Invoices,
+  InvoiceDetail,
+  FuelInvoiceDetail,
+} from "../screens/Invoices";
 import { IconPreview } from "../screens/IconPreview";
 // admin dashboard
 import { AdminDashboard } from "../components/AdminDashboard/AdminDashboard";
@@ -45,7 +49,11 @@ import { SupervisorDetails } from "../components/AdminDashboard/pages/supervisor
 import { Companies } from "../components/AdminDashboard/pages/companies/Companies";
 import { AddCompany } from "../components/AdminDashboard/pages/companies/AddCompany";
 import { CompanyDetails } from "../components/AdminDashboard/pages/companies/CompanyDetails";
-import { Test, TestChartLegendHighlight, TestInsufficientBalance } from "../screens/Test";
+import {
+  Test,
+  TestChartLegendHighlight,
+  TestInsufficientBalance,
+} from "../screens/Test";
 import { Individuals } from "../components/AdminDashboard/pages/Individuals/Individuals";
 // @ts-ignore - JSX component imports
 import { AddIndividuals } from "../components/AdminDashboard/pages/Individuals/AddIndividuals";
@@ -95,6 +103,7 @@ import AddRegion from "../components/AdminDashboard/pages/countries/AddRegion";
 import Vehicles from "../components/AdminDashboard/pages/vehicles/Vehicles";
 import AddVehicle from "../components/AdminDashboard/pages/vehicles/AddVehicle";
 import VehicleDetails from "../components/AdminDashboard/pages/vehicles/VehicleDetails";
+import UploadCarData from "../components/AdminDashboard/pages/vehicles/UploadCarData";
 import Classifications from "../components/AdminDashboard/pages/classifications/Classifications";
 import AddClassification from "../components/AdminDashboard/pages/classifications/AddClassification";
 import ClassificationDetails from "../components/AdminDashboard/pages/classifications/ClassificationDetails";
@@ -202,21 +211,54 @@ export const AppRouter = () => {
         <Route path={ROUTES.ADMIN_WALLET_REPORTS} element={<WalletReport />} />
         <Route path={ROUTES.PETROLIFE_DRIVERS} element={<PetrolifeDrivers />} />
         <Route path="/petrolife-drivers/add" element={<AddPeroDriver />} />
-        <Route path="/petrolife-drivers/:id" element={<PetrolifeDriverDetails />} />
+        <Route
+          path="/petrolife-drivers/:id"
+          element={<PetrolifeDriverDetails />}
+        />
         <Route path={ROUTES.PETROLIFE_AGENTS} element={<PetrolifeAgents />} />
-        <Route path={ROUTES.ADD_PETROLIFE_AGENT} element={<AddPetrolifeAgent />} />
-        <Route path={ROUTES.PETROLIFE_AGENT_DETAILS} element={<PetrolifeAgentDetails />} />
+        <Route
+          path={ROUTES.ADD_PETROLIFE_AGENT}
+          element={<AddPetrolifeAgent />}
+        />
+        <Route
+          path={ROUTES.PETROLIFE_AGENT_DETAILS}
+          element={<PetrolifeAgentDetails />}
+        />
         <Route path={ROUTES.PETROLIFE_CARS} element={<PetrolifeCars />} />
         <Route path={ROUTES.ADD_PETROLIFE_CAR} element={<AddPetrolifeCar />} />
-        <Route path={ROUTES.PETROLIFE_CAR_DETAILS} element={<PetrolifeCarDetails />} />
-        <Route path={ROUTES.PETROLIFE_PRODUCTS} element={<PetrolifeProducts />} />
-        <Route path={ROUTES.ADD_PETROLIFE_PRODUCT} element={<AddPetrolifeProduct />} />
-        <Route path={ROUTES.PETROLIFE_PRODUCT_DETAILS} element={<PetrolifeProductDetails />} />
+        <Route
+          path={ROUTES.PETROLIFE_CAR_DETAILS}
+          element={<PetrolifeCarDetails />}
+        />
+        <Route
+          path={ROUTES.PETROLIFE_PRODUCTS}
+          element={<PetrolifeProducts />}
+        />
+        <Route
+          path={ROUTES.ADD_PETROLIFE_PRODUCT}
+          element={<AddPetrolifeProduct />}
+        />
+        <Route
+          path={ROUTES.PETROLIFE_PRODUCT_DETAILS}
+          element={<PetrolifeProductDetails />}
+        />
         <Route path={ROUTES.PETROLIFE_COUPONS} element={<PetrolifeCoupons />} />
-        <Route path={ROUTES.ADD_PETROLIFE_COUPON} element={<AddPetrolifeCoupon />} />
-        <Route path={ROUTES.PETROLIFE_COUPON_DETAILS} element={<PetrolifeCouponDetails />} />
-        <Route path={ROUTES.ADMIN_INVOICE_REPORTS} element={<InvoiceReports />} />
-        <Route path={ROUTES.ADMIN_REPRESENTATIVE_REPORTS} element={<AgentReports />} />
+        <Route
+          path={ROUTES.ADD_PETROLIFE_COUPON}
+          element={<AddPetrolifeCoupon />}
+        />
+        <Route
+          path={ROUTES.PETROLIFE_COUPON_DETAILS}
+          element={<PetrolifeCouponDetails />}
+        />
+        <Route
+          path={ROUTES.ADMIN_INVOICE_REPORTS}
+          element={<InvoiceReports />}
+        />
+        <Route
+          path={ROUTES.ADMIN_REPRESENTATIVE_REPORTS}
+          element={<AgentReports />}
+        />
         <Route path={ROUTES.ADMIN_COUNTRIES} element={<Countries />} />
         <Route path={ROUTES.ADD_COUNTRY} element={<AddCountry />} />
         <Route path={ROUTES.COUNTRY_DETAILS} element={<CountryDetails />} />
@@ -224,24 +266,49 @@ export const AppRouter = () => {
         <Route path={ROUTES.ADD_REGION} element={<AddRegion />} />
         <Route path={ROUTES.ADMIN_CARS} element={<Vehicles />} />
         <Route path="/admin-cars/add" element={<AddVehicle />} />
+        <Route path={ROUTES.UPLOAD_CAR_DATA} element={<UploadCarData />} />
         <Route path="/admin-cars/:id" element={<VehicleDetails />} />
         <Route path={ROUTES.ADMIN_CATEGORIES} element={<Classifications />} />
-        <Route path={ROUTES.ADD_CLASSIFICATION} element={<AddClassification />} />
-        <Route path={ROUTES.CLASSIFICATION_DETAILS} element={<ClassificationDetails />} />
+        <Route
+          path={ROUTES.ADD_CLASSIFICATION}
+          element={<AddClassification />}
+        />
+        <Route
+          path={ROUTES.CLASSIFICATION_DETAILS}
+          element={<ClassificationDetails />}
+        />
         <Route path={ROUTES.DEFAULT_ACCOUNTS} element={<DefaultAccounts />} />
-        <Route path={ROUTES.ADMIN_COMMUNICATION_POLICIES} element={<CommunicationPolicies />} />
+        <Route
+          path={ROUTES.ADMIN_COMMUNICATION_POLICIES}
+          element={<CommunicationPolicies />}
+        />
         <Route path={ROUTES.FAQ} element={<FAQ />} />
         <Route path={ROUTES.CUSTOMER_MESSAGES} element={<CustomerMessages />} />
         <Route path={ROUTES.PROFILE} element={<Profile />} />
         <Route path={ROUTES.ADVERTISEMENTS} element={<Advertisements />} />
         <Route path={ROUTES.ADD_ADVERTISEMENT} element={<AddAdvertisement />} />
-        <Route path={ROUTES.ADVERTISEMENT_DETAILS} element={<AdvertisementDetails />} />
-        <Route path={ROUTES.SPECIAL_NOTIFICATIONS} element={<SpecialNotifications />} />
-        <Route path={ROUTES.ADD_SPECIAL_NOTIFICATION} element={<AddSpecialNotification />} />
-        <Route path={ROUTES.SPECIAL_NOTIFICATION_DETAILS} element={<SpecialNotificationDetails />} />
+        <Route
+          path={ROUTES.ADVERTISEMENT_DETAILS}
+          element={<AdvertisementDetails />}
+        />
+        <Route
+          path={ROUTES.SPECIAL_NOTIFICATIONS}
+          element={<SpecialNotifications />}
+        />
+        <Route
+          path={ROUTES.ADD_SPECIAL_NOTIFICATION}
+          element={<AddSpecialNotification />}
+        />
+        <Route
+          path={ROUTES.SPECIAL_NOTIFICATION_DETAILS}
+          element={<SpecialNotificationDetails />}
+        />
         <Route path={ROUTES.ADMIN_SUBSCRIPTIONS} element={<Subscriptions />} />
         <Route path={ROUTES.ADD_SUBSCRIPTION} element={<AddSubscription />} />
-        <Route path={ROUTES.SUBSCRIPTION_DETAILS} element={<SubscriptionDetails />} />
+        <Route
+          path={ROUTES.SUBSCRIPTION_DETAILS}
+          element={<SubscriptionDetails />}
+        />
       </Route>
 
       {/* Service Distributer Routes with ServiceDistributerLayoutWrapper */}
@@ -326,12 +393,21 @@ export const AppRouter = () => {
         {/* Store and Subscriptions */}
         <Route path={ROUTES.STORE} element={<StoreScreen />} />
         <Route path={ROUTES.SUBSCRIPTIONS} element={<SubscriptionsScreen />} />
-        <Route path={ROUTES.SUBSCRIPTION_PLANS} element={<SubscriptionPlansScreen />} />
+        <Route
+          path={ROUTES.SUBSCRIPTION_PLANS}
+          element={<SubscriptionPlansScreen />}
+        />
 
         {/* Invoices */}
         <Route path={ROUTES.INVOICES} element={<Invoices />} />
-        <Route path={ROUTES.SUBSCRIPTION_INVOICE_DETAIL} element={<InvoiceDetail />} />
-        <Route path={ROUTES.FUEL_INVOICE_DETAIL} element={<FuelInvoiceDetail />} />
+        <Route
+          path={ROUTES.SUBSCRIPTION_INVOICE_DETAIL}
+          element={<InvoiceDetail />}
+        />
+        <Route
+          path={ROUTES.FUEL_INVOICE_DETAIL}
+          element={<FuelInvoiceDetail />}
+        />
 
         {/* Settings */}
         <Route path={ROUTES.SETTINGS} element={<Settings />} />
@@ -347,7 +423,10 @@ export const AppRouter = () => {
           path={ROUTES.TEST_CHART}
           element={<TestChartLegendHighlight />}
         />
-        <Route path={ROUTES.TEST_INSUFFICIENT_BALANCE} element={<TestInsufficientBalance />} />
+        <Route
+          path={ROUTES.TEST_INSUFFICIENT_BALANCE}
+          element={<TestInsufficientBalance />}
+        />
         <Route path="/test-transfer" element={<TestTransfer />} />
 
         {/* Developer Tools */}

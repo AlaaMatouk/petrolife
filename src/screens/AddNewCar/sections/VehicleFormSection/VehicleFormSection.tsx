@@ -1,10 +1,10 @@
 import { Car, CarFront, Truck, Loader2 } from "lucide-react";
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { useForm } from "../../../../hooks/useForm";
 import { useToast } from "../../../../context/ToastContext";
 import { useCars } from "../../../../hooks/useGlobalState";
 import { Input, Select, RadioGroup, CarNumberInput } from "../../../../components/shared/Form";
-import { addCompanyCar } from "../../../../services/firestore";
+import { addCompanyCar, fetchCarModels, fetchCarTypes } from "../../../../services/firestore";
 import { useNavigate } from "react-router-dom";
 
 const initialValues = {
@@ -13,8 +13,8 @@ const initialValues = {
     carType: "صغيرة",
     city: "الرياض",
     year: "2020",
-    model: "كرولا",
-    brand: "تيوتا",
+    model: "",
+    brand: "",
   plateLetters: "",
   plateNumbers: "",
     carCondition: "دبلوماسية",
@@ -25,6 +25,17 @@ export const VehicleFormSection = (): JSX.Element => {
   const { addToast } = useToast();
   const { addCar } = useCars();
   const navigate = useNavigate();
+
+  // State for brands and models
+  const [brandOptions, setBrandOptions] = useState<
+    { value: string; label: string }[]
+  >([]);
+  const [modelOptions, setModelOptions] = useState<
+    { value: string; label: string }[]
+  >([]);
+  const [isLoadingBrands, setIsLoadingBrands] = useState(true);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [allCarTypes, setAllCarTypes] = useState<any[]>([]);
 
 
   const fuelTypes = [
@@ -69,21 +80,121 @@ export const VehicleFormSection = (): JSX.Element => {
     return { value: year.toString(), label: year.toString() };
   });
 
-  const modelOptions = [
-    { value: "كرولا", label: "كرولا" },
-    { value: "كامري", label: "كامري" },
-    { value: "أكورد", label: "أكورد" },
-    { value: "سيفيك", label: "سيفيك" },
-    { value: "سوناتا", label: "سوناتا" },
-  ];
+  // Load brands from Firestore on component mount
+  useEffect(() => {
+    const loadBrands = async () => {
+      setIsLoadingBrands(true);
+      try {
+        const carModels = await fetchCarModels();
+        const brands = carModels
+          .map((carModel) => {
+            const nameAr = carModel.name?.ar;
+            if (nameAr && typeof nameAr === "string" && nameAr.trim()) {
+              return {
+                value: nameAr.trim(),
+                label: nameAr.trim(),
+              };
+            }
+            return null;
+          })
+          .filter(
+            (brand): brand is { value: string; label: string } => brand !== null
+          )
+          .sort((a, b) => a.label.localeCompare(b.label));
 
-  const brandOptions = [
-    { value: "تيوتا", label: "تيوتا" },
-    { value: "هوندا", label: "هوندا" },
-    { value: "نيسان", label: "نيسان" },
-    { value: "هيونداي", label: "هيونداي" },
-    { value: "كيا", label: "كيا" },
-  ];
+        // Remove duplicates
+        const uniqueBrands = Array.from(
+          new Map(brands.map((brand) => [brand.value, brand])).values()
+        );
+
+        setBrandOptions(uniqueBrands);
+      } catch (error) {
+        console.error("Error loading car brands:", error);
+        addToast({
+          type: "error",
+          title: "خطأ",
+          message: "فشل في تحميل قائمة الماركات",
+        });
+      } finally {
+        setIsLoadingBrands(false);
+      }
+    };
+
+    loadBrands();
+  }, [addToast]);
+
+  // Load all car types once on mount
+  useEffect(() => {
+    const loadCarTypes = async () => {
+      try {
+        const carTypes = await fetchCarTypes();
+        setAllCarTypes(carTypes);
+      } catch (error) {
+        console.error("Error loading car types:", error);
+      }
+    };
+
+    loadCarTypes();
+  }, []);
+
+  // Load models when brand changes
+  useEffect(() => {
+    if (!form.values.brand || !allCarTypes.length) {
+      setModelOptions([]);
+      if (form.values.brand) {
+        form.setFieldValue("model", "");
+      }
+      return;
+    }
+
+    setIsLoadingModels(true);
+    try {
+      // Filter car types by selected brand
+      const filteredTypes = allCarTypes.filter((carType) => {
+        const brandNameAr = carType.carModel?.name?.ar?.trim();
+        return brandNameAr === form.values.brand;
+      });
+
+      // Extract model names
+      const models = filteredTypes
+        .map((carType) => {
+          const nameAr = carType.name?.ar;
+          if (nameAr && typeof nameAr === "string" && nameAr.trim()) {
+            return {
+              value: nameAr.trim(),
+              label: nameAr.trim(),
+            };
+          }
+          return null;
+        })
+        .filter(
+          (model): model is { value: string; label: string } => model !== null
+        )
+        .sort((a, b) => a.label.localeCompare(b.label));
+
+      // Remove duplicates
+      const uniqueModels = Array.from(
+        new Map(models.map((model) => [model.value, model])).values()
+      );
+
+      setModelOptions(uniqueModels);
+
+      // Reset model selection when brand changes
+      if (form.values.model) {
+        const currentModelExists = uniqueModels.some(
+          (m) => m.value === form.values.model
+        );
+        if (!currentModelExists) {
+          form.setFieldValue("model", "");
+        }
+      }
+    } catch (error) {
+      console.error("Error filtering models:", error);
+    } finally {
+      setIsLoadingModels(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.values.brand, allCarTypes]);
 
   const carConditionOptions = [
     { value: "دبلوماسية", label: "دبلوماسية" },
@@ -242,15 +353,37 @@ export const VehicleFormSection = (): JSX.Element => {
               error={form.errors.model}
               required={true}
               options={modelOptions}
+              disabled={!form.values.brand || isLoadingModels}
+              placeholder={
+                isLoadingModels
+                  ? "جاري التحميل..."
+                  : !form.values.brand
+                  ? "اختر الماركة أولاً"
+                  : modelOptions.length === 0
+                  ? "لا توجد طرازات متاحة"
+                  : "اختر الطراز"
+              }
             />
 
             <Select
               label="الماركة"
               value={form.values.brand}
-              onChange={(value) => form.setFieldValue('brand', value)}
+              onChange={(value) => {
+                form.setFieldValue('brand', value);
+                // Reset model when brand changes
+                form.setFieldValue('model', '');
+              }}
               error={form.errors.brand}
               required={true}
               options={brandOptions}
+              disabled={isLoadingBrands}
+              placeholder={
+                isLoadingBrands
+                  ? "جاري التحميل..."
+                  : brandOptions.length === 0
+                  ? "لا توجد ماركات متاحة"
+                  : "اختر الماركة"
+              }
             />
             </div>
 

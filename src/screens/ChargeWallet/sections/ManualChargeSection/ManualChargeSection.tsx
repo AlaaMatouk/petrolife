@@ -12,6 +12,7 @@ export const ManualChargeSection = ({ onTabChange }: ManualChargeSectionProps): 
   
   const [formData, setFormData] = useState({
     accountNumber: '2145 2586 2456 3594',
+    secondAccount: '2145 2586 2456 3595',
     bankName: 'بنك الإتحاد الدولي',
     transferAmount: 0,
     transferImage: null as File | null
@@ -117,12 +118,12 @@ export const ManualChargeSection = ({ onTabChange }: ManualChargeSectionProps): 
                 label="رقم الحساب الثاني"
                 type="text"
                 name="secondAccount"
-                value="2145 2586 2456 3595"
-                onChange={(value) => console.log('Second account:', value)}
+                value={formData.secondAccount}
+                onChange={(value) => setFormData(prev => ({ ...prev, secondAccount: value }))}
                 icon={
                   <button
                     type="button"
-                    onClick={() => navigator.clipboard.writeText("2145 2586 2456 3595")}
+                    onClick={() => navigator.clipboard.writeText(formData.secondAccount)}
                     className="p-1 hover:bg-gray-100 rounded transition-colors"
                   >
                     <Copy className="w-4 h-4 text-gray-600" />
