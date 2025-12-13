@@ -7,6 +7,7 @@ export interface TableColumn<T = any> {
   label?: string;
   width?: string;
   render?: (value: any, row: T, index: number) => React.ReactNode;
+  headerRender?: () => React.ReactNode;
   className?: string;
 }
 
@@ -73,32 +74,36 @@ export const Table = <T extends Record<string, any>>({
                       color: "var(--table-text-color)",
                     }}
                   >
-                    {column.label && (
-                      <div className="flex items-center justify-start gap-2">
-                        <span>{column.label}</span>
-                        {(column.key === "accountStatus" ||
-                          column.key === "stationStatus") && (
-                          <SlidersHorizontal className="w-4 h-4 text-[var(--text-tertiary)]" />
-                        )}
-                        {column.key !== "accountStatus" &&
-                          column.key !== "stationStatus" &&
-                          column.key !== "actions" && (
-                            <svg
-                              className="w-3 h-3 text-gray-800"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                              xmlns="http://www.w3.org/2000/svg"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M5 15l7-7 7 7"
-                              />
-                            </svg>
+                    {column.headerRender ? (
+                      column.headerRender()
+                    ) : (
+                      column.label && (
+                        <div className="flex items-center justify-start gap-2">
+                          <span>{column.label}</span>
+                          {(column.key === "accountStatus" ||
+                            column.key === "stationStatus") && (
+                            <SlidersHorizontal className="w-4 h-4 text-[var(--text-tertiary)]" />
                           )}
-                      </div>
+                          {column.key !== "accountStatus" &&
+                            column.key !== "stationStatus" &&
+                            column.key !== "actions" && (
+                              <svg
+                                className="w-3 h-3 text-gray-800"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                                xmlns="http://www.w3.org/2000/svg"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M5 15l7-7 7 7"
+                                />
+                              </svg>
+                            )}
+                        </div>
+                      )
                     )}
                   </th>
                 ))}
