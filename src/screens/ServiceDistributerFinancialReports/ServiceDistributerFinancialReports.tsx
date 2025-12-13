@@ -14,6 +14,7 @@ import {
   Upload,
   Download,
   CheckCircle,
+  XCircle,
 } from "lucide-react";
 import { SummaryCard } from "../../components/shared/SummaryCard/SummaryCard";
 import { Tabs } from "../../components/shared/Tabs/Tabs";
@@ -50,6 +51,16 @@ interface PurchaseInvoice {
   invoicePeriod: string;
   commissionValue: number;
   status: "paid" | "under_review";
+}
+
+// Payment interface
+interface Payment {
+  id: string;
+  transferNumber: string;
+  transferDate: string;
+  transferValue: number;
+  status: "in_progress" | "completed" | "failed";
+  hasReceipt: boolean;
 }
 
 // Mock data
@@ -182,11 +193,24 @@ const mockPurchaseInvoices: PurchaseInvoice[] = [
   { id: "8", invoiceNumber: "#INV-PL-2023-8", invoicePeriod: "2023 أغسطس", commissionValue: 2678.90, status: "paid" },
 ];
 
+// Mock payments data
+const mockPayments: Payment[] = [
+  { id: "1", transferNumber: "#TRF-20240315", transferDate: "2024/03/15", transferValue: 35800.00, status: "in_progress", hasReceipt: false },
+  { id: "2", transferNumber: "#TRF-20240305", transferDate: "2024/03/05", transferValue: 42350.75, status: "completed", hasReceipt: true },
+  { id: "3", transferNumber: "#TRF-20240228", transferDate: "2024/02/28", transferValue: 38920.20, status: "failed", hasReceipt: false },
+  { id: "4", transferNumber: "#TRF-20240215", transferDate: "2024/02/15", transferValue: 45675.50, status: "completed", hasReceipt: true },
+  { id: "5", transferNumber: "#TRF-20240205", transferDate: "2024/02/05", transferValue: 41230.00, status: "completed", hasReceipt: true },
+  { id: "6", transferNumber: "#TRF-20240125", transferDate: "2024/01/25", transferValue: 39545.85, status: "completed", hasReceipt: true },
+  { id: "7", transferNumber: "#TRF-20240115", transferDate: "2024/01/15", transferValue: 43890.30, status: "failed", hasReceipt: false },
+  { id: "8", transferNumber: "#TRF-20240105", transferDate: "2024/01/05", transferValue: 47220.65, status: "completed", hasReceipt: true },
+];
+
 function ServiceDistributerFinancialReports() {
   const [activeTab, setActiveTab] = useState("operations");
   const [currentPage, setCurrentPage] = useState(1);
   const [salesInvoicePage, setSalesInvoicePage] = useState(1);
   const [purchaseInvoicePage, setPurchaseInvoicePage] = useState(1);
+  const [paymentPage, setPaymentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
   const [operationNumberSearch, setOperationNumberSearch] = useState("");
   const [selectedStation, setSelectedStation] = useState("all");
@@ -197,6 +221,7 @@ function ServiceDistributerFinancialReports() {
   const totalOperations = 156;
   const totalSalesInvoices = mockSalesInvoices.length;
   const totalPurchaseInvoices = mockPurchaseInvoices.length;
+  const totalPayments = mockPayments.length;
 
   const tabs = [
     { id: "operations", label: "العمليات" },
@@ -261,6 +286,14 @@ function ServiceDistributerFinancialReports() {
 
   const totalPurchaseInvoicePages = Math.ceil(totalPurchaseInvoices / itemsPerPage);
 
+  // Paginate payments
+  const paginatedPayments = useMemo(() => {
+    const startIndex = (paymentPage - 1) * itemsPerPage;
+    return mockPayments.slice(startIndex, startIndex + itemsPerPage);
+  }, [paymentPage]);
+
+  const totalPaymentPages = Math.ceil(totalPayments / itemsPerPage);
+
   const handleReset = () => {
     setSearchQuery("");
     setOperationNumberSearch("");
@@ -293,6 +326,11 @@ function ServiceDistributerFinancialReports() {
   const handleDownloadInvoice = (invoiceId: string) => {
     console.log("Download invoice:", invoiceId);
     // TODO: Download invoice file
+  };
+
+  const handleDownloadReceipt = (paymentId: string) => {
+    console.log("Download receipt for payment:", paymentId);
+    // TODO: Download receipt file
   };
 
   // Helper function to format currency
@@ -484,6 +522,120 @@ function ServiceDistributerFinancialReports() {
       render: (_: any, row: PurchaseInvoice) => (
         <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
           {row.invoiceNumber}
+        </span>
+      ),
+    },
+  ];
+
+  // Payment table columns
+  const paymentColumns = [
+    {
+      key: "receipt",
+      label: "إيصال التحويل",
+      width: "w-48 min-w-[180px]",
+      render: (_: any, row: Payment) => (
+        <div className="flex items-center justify-center">
+          {row.hasReceipt ? (
+            <button
+              onClick={() => handleDownloadReceipt(row.id)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-900 hover:bg-blue-950 text-white text-sm font-medium transition-colors"
+              aria-label="تحميل الإيصال"
+            >
+              <Download className="w-4 h-4" />
+              <span>تحميل الإيصال</span>
+            </button>
+          ) : (
+            <button
+              disabled
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-200 text-gray-500 text-sm font-medium cursor-not-allowed"
+              aria-label="غير متاح"
+            >
+              <Download className="w-4 h-4" />
+              <span>غير متاح</span>
+            </button>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "status",
+      label: "حالة التحويل",
+      width: "w-40 min-w-[160px]",
+      render: (_: any, row: Payment) => (
+        <div className="flex items-center justify-center">
+          {row.status === "completed" ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-50 border border-green-200">
+              <CheckCircle className="w-4 h-4 text-green-600" />
+              <span className="text-green-700 text-sm font-medium">تم التحويل</span>
+            </div>
+          ) : row.status === "in_progress" ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200">
+              <Clock className="w-4 h-4 text-blue-600" />
+              <span className="text-blue-700 text-sm font-medium">جاري التحويل</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-50 border border-red-200">
+              <XCircle className="w-4 h-4 text-red-600" />
+              <span className="text-red-700 text-sm font-medium">فشل التحويل</span>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "transferValue",
+      label: "قيمة التحويل",
+      width: "flex-1 grow min-w-[180px]",
+      headerRender: () => (
+        <div className="flex items-center justify-start gap-2">
+          <span>قيمة التحويل</span>
+          <div className="flex flex-col">
+            <ChevronUp className="w-3 h-3 text-gray-600" />
+            <ChevronDown className="w-3 h-3 text-gray-600 -mt-1" />
+          </div>
+        </div>
+      ),
+      render: (_: any, row: Payment) => (
+        <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+          {formatCurrency(row.transferValue)}
+        </span>
+      ),
+    },
+    {
+      key: "transferDate",
+      label: "تاريخ التحويل",
+      width: "flex-1 grow min-w-[180px]",
+      headerRender: () => (
+        <div className="flex items-center justify-start gap-2">
+          <span>تاريخ التحويل</span>
+          <div className="flex flex-col">
+            <ChevronUp className="w-3 h-3 text-gray-600" />
+            <ChevronDown className="w-3 h-3 text-gray-600 -mt-1" />
+          </div>
+        </div>
+      ),
+      render: (_: any, row: Payment) => (
+        <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+          {row.transferDate}
+        </span>
+      ),
+    },
+    {
+      key: "transferNumber",
+      label: "رقم التحويل",
+      width: "flex-1 grow min-w-[200px]",
+      headerRender: () => (
+        <div className="flex items-center justify-start gap-2">
+          <span>رقم التحويل</span>
+          <div className="flex flex-col">
+            <ChevronUp className="w-3 h-3 text-gray-600" />
+            <ChevronDown className="w-3 h-3 text-gray-600 -mt-1" />
+          </div>
+        </div>
+      ),
+      render: (_: any, row: Payment) => (
+        <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+          {row.transferNumber}
         </span>
       ),
     },
@@ -730,6 +882,13 @@ function ServiceDistributerFinancialReports() {
               loading={false}
               emptyMessage="لا توجد فواتير شراء"
             />
+          ) : activeTab === "payments" ? (
+            <Table
+              columns={paymentColumns}
+              data={paginatedPayments}
+              loading={false}
+              emptyMessage="لا توجد دفعات"
+            />
           ) : activeTab === "operations" ? (
             <Table
               columns={columns}
@@ -737,13 +896,7 @@ function ServiceDistributerFinancialReports() {
               loading={false}
               emptyMessage="لا توجد عمليات"
             />
-          ) : (
-            <div className="flex items-center justify-center p-8">
-              <div className="text-color-mode-text-icons-t-sec">
-                {activeTab === "payments" && "لا توجد دفعات"}
-              </div>
-            </div>
-          )}
+          ) : null}
         </div>
 
         {/* Pagination */}
@@ -773,6 +926,22 @@ function ServiceDistributerFinancialReports() {
                 currentPage={purchaseInvoicePage}
                 totalPages={totalPurchaseInvoicePages}
                 onPageChange={setPurchaseInvoicePage}
+                previousLabel=""
+                nextLabel=""
+                useEasternArabic={true}
+                showArrowOnly={true}
+                maxVisiblePages={3}
+              />
+            </>
+          ) : activeTab === "payments" ? (
+            <>
+              <div className="text-sm text-color-mode-text-icons-t-sec">
+                دفعة {paginatedPayments.length} من {totalPayments} - {paymentPage} عرض
+              </div>
+              <Pagination
+                currentPage={paymentPage}
+                totalPages={totalPaymentPages}
+                onPageChange={setPaymentPage}
                 previousLabel=""
                 nextLabel=""
                 useEasternArabic={true}
