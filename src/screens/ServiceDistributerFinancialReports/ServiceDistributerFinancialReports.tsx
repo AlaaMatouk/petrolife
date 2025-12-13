@@ -12,6 +12,8 @@ import {
   SlidersHorizontal,
   Paperclip,
   Upload,
+  Download,
+  CheckCircle,
 } from "lucide-react";
 import { SummaryCard } from "../../components/shared/SummaryCard/SummaryCard";
 import { Tabs } from "../../components/shared/Tabs/Tabs";
@@ -39,6 +41,15 @@ interface SalesInvoice {
   reportNumber: string;
   reportPeriod: string;
   hasAttachment: boolean;
+}
+
+// Purchase Invoice interface
+interface PurchaseInvoice {
+  id: string;
+  invoiceNumber: string;
+  invoicePeriod: string;
+  commissionValue: number;
+  status: "paid" | "under_review";
 }
 
 // Mock data
@@ -159,10 +170,23 @@ const mockSalesInvoices: SalesInvoice[] = [
   { id: "23", reportNumber: "RPT-0825#12355545", reportPeriod: "مايو - 2024", hasAttachment: true },
 ];
 
+// Mock purchase invoices data
+const mockPurchaseInvoices: PurchaseInvoice[] = [
+  { id: "1", invoiceNumber: "#INV-PL-2024-3", invoicePeriod: "2024 مارس", commissionValue: 2345.75, status: "paid" },
+  { id: "2", invoiceNumber: "#INV-PL-2024-2", invoicePeriod: "2024 فبراير", commissionValue: 3125.45, status: "paid" },
+  { id: "3", invoiceNumber: "#INV-PL-2024-1", invoicePeriod: "2024 يناير", commissionValue: 2890.20, status: "under_review" },
+  { id: "4", invoiceNumber: "#INV-PL-2023-12", invoicePeriod: "2023 ديسمبر", commissionValue: 3456.80, status: "paid" },
+  { id: "5", invoiceNumber: "#INV-PL-2023-11", invoicePeriod: "2023 نوفمبر", commissionValue: 2789.30, status: "paid" },
+  { id: "6", invoiceNumber: "#INV-PL-2023-10", invoicePeriod: "2023 أكتوبر", commissionValue: 3210.15, status: "paid" },
+  { id: "7", invoiceNumber: "#INV-PL-2023-9", invoicePeriod: "2023 سبتمبر", commissionValue: 2987.60, status: "paid" },
+  { id: "8", invoiceNumber: "#INV-PL-2023-8", invoicePeriod: "2023 أغسطس", commissionValue: 2678.90, status: "paid" },
+];
+
 function ServiceDistributerFinancialReports() {
   const [activeTab, setActiveTab] = useState("operations");
   const [currentPage, setCurrentPage] = useState(1);
   const [salesInvoicePage, setSalesInvoicePage] = useState(1);
+  const [purchaseInvoicePage, setPurchaseInvoicePage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
   const [operationNumberSearch, setOperationNumberSearch] = useState("");
   const [selectedStation, setSelectedStation] = useState("all");
@@ -172,6 +196,7 @@ function ServiceDistributerFinancialReports() {
   const itemsPerPage = 8;
   const totalOperations = 156;
   const totalSalesInvoices = mockSalesInvoices.length;
+  const totalPurchaseInvoices = mockPurchaseInvoices.length;
 
   const tabs = [
     { id: "operations", label: "العمليات" },
@@ -228,6 +253,14 @@ function ServiceDistributerFinancialReports() {
 
   const totalSalesInvoicePages = Math.ceil(totalSalesInvoices / itemsPerPage);
 
+  // Paginate purchase invoices
+  const paginatedPurchaseInvoices = useMemo(() => {
+    const startIndex = (purchaseInvoicePage - 1) * itemsPerPage;
+    return mockPurchaseInvoices.slice(startIndex, startIndex + itemsPerPage);
+  }, [purchaseInvoicePage]);
+
+  const totalPurchaseInvoicePages = Math.ceil(totalPurchaseInvoices / itemsPerPage);
+
   const handleReset = () => {
     setSearchQuery("");
     setOperationNumberSearch("");
@@ -255,6 +288,20 @@ function ServiceDistributerFinancialReports() {
   const handleUploadAttachment = (invoiceId: string) => {
     console.log("Upload attachment for invoice:", invoiceId);
     // TODO: Open file upload dialog
+  };
+
+  const handleDownloadInvoice = (invoiceId: string) => {
+    console.log("Download invoice:", invoiceId);
+    // TODO: Download invoice file
+  };
+
+  // Helper function to format currency
+  const formatCurrency = (value: number): string => {
+    const formatted = new Intl.NumberFormat("ar-SA", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+    return `ر.س ${formatted}`;
   };
 
   // Sales Invoice table columns
@@ -339,6 +386,104 @@ function ServiceDistributerFinancialReports() {
       render: (_: any, row: SalesInvoice) => (
         <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
           {row.reportNumber}
+        </span>
+      ),
+    },
+  ];
+
+  // Purchase Invoice table columns
+  const purchaseInvoiceColumns = [
+    {
+      key: "download",
+      label: "تحميل الفاتورة",
+      width: "w-48 min-w-[180px]",
+      render: (_: any, row: PurchaseInvoice) => (
+        <div className="flex items-center justify-center">
+          <button
+            onClick={() => handleDownloadInvoice(row.id)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-900 hover:bg-blue-950 text-white text-sm font-medium transition-colors"
+            aria-label="تحميل الفاتورة"
+          >
+            <Download className="w-4 h-4" />
+            <span>تحميل الفاتورة</span>
+          </button>
+        </div>
+      ),
+    },
+    {
+      key: "status",
+      label: "حالة الفاتورة",
+      width: "w-40 min-w-[160px]",
+      render: (_: any, row: PurchaseInvoice) => (
+        <div className="flex items-center justify-center">
+          {row.status === "paid" ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-50 border border-green-200">
+              <CheckCircle className="w-4 h-4 text-green-600" />
+              <span className="text-green-700 text-sm font-medium">مدفوعة</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200">
+              <Clock className="w-4 h-4 text-blue-600" />
+              <span className="text-blue-700 text-sm font-medium">قيد المراجعة</span>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "commissionValue",
+      label: "قيمة العمولات",
+      width: "flex-1 grow min-w-[180px]",
+      headerRender: () => (
+        <div className="flex items-center justify-start gap-2">
+          <span>قيمة العمولات</span>
+          <div className="flex flex-col">
+            <ChevronUp className="w-3 h-3 text-gray-600" />
+            <ChevronDown className="w-3 h-3 text-gray-600 -mt-1" />
+          </div>
+        </div>
+      ),
+      render: (_: any, row: PurchaseInvoice) => (
+        <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+          {formatCurrency(row.commissionValue)}
+        </span>
+      ),
+    },
+    {
+      key: "invoicePeriod",
+      label: "فترة الفاتورة",
+      width: "flex-1 grow min-w-[180px]",
+      headerRender: () => (
+        <div className="flex items-center justify-start gap-2">
+          <span>فترة الفاتورة</span>
+          <div className="flex flex-col">
+            <ChevronUp className="w-3 h-3 text-gray-600" />
+            <ChevronDown className="w-3 h-3 text-gray-600 -mt-1" />
+          </div>
+        </div>
+      ),
+      render: (_: any, row: PurchaseInvoice) => (
+        <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+          {row.invoicePeriod}
+        </span>
+      ),
+    },
+    {
+      key: "invoiceNumber",
+      label: "رقم الفاتورة",
+      width: "flex-1 grow min-w-[200px]",
+      headerRender: () => (
+        <div className="flex items-center justify-start gap-2">
+          <span>رقم الفاتورة</span>
+          <div className="flex flex-col">
+            <ChevronUp className="w-3 h-3 text-gray-600" />
+            <ChevronDown className="w-3 h-3 text-gray-600 -mt-1" />
+          </div>
+        </div>
+      ),
+      render: (_: any, row: PurchaseInvoice) => (
+        <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+          {row.invoiceNumber}
         </span>
       ),
     },
@@ -578,6 +723,13 @@ function ServiceDistributerFinancialReports() {
               loading={false}
               emptyMessage="لا توجد فواتير بيع"
             />
+          ) : activeTab === "purchase-invoices" ? (
+            <Table
+              columns={purchaseInvoiceColumns}
+              data={paginatedPurchaseInvoices}
+              loading={false}
+              emptyMessage="لا توجد فواتير شراء"
+            />
           ) : activeTab === "operations" ? (
             <Table
               columns={columns}
@@ -588,7 +740,6 @@ function ServiceDistributerFinancialReports() {
           ) : (
             <div className="flex items-center justify-center p-8">
               <div className="text-color-mode-text-icons-t-sec">
-                {activeTab === "purchase-invoices" && "لا توجد فواتير شراء"}
                 {activeTab === "payments" && "لا توجد دفعات"}
               </div>
             </div>
@@ -606,6 +757,22 @@ function ServiceDistributerFinancialReports() {
                 currentPage={salesInvoicePage}
                 totalPages={totalSalesInvoicePages}
                 onPageChange={setSalesInvoicePage}
+                previousLabel=""
+                nextLabel=""
+                useEasternArabic={true}
+                showArrowOnly={true}
+                maxVisiblePages={3}
+              />
+            </>
+          ) : activeTab === "purchase-invoices" ? (
+            <>
+              <div className="text-sm text-color-mode-text-icons-t-sec">
+                فاتورة {paginatedPurchaseInvoices.length} من {totalPurchaseInvoices} - {purchaseInvoicePage} عرض
+              </div>
+              <Pagination
+                currentPage={purchaseInvoicePage}
+                totalPages={totalPurchaseInvoicePages}
+                onPageChange={setPurchaseInvoicePage}
                 previousLabel=""
                 nextLabel=""
                 useEasternArabic={true}
