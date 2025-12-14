@@ -44,7 +44,7 @@ export const RequestFormSection = (): JSX.Element => {
 
       // Validation
       const withdrawalAmount = parseFloat(formData.withdrawalAmount);
-      
+
       if (!formData.companyIban || formData.companyIban.trim() === "") {
         addToast({
           type: "error",
@@ -132,7 +132,7 @@ export const RequestFormSection = (): JSX.Element => {
           <header className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
             <div className="inline-flex h-10 items-center gap-[var(--corner-radius-medium)] relative flex-[0_0_auto]">
               <button
-                onClick={() => navigate('/wallet')}
+                onClick={() => navigate("/wallet")}
                 className="flex flex-col w-10 items-center justify-center gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative self-stretch bg-color-mode-surface-bg-icon-gray rounded-[var(--corner-radius-small)] hover:opacity-80 transition-opacity"
                 aria-label="العودة"
               >
@@ -352,7 +352,9 @@ export const RequestFormSection = (): JSX.Element => {
               >
                 <div className="items-center gap-[var(--corner-radius-small)] self-stretch w-full flex-[0_0_auto] flex relative">
                   <div className="w-fit font-[number:var(--subtitle-subtitle-3-font-weight)] text-color-mode-text-icons-t-btn-negative text-left tracking-[var(--subtitle-subtitle-3-letter-spacing)] whitespace-nowrap [direction:rtl] relative mt-[-1.00px] font-subtitle-subtitle-3 text-[length:var(--subtitle-subtitle-3-font-size)] leading-[var(--subtitle-subtitle-3-line-height)] [font-style:var(--subtitle-subtitle-3-font-style)]">
-                    {isSubmitting ? "جاري الإرسال..." : "إضافة طلب استرداد جديد"}
+                    {isSubmitting
+                      ? "جاري الإرسال..."
+                      : "إضافة طلب استرداد جديد"}
                   </div>
                 </div>
               </button>

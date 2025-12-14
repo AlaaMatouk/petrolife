@@ -14977,7 +14977,9 @@ const generateUniqueWithdrawalRefid = async (): Promise<string> => {
     }
     console.log(`⚠️ Withdrawal refid ${refid} already exists, retrying...`);
   }
-  throw new Error("Failed to generate unique withdrawal refid after 20 attempts");
+  throw new Error(
+    "Failed to generate unique withdrawal refid after 20 attempts"
+  );
 };
 
 /**
@@ -14986,10 +14988,7 @@ const generateUniqueWithdrawalRefid = async (): Promise<string> => {
  * @param userId - User ID for organizing storage
  * @returns Promise with download URL
  */
-const uploadIbanImage = async (
-  file: File,
-  userId: string
-): Promise<string> => {
+const uploadIbanImage = async (file: File, userId: string): Promise<string> => {
   try {
     const timestamp = Date.now();
     const fileName = `wallet-withdrawals/${userId}/${timestamp}-${file.name}`;
@@ -15355,7 +15354,8 @@ export const fetchAllAdminWithdrawalRequests = async () => {
       const status = data.status || data.requestedUser?.status || "pending";
 
       // Get responsible person
-      const responsible = data.processedBy?.name || data.actionUser?.name || "-";
+      const responsible =
+        data.processedBy?.name || data.actionUser?.name || "-";
 
       allRequestsData.push({
         id: doc.id,
@@ -15410,19 +15410,19 @@ export const fetchUserWithdrawalRequests = async () => {
 
     // Get current company to also search by companyId
     const company = await fetchCurrentCompany();
-    
+
     const requestsRef = collection(db, "companies-wallets-withdrawals");
-    
+
     // Try multiple query strategies for maximum compatibility
     let userRequests: any[] = [];
-    
+
     // Strategy 1: Query by requestedUser.uid
     const qByUid = query(
       requestsRef,
       where("requestedUser.uid", "==", currentUser.uid)
     );
     const snapshotByUid = await getDocs(qByUid);
-    
+
     snapshotByUid.forEach((doc) => {
       const data = doc.data();
       userRequests.push({
@@ -15430,7 +15430,7 @@ export const fetchUserWithdrawalRequests = async () => {
         ...data,
       });
     });
-    
+
     // Strategy 2: If company exists and no results, try by companyId
     if (userRequests.length === 0 && company) {
       console.log("🔍 No results by UID, trying by companyId:", company.id);
@@ -15439,7 +15439,7 @@ export const fetchUserWithdrawalRequests = async () => {
         where("companyId", "==", company.id)
       );
       const snapshotByCompanyId = await getDocs(qByCompanyId);
-      
+
       snapshotByCompanyId.forEach((doc) => {
         const data = doc.data();
         userRequests.push({

@@ -2,10 +2,10 @@ import { DataTableSection } from "../../../sections/DataTableSection";
 import { DollarSign, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState, useCallback, useEffect } from "react";
-import { 
+import {
   fetchAllAdminWithdrawalRequests,
   approveWalletWithdrawalRequest,
-  rejectWalletWithdrawalRequest
+  rejectWalletWithdrawalRequest,
 } from "../../../../services/firestore";
 import { auth } from "../../../../config/firebase";
 import { useToast } from "../../../../hooks/useToast";
@@ -29,7 +29,11 @@ const columns = [
   { key: "responsible", label: "المسؤول", priority: "high" as const },
   { key: "status", label: "حالة الطلب", priority: "high" as const },
   { key: "requestDate", label: "تاريخ الانشاء", priority: "high" as const },
-  { key: "withdrawalAmount", label: "قيمة الاسترداد", priority: "high" as const },
+  {
+    key: "withdrawalAmount",
+    label: "قيمة الاسترداد",
+    priority: "high" as const,
+  },
   { key: "oldBalance", label: "الرصيد القديم", priority: "medium" as const },
   { key: "clientName", label: "اسم العميل", priority: "medium" as const },
   { key: "companyIban", label: "Company IBAN", priority: "medium" as const },
@@ -40,24 +44,27 @@ const columns = [
 export const MoneyReq = () => {
   const navigate = useNavigate();
   const { addToast } = useToast();
-  const [rawWithdrawalRequestsData, setRawWithdrawalRequestsData] = useState<any[]>([]);
+  const [rawWithdrawalRequestsData, setRawWithdrawalRequestsData] = useState<
+    any[]
+  >([]);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   // Fetch data
   const fetchDataWithState = useCallback(async () => {
     const data = await fetchAllAdminWithdrawalRequests();
-    
+
     // Transform data to make IBAN image more user-friendly
     const transformedData = data.map((item: any) => ({
       ...item,
-      ibanImage: item.ibanImage && item.ibanImage !== "-" 
-        ? {
-            url: item.ibanImage,
-            display: "عرض الصورة"
-          }
-        : "-"
+      ibanImage:
+        item.ibanImage && item.ibanImage !== "-"
+          ? {
+              url: item.ibanImage,
+              display: "عرض الصورة",
+            }
+          : "-",
     }));
-    
+
     setRawWithdrawalRequestsData(data); // Keep original for processing
     return transformedData; // Return transformed for display
   }, []);
