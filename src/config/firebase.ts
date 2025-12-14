@@ -11,7 +11,7 @@ const firebaseConfig = {
   authDomain: "car-station-6393f.firebaseapp.com",
   projectId: "car-station-6393f",
   storageBucket: "car-station-6393f.appspot.com",
-  messagingSenderId: "688616261764",
+  messagingSenderId: "688616261764", 
   appId: "1:688616261764:web:4d33f6b0ce57e673871ad1",
 };
 

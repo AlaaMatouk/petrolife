@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, FileChartColumnIncreasing } from "lucide-react";
 import { Table, TimeFilter, ExportButton, Pagination, LoadingSpinner } from "../../../../components/shared";
-import { fetchWalletChargeRequests } from "../../../../services/firestore";
+import { fetchUserWithdrawalRequests } from "../../../../services/firestore";
 
 // Helper function to format date
 const formatDate = (date: any): string => {
@@ -43,13 +43,13 @@ const formatDate = (date: any): string => {
 const getStatusText = (status: string): { text: string; type: string } => {
   const statusLower = status?.toLowerCase() || '';
   
-  if (statusLower.includes('done') || statusLower.includes('completed') || statusLower === 'مكتمل') {
+  if (statusLower === 'approved' || statusLower === 'مكتمل' || statusLower === 'موافق') {
     return { text: 'مكتمل', type: 'completed' };
   }
-  if (statusLower.includes('pending') || statusLower.includes('review') || statusLower === 'جاري المراجعة') {
+  if (statusLower === 'pending' || statusLower === 'جاري المراجعة') {
     return { text: 'جاري المراجعة', type: 'reviewing' };
   }
-  if (statusLower.includes('cancel') || statusLower.includes('reject') || statusLower === 'ملغي') {
+  if (statusLower === 'rejected' || statusLower === 'ملغي' || statusLower === 'مرفوض') {
     return { text: 'ملغي', type: 'cancelled' };
   }
   
@@ -65,37 +65,30 @@ export const RequestHistorySection = (): JSX.Element => {
   
   const ITEMS_PER_PAGE = 10;
 
-  // Fetch wallet charge requests (money refund requests)
+  // Fetch wallet withdrawal requests
   useEffect(() => {
     const loadRequests = async () => {
       setIsLoading(true);
       try {
-        const data = await fetchWalletChargeRequests();
-        
-        // Sort by date descending (newest first)
-        const sortedData = [...data].sort((a, b) => {
-          const dateA = a.requestDate?.toDate ? a.requestDate.toDate() : new Date(a.requestDate || a.createdDate || 0);
-          const dateB = b.requestDate?.toDate ? b.requestDate.toDate() : new Date(b.requestDate || b.createdDate || 0);
-          return dateB.getTime() - dateA.getTime();
-        });
+        const data = await fetchUserWithdrawalRequests();
         
         // Transform to request format
-        const transformedRequests = sortedData.map((request) => {
+        const transformedRequests = data.map((request) => {
           const statusInfo = getStatusText(request.status);
           
           return {
             id: request.id || '-',
             status: statusInfo.text,
             statusType: statusInfo.type,
-            amount: String(request.value || request.amount || 0),
+            amount: String(request.withdrawalAmount || 0),
             date: formatDate(request.requestDate || request.createdDate),
-            rawDate: request.requestDate || request.createdDate, // Store raw date for filtering
+            rawDate: request.requestDate || request.createdDate,
           };
         });
         
         setRequests(transformedRequests);
       } catch (error) {
-        console.error('Error loading money refund requests:', error);
+        console.error('Error loading withdrawal requests:', error);
         setRequests([]);
       } finally {
         setIsLoading(false);
