@@ -1,5 +1,5 @@
 import { DataTableSection } from "../../../sections/DataTableSection";
-import { Truck } from "lucide-react";
+import { Truck, DollarSign } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   fetchStationsCompanyData,
@@ -11,6 +11,7 @@ import {
 } from "../../../../services/firestore";
 import { useState, useEffect } from "react";
 import { useToast } from "../../../../context/ToastContext";
+import { CommissionSettingsModal } from "./components/CommissionSettingsModal";
 
 // Define the ServiceProvider data type (compatible with existing interface)
 export interface ServiceProvider {
@@ -268,6 +269,7 @@ export const ServiceProviders = () => {
     ServiceProvider[]
   >([]);
   const [isMigrating, setIsMigrating] = useState(false);
+  const [isCommissionModalOpen, setIsCommissionModalOpen] = useState(false);
 
   // Fetch service providers with state update
   const fetchServiceProvidersWithState = async (): Promise<
@@ -423,6 +425,17 @@ export const ServiceProviders = () => {
           count: pendingCount,
           onClick: handleJoinRequestsClick,
         }}
+        customActionButton={{
+          label: "إعدادات العمولة",
+          icon: DollarSign,
+          onClick: () => setIsCommissionModalOpen(true),
+        }}
+      />
+
+      {/* Commission Settings Modal */}
+      <CommissionSettingsModal
+        open={isCommissionModalOpen}
+        onClose={() => setIsCommissionModalOpen(false)}
       />
     </div>
   );

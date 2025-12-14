@@ -14157,6 +14157,15 @@ export const fetchOperationsData = async (): Promise<any[]> => {
       }% match rate)`
     );
 
+    // Fetch commission settings
+    let commissionSettings: CommissionSettings;
+    try {
+      commissionSettings = await fetchCommissionSettings();
+    } catch (error) {
+      console.warn("⚠️ Could not fetch commission settings, using defaults:", error);
+      commissionSettings = { petrol: 0, diesel: 0 };
+    }
+
     // Format date function
     const formatDateTime = (date: any): string => {
       if (!date) return "غير محدد";
@@ -14227,8 +14236,27 @@ export const fetchOperationsData = async (): Promise<any[]> => {
       return num.toFixed(2);
     };
 
+    // Determine if fuel type is diesel
+    const isDiesel = (fuelType: string): boolean => {
+      const normalized = fuelType.toLowerCase().trim();
+      return normalized.includes("ديزل") || normalized.includes("ديزيل") || normalized.includes("diesel");
+    };
+
+    // Calculate commission based on fuel type and liters
+    const calculateCommission = (fuelType: string, totalLitre: number): number => {
+      const liters = typeof totalLitre === "string" ? parseFloat(totalLitre) : totalLitre || 0;
+      if (isNaN(liters) || liters <= 0) return 0;
+
+      const commissionRate = isDiesel(fuelType) ? commissionSettings.diesel : commissionSettings.petrol;
+      return liters * commissionRate;
+    };
+
     // Transform orders to operations format
     const operations = filteredOrders.map((order) => {
+      const fuelType = extractFuelType(order);
+      const totalLitre = order.totalLitre || 0;
+      const commission = calculateCommission(fuelType, totalLitre);
+
       return {
         id: order.id || Date.now().toString(),
         // رقم العملية (Operation Number) - from refId or refDocId or id
@@ -14238,13 +14266,13 @@ export const fetchOperationsData = async (): Promise<any[]> => {
         // التاريخ والوقت (Date and Time) - from createdDate
         dateTime: formatDateTime(order.createdDate || order.orderDate),
         // نوع الوقود (Fuel Type) - from service.options.name with fallbacks
-        fuelType: extractFuelType(order),
+        fuelType: fuelType,
         // عدد اللترات (Liters) - from totalLitre
-        liters: formatNumber(order.totalLitre),
+        liters: formatNumber(totalLitre),
         // إجمالي العملية (Total Operation) - from totalPrice
         totalOperation: formatNumber(order.totalPrice),
-        // إجمالي العمولة (Total Commission) - placeholder for now
-        totalCommission: "0",
+        // إجمالي العمولة (Total Commission) - calculated based on fuel type and liters
+        totalCommission: formatNumber(commission),
         // Keep original order for reference
         originalOrder: order,
       };
@@ -14743,6 +14771,92 @@ export const saveCommunicationPolicies = async (
     return true;
   } catch (error) {
     console.error("❌ Error saving communication policies:", error);
+    throw error;
+  }
+};
+
+/**
+ * Commission Settings Interface
+ */
+export interface CommissionSettings {
+  id?: string;
+  petrol: number; // Commission rate for بنزين (SAR per liter)
+  diesel: number; // Commission rate for ديزيل (SAR per liter)
+  lastUpdated?: Timestamp;
+  updatedBy?: string; // Admin email
+}
+
+/**
+ * Fetch commission settings from Firestore
+ * @returns Promise with commission settings data
+ */
+export const fetchCommissionSettings = async (): Promise<CommissionSettings> => {
+  try {
+    console.log("📊 Fetching commission settings from Firestore...");
+
+    const docRef = doc(db, "commission-settings", "rates");
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      console.log("✅ Commission settings found:", data);
+      return {
+        id: docSnap.id,
+        petrol: data.petrol || 0,
+        diesel: data.diesel || 0,
+        lastUpdated: data.lastUpdated,
+        updatedBy: data.updatedBy,
+      };
+    } else {
+      // Return default values if document doesn't exist
+      console.log("⚠️ Commission settings not found, returning defaults");
+      return {
+        petrol: 0,
+        diesel: 0,
+      };
+    }
+  } catch (error) {
+    console.error("❌ Error fetching commission settings:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update commission settings in Firestore
+ * @param petrol - Commission rate for بنزين (SAR per liter)
+ * @param diesel - Commission rate for ديزيل (SAR per liter)
+ * @returns Promise<boolean> - Success status
+ */
+export const updateCommissionSettings = async (
+  petrol: number,
+  diesel: number
+): Promise<boolean> => {
+  try {
+    console.log("💾 Updating commission settings in Firestore...");
+    console.log(`Petrol: ${petrol} SAR/liter, Diesel: ${diesel} SAR/liter`);
+
+    // Wait for auth state to get current user
+    const currentUser = await waitForAuthState();
+    if (!currentUser || !currentUser.email) {
+      throw new Error("No authenticated user found");
+    }
+
+    const docRef = doc(db, "commission-settings", "rates");
+    await setDoc(
+      docRef,
+      {
+        petrol: Number(petrol),
+        diesel: Number(diesel),
+        lastUpdated: serverTimestamp(),
+        updatedBy: currentUser.email,
+      },
+      { merge: true }
+    );
+
+    console.log("✅ Commission settings updated successfully");
+    return true;
+  } catch (error) {
+    console.error("❌ Error updating commission settings:", error);
     throw error;
   }
 };

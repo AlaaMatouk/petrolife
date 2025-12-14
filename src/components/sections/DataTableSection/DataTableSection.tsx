@@ -51,6 +51,11 @@ export interface DataTableSectionProps<T> {
     count: number;
     onClick: () => void;
   }; // New prop for custom filter button with count
+  customActionButton?: {
+    label: string;
+    icon?: LucideIcon;
+    onClick: () => void;
+  }; // New prop for custom action button
   customActionButtons?: boolean; // New prop to show Accept/Reject buttons instead of View/Delete
   showMoneyRefundButton?: boolean; // New prop to show money refund requests button
   showFuelDeliveryButton?: boolean; // New prop to show fuel delivery requests button
@@ -584,6 +589,7 @@ export const DataTableSection = <
   showAddButton = true,
   filterOptions = [],
   customFilterButton,
+  customActionButton,
   customActionButtons = false,
   showMoneyRefundButton = false,
   showFuelDeliveryButton = false,
@@ -950,6 +956,24 @@ export const DataTableSection = <
                         <span className="w-fit mt-[-1.00px] font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-sec text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] relative font-body-body-2 text-[length:var(--body-body-2-font-size)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
                           {customFilterButton.label} ({customFilterButton.count}
                           )
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                )}
+
+                {customActionButton && (
+                  <button
+                    onClick={customActionButton.onClick}
+                    className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray transition-colors"
+                  >
+                    <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
+                      <div className="inline-flex items-center justify-center gap-2.5 pt-1 pb-0 px-0 relative flex-[0_0_auto]">
+                        {customActionButton.icon && (
+                          <customActionButton.icon className="w-4 h-4 text-gray-500" />
+                        )}
+                        <span className="w-fit mt-[-1.00px] font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-sec text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] relative font-body-body-2 text-[length:var(--body-body-2-font-size)] whitespace-nowrap [direction:rtl] [font-style:var(--body-body-2-font-style)]">
+                          {customActionButton.label}
                         </span>
                       </div>
                     </div>
