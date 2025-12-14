@@ -14093,6 +14093,179 @@ export const fetchServiceDistributerFinancialReports = async (): Promise<
 };
 
 /**
+ * Fetch operations data from stationscompany-orders collection for service distributer
+ * Uses the same logic as fetchServiceDistributerFinancialReports but with operations table format
+ * Filters by carStation.createdUserId matching current user's email
+ * @returns Promise with array of operations data formatted for the operations table
+ */
+export const fetchOperationsData = async (): Promise<any[]> => {
+  try {
+    console.log(
+      "📊 Fetching operations data from stationscompany-orders..."
+    );
+
+    // Wait for auth state to be ready
+    console.log("⏳ Waiting for auth state...");
+    const currentUser = await waitForAuthState();
+    console.log("✅ Auth state ready, current user:", currentUser.email);
+
+    if (!currentUser || !currentUser.email) {
+      throw new Error("No authenticated user found");
+    }
+
+    const currentUserEmail = currentUser.email;
+
+    // ⚠️ NOTE: Firestore doesn't support querying nested fields like "carStation.createdUserId"
+    // We have to fetch all orders and filter client-side
+    // This is a known limitation of Firestore queries
+    const ordersRef = collection(db, "stationscompany-orders");
+    const q = query(ordersRef, orderBy("orderDate", "desc"));
+    const querySnapshot = await getDocs(q);
+
+    const allOrders: any[] = [];
+
+    querySnapshot.forEach((doc) => {
+      allOrders.push({
+        id: doc.id,
+        ...doc.data(),
+      });
+    });
+
+    console.log("📋 Total orders found:", allOrders.length);
+
+    // Filter orders by current user (service distributer)
+    // Check if carStation.createdUserId matches current user's email
+    const filteredOrders = allOrders.filter((order) => {
+      const carStationCreatedUserId = order.carStation?.createdUserId;
+
+      const match =
+        carStationCreatedUserId &&
+        carStationCreatedUserId.toLowerCase() ===
+          currentUserEmail.toLowerCase();
+
+      return match;
+    });
+
+    console.log("✅ Filtered orders for current user:", filteredOrders.length);
+    console.log(
+      `📊 Efficiency: Fetched ${allOrders.length} orders, filtered to ${
+        filteredOrders.length
+      } (${
+        filteredOrders.length > 0
+          ? Math.round((filteredOrders.length / allOrders.length) * 100)
+          : 0
+      }% match rate)`
+    );
+
+    // Format date function
+    const formatDateTime = (date: any): string => {
+      if (!date) return "غير محدد";
+      try {
+        const dateObj = date.toDate ? date.toDate() : new Date(date);
+        const year = dateObj.getFullYear();
+        const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+        const day = String(dateObj.getDate()).padStart(2, "0");
+        const hours = String(dateObj.getHours()).padStart(2, "0");
+        const minutes = String(dateObj.getMinutes()).padStart(2, "0");
+        return `${year}/${month}/${day} - ${hours}:${minutes}`;
+      } catch (error) {
+        console.error("Error formatting date:", error);
+        return "غير محدد";
+      }
+    };
+
+    // Extract fuel type with fallback chain
+    const extractFuelType = (order: any): string => {
+      // Priority 1: selectedOption.name (ar or en)
+      if (order.selectedOption?.name?.ar) {
+        return order.selectedOption.name.ar;
+      }
+      if (order.selectedOption?.name?.en) {
+        return order.selectedOption.name.en;
+      }
+      // Priority 2: selectedOption.title (ar or en)
+      if (order.selectedOption?.title?.ar) {
+        return order.selectedOption.title.ar;
+      }
+      if (order.selectedOption?.title?.en) {
+        return order.selectedOption.title.en;
+      }
+      // Priority 3: service.options.name (ar or en) - find matching option
+      if (order.service?.options && Array.isArray(order.service.options)) {
+        const selectedOptionId = order.selectedOption?.id || order.selectedOption?.refId;
+        const matchingOption = order.service.options.find(
+          (opt: any) => opt.id === selectedOptionId || opt.refId === selectedOptionId
+        );
+        if (matchingOption?.name?.ar) {
+          return matchingOption.name.ar;
+        }
+        if (matchingOption?.name?.en) {
+          return matchingOption.name.en;
+        }
+        if (matchingOption?.title?.ar) {
+          return matchingOption.title.ar;
+        }
+        if (matchingOption?.title?.en) {
+          return matchingOption.title.en;
+        }
+      }
+      // Fallback to service.title
+      if (order.service?.title?.ar) {
+        return order.service.title.ar;
+      }
+      if (order.service?.title?.en) {
+        return order.service.title.en;
+      }
+      return "غير محدد";
+    };
+
+    // Format number with 2 decimal places
+    const formatNumber = (value: number | string | undefined): string => {
+      if (value === undefined || value === null) return "0";
+      const num = typeof value === "string" ? parseFloat(value) : value;
+      if (isNaN(num)) return "0";
+      return num.toFixed(2);
+    };
+
+    // Transform orders to operations format
+    const operations = filteredOrders.map((order) => {
+      return {
+        id: order.id || Date.now().toString(),
+        // رقم العملية (Operation Number) - from refId or refDocId or id
+        operationNumber: order.refId || order.refDocId || order.id || "-",
+        // اسم المحطة (Station Name) - from carStation.name
+        stationName: order.carStation?.name || "غير محدد",
+        // التاريخ والوقت (Date and Time) - from createdDate
+        dateTime: formatDateTime(order.createdDate || order.orderDate),
+        // نوع الوقود (Fuel Type) - from service.options.name with fallbacks
+        fuelType: extractFuelType(order),
+        // عدد اللترات (Liters) - from totalLitre
+        liters: formatNumber(order.totalLitre),
+        // إجمالي العملية (Total Operation) - from totalPrice
+        totalOperation: formatNumber(order.totalPrice),
+        // إجمالي العمولة (Total Commission) - placeholder for now
+        totalCommission: "0",
+        // Keep original order for reference
+        originalOrder: order,
+      };
+    });
+
+    console.log(
+      "✅ Operations data transformed:",
+      operations.length
+    );
+
+    return operations;
+  } catch (error) {
+    console.error(
+      "❌ Error fetching operations data:",
+      error
+    );
+    throw error;
+  }
+};
+
+/**
  * Fetch worker transactions from stationscompany-orders collection
  * Filters by fuelStationWorker.email matching the provided worker email
  * @param workerEmail - The email of the worker

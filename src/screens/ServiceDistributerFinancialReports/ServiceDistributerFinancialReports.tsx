@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Search,
   Eye,
@@ -23,6 +23,9 @@ import { RTLSelect } from "../../components/shared/Form/RTLSelect";
 import { FuelTypeIcon } from "../../components/shared/FuelTypeIcon/FuelTypeIcon";
 import { Table } from "../../components/shared/Table/Table";
 import { Pagination } from "../../components/shared/Pagination/Pagination";
+import { fetchOperationsData } from "../../services/firestore";
+import { LoadingSpinner } from "../../components/shared/Spinner/LoadingSpinner";
+import { OrderDetailsModal } from "./components/OrderDetailsModal";
 
 // Operation interface
 interface Operation {
@@ -34,6 +37,7 @@ interface Operation {
   liters: string;
   totalOperation: string;
   totalCommission: string;
+  originalOrder?: any; // Full order data from Firestore
 }
 
 // Sales Invoice interface
@@ -147,12 +151,6 @@ const mockOperations: Operation[] = [
   },
 ];
 
-const stationOptions = [
-  { value: "all", label: "جميع المحطات" },
-  { value: "east", label: "محطة الشرق" },
-  { value: "west", label: "محطة الغرب" },
-  { value: "north", label: "محطة الشمال" },
-];
 
 // Mock sales invoices data
 const mockSalesInvoices: SalesInvoice[] = [
@@ -216,12 +214,54 @@ function ServiceDistributerFinancialReports() {
   const [selectedStation, setSelectedStation] = useState("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [operations, setOperations] = useState<Operation[]>([]);
+  const [isLoadingOperations, setIsLoadingOperations] = useState(true);
+  const [stationOptions, setStationOptions] = useState<Array<{ value: string; label: string }>>([
+    { value: "all", label: "جميع المحطات" },
+  ]);
+  const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const itemsPerPage = 8;
-  const totalOperations = 156;
   const totalSalesInvoices = mockSalesInvoices.length;
   const totalPurchaseInvoices = mockPurchaseInvoices.length;
   const totalPayments = mockPayments.length;
+
+  // Fetch operations data on component mount
+  useEffect(() => {
+    const loadOperations = async () => {
+      try {
+        setIsLoadingOperations(true);
+        const fetchedOperations = await fetchOperationsData();
+        setOperations(fetchedOperations);
+
+        // Extract unique station names from operations
+        const uniqueStations = Array.from(
+          new Set(
+            fetchedOperations
+              .map((op) => op.stationName)
+              .filter((name) => name && name !== "غير محدد")
+          )
+        ).sort();
+
+        // Update station options
+        setStationOptions([
+          { value: "all", label: "جميع المحطات" },
+          ...uniqueStations.map((station) => ({
+            value: station,
+            label: station,
+          })),
+        ]);
+      } catch (error) {
+        console.error("Error loading operations:", error);
+        setOperations([]);
+      } finally {
+        setIsLoadingOperations(false);
+      }
+    };
+
+    loadOperations();
+  }, []);
 
   const tabs = [
     { id: "operations", label: "العمليات" },
@@ -232,7 +272,7 @@ function ServiceDistributerFinancialReports() {
 
   // Filter operations
   const filteredOperations = useMemo(() => {
-    let filtered = [...mockOperations];
+    let filtered = [...operations];
 
     if (searchQuery) {
       filtered = filtered.filter(
@@ -249,18 +289,15 @@ function ServiceDistributerFinancialReports() {
     }
 
     if (selectedStation !== "all") {
-      const stationMap: Record<string, string> = {
-        east: "محطة الشرق",
-        west: "محطة الغرب",
-        north: "محطة الشمال",
-      };
       filtered = filtered.filter(
-        (op) => op.stationName === stationMap[selectedStation]
+        (op) => op.stationName === selectedStation
       );
     }
 
     return filtered;
-  }, [searchQuery, operationNumberSearch, selectedStation]);
+  }, [operations, searchQuery, operationNumberSearch, selectedStation]);
+
+  const totalOperations = filteredOperations.length;
 
   // Paginate operations
   const paginatedOperations = useMemo(() => {
@@ -304,8 +341,16 @@ function ServiceDistributerFinancialReports() {
   };
 
   const handleViewDetails = (operationId: string) => {
-    console.log("View details for operation:", operationId);
-    // TODO: Navigate to details page
+    const operation = operations.find((op) => op.id === operationId);
+    if (operation) {
+      setSelectedOrder(operation);
+      setIsModalOpen(true);
+    }
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedOrder(null);
   };
 
   const handleViewReport = (invoiceId: string) => {
@@ -890,12 +935,18 @@ function ServiceDistributerFinancialReports() {
               emptyMessage="لا توجد دفعات"
             />
           ) : activeTab === "operations" ? (
-            <Table
-              columns={columns}
-              data={paginatedOperations}
-              loading={false}
-              emptyMessage="لا توجد عمليات"
-            />
+            isLoadingOperations ? (
+              <div className="flex items-center justify-center p-8">
+                <LoadingSpinner message="جاري تحميل العمليات..." />
+              </div>
+            ) : (
+              <Table
+                columns={columns}
+                data={paginatedOperations}
+                loading={false}
+                emptyMessage="لا توجد عمليات"
+              />
+            )
           ) : null}
         </div>
 
@@ -952,11 +1003,11 @@ function ServiceDistributerFinancialReports() {
           ) : activeTab === "operations" ? (
             <>
               <div className="text-sm text-color-mode-text-icons-t-sec">
-                عرض {paginatedOperations.length} من {totalOperations} عملية
+                عرض {paginatedOperations.length} من {filteredOperations.length} عملية
               </div>
               <Pagination
                 currentPage={currentPage}
-                totalPages={Math.ceil(totalOperations / itemsPerPage)}
+                totalPages={Math.ceil(filteredOperations.length / itemsPerPage)}
                 onPageChange={setCurrentPage}
                 previousLabel=""
                 nextLabel=""
@@ -968,6 +1019,13 @@ function ServiceDistributerFinancialReports() {
           ) : null}
         </div>
       </div>
+
+      {/* Order Details Modal */}
+      <OrderDetailsModal
+        open={isModalOpen}
+        order={selectedOrder}
+        onClose={handleCloseModal}
+      />
     </div>
   );
 }

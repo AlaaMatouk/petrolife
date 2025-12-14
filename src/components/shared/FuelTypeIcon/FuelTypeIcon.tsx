@@ -8,28 +8,58 @@ export interface FuelTypeIconProps {
 const getFuelTypeConfig = (fuelType: string) => {
   const normalized = fuelType.toLowerCase().trim();
   
-  if (normalized.includes("91") || normalized.includes("بنزين 91")) {
+  // Check for Fuel 91 - Green
+  // Matches: "91", "بنزين 91", "بنزين ٩١", "fuel 91", etc.
+  if (
+    normalized.includes("91") || 
+    normalized.includes("بنزين 91") || 
+    normalized.includes("بنزين ٩١") ||
+    normalized.includes("fuel 91")
+  ) {
     return {
       color: "bg-green-500",
-      text: "بنزين 91",
+      text: "بنزين ٩١",
     };
   }
-  if (normalized.includes("95") || normalized.includes("بنزين 95")) {
+  
+  // Check for Fuel 95 - Red
+  // Matches: "95", "بنزين 95", "بنزين ٩٥", "fuel 95", etc.
+  if (
+    normalized.includes("95") || 
+    normalized.includes("بنزين 95") || 
+    normalized.includes("بنزين ٩٥") ||
+    normalized.includes("fuel 95")
+  ) {
     return {
       color: "bg-red-500",
-      text: "بنزين 95",
+      text: "بنزين ٩٥",
     };
   }
-  if (normalized.includes("98") || normalized.includes("بنزين 98")) {
+  
+  // Check for Fuel 98 - Blue
+  // Matches: "98", "بنزين 98", "بنزين ٩٨", "fuel 98", etc.
+  if (
+    normalized.includes("98") || 
+    normalized.includes("بنزين 98") || 
+    normalized.includes("بنزين ٩٨") ||
+    normalized.includes("fuel 98")
+  ) {
     return {
       color: "bg-blue-500",
-      text: "بنزين 98",
+      text: "بنزين ٩٨",
     };
   }
-  if (normalized.includes("ديزل") || normalized.includes("diesel")) {
+  
+  // Check for Diesel - Orange
+  // Matches: "ديزل", "ديزيل", "diesel"
+  if (
+    normalized.includes("ديزل") || 
+    normalized.includes("ديزيل") || 
+    normalized.includes("diesel")
+  ) {
     return {
       color: "bg-orange-500",
-      text: "ديزل",
+      text: "ديزيل",
     };
   }
   
