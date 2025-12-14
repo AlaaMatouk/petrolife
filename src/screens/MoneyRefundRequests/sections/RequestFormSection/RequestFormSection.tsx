@@ -395,6 +395,14 @@ export const RequestFormSection = (): JSX.Element => {
           </div>
         </form>
       </div>
+
+      {/* Confirmation Modal */}
+      <RefundConfirmationModal
+        open={showConfirmationModal}
+        formData={formData}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 };

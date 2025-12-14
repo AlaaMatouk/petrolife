@@ -255,8 +255,8 @@ export const Header: React.FC<HeaderProps> = ({
           role="navigation"
           aria-label="Main navigation"
         >
-          {/* Profile Dropdown - First on the left (hidden for service distributer) */}
-          {!serviceDistributer && <ProfileDropdown />}
+          {/* Profile Dropdown - First on the left */}
+          <ProfileDropdown />
 
           {/* Notification Dropdown - Hide for admin */}
           {!admin && <NotificationDropdown />}

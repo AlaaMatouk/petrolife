@@ -82,7 +82,7 @@ export const navigationMenuData = {
     },
     {
       id: "stations",
-      label: "محطات البترول",
+      label: "محطات الوقود",
       icon: "/img/side-icons-8.svg",
       href: ROUTES.PEROLIFE_STATION_LOCATIONS,
     },
