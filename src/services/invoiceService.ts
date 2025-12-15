@@ -83,6 +83,69 @@ export const getMonthName = (date: Date): string => {
 };
 
 /**
+ * Get formatted month name in Arabic (e.g., "نوفمبر 2025")
+ * @param date - Date object
+ * @returns Formatted month name string in Arabic
+ */
+export const getMonthNameArabic = (date: Date): string => {
+  const monthNamesArabic = [
+    "يناير",
+    "فبراير",
+    "مارس",
+    "أبريل",
+    "مايو",
+    "يونيو",
+    "يوليو",
+    "أغسطس",
+    "سبتمبر",
+    "أكتوبر",
+    "نوفمبر",
+    "ديسمبر",
+  ];
+  return `${monthNamesArabic[date.getMonth()]} - ${date.getFullYear()}`;
+};
+
+/**
+ * Convert English month name to Arabic
+ * @param englishMonthName - English month name (e.g., "January 2025")
+ * @returns Arabic month name (e.g., "يناير - 2025")
+ */
+export const convertMonthNameToArabic = (englishMonthName: string): string => {
+  const monthMap: { [key: string]: string } = {
+    "January": "يناير",
+    "February": "فبراير",
+    "March": "مارس",
+    "April": "أبريل",
+    "May": "مايو",
+    "June": "يونيو",
+    "July": "يوليو",
+    "August": "أغسطس",
+    "September": "سبتمبر",
+    "October": "أكتوبر",
+    "November": "نوفمبر",
+    "December": "ديسمبر",
+  };
+
+  // Extract month and year from "Month Year" format
+  const parts = englishMonthName.trim().split(" ");
+  if (parts.length >= 2) {
+    const month = parts[0];
+    const year = parts[parts.length - 1];
+    const arabicMonth = monthMap[month] || month;
+    return `${arabicMonth} - ${year}`;
+  }
+  
+  // If format is different, try to find and replace month name
+  for (const [english, arabic] of Object.entries(monthMap)) {
+    if (englishMonthName.includes(english)) {
+      return englishMonthName.replace(english, arabic);
+    }
+  }
+  
+  return englishMonthName; // Return as-is if no match found
+};
+
+/**
  * Identify if a companyUid belongs to a company or client
  * @param companyUid - The UID to check
  * @returns "company" | "client" | null
@@ -472,6 +535,173 @@ export const generateCompanyMonthlyInvoice = async (
 };
 
 /**
+ * Generate monthly sales invoice for a service distributer
+ * @param serviceDistributerEmail - Service distributer email
+ * @param month - Target month date
+ * @param orders - Array of orders for the month from stationscompany-orders
+ * @param serviceDistributerData - Service distributer data
+ * @returns Promise with the created invoice
+ */
+export const generateServiceDistributerMonthlyInvoice = async (
+  serviceDistributerEmail: string,
+  month: Date,
+  orders: any[],
+  serviceDistributerData: any
+): Promise<Invoice> => {
+  try {
+    const monthName = getMonthName(month);
+    const lastDayOfMonth = getLastDayOfMonth(month);
+    
+    // Check for duplicate invoice before creating
+    const existingInvoices = await fetchInvoices({
+      type: "Service Distributer Monthly Invoice",
+    });
+    
+    // Check if invoice already exists for this month
+    const year = month.getFullYear();
+    const monthIndex = month.getMonth();
+    
+    const duplicateInvoice = existingInvoices.find((inv) => {
+      if (inv.monthName !== monthName) return false;
+      
+      const invDate = inv.createdAt instanceof Date
+        ? inv.createdAt
+        : inv.createdAt?.toDate
+        ? inv.createdAt.toDate()
+        : new Date(inv.createdAt || 0);
+      
+      const invYear = invDate.getFullYear();
+      const invMonth = invDate.getMonth();
+      
+      if (invYear !== year || invMonth !== monthIndex) return false;
+      
+      const invServiceDistributerEmail = 
+        inv.serviceDistributerData?.email ||
+        inv.serviceDistributerData?.uid;
+      
+      return invServiceDistributerEmail === serviceDistributerEmail;
+    });
+    
+    if (duplicateInvoice) {
+      console.log(
+        `⚠️ Invoice already exists for service distributer ${serviceDistributerEmail} for ${monthName}. Returning existing invoice.`
+      );
+      return duplicateInvoice;
+    }
+    
+    const invoiceNumber = await generateInvoiceNumber();
+
+    // Group orders by product (fuel type)
+    const productMap = new Map<string, InvoiceItem>();
+
+    orders.forEach((order) => {
+      // Extract fuel type
+      const fuelType = 
+        order.selectedOption?.name?.ar ||
+        order.selectedOption?.name?.en ||
+        order.selectedOption?.title?.ar ||
+        order.selectedOption?.title?.en ||
+        order.service?.options?.find((opt: any) => 
+          opt.id === order.selectedOption?.id || opt.refId === order.selectedOption?.refId
+        )?.name?.ar ||
+        order.service?.options?.find((opt: any) => 
+          opt.id === order.selectedOption?.id || opt.refId === order.selectedOption?.refId
+        )?.name?.en ||
+        "غير محدد";
+      
+      const quantity = order.totalLitre || 0;
+      const totalPrice = order.totalPrice || 0;
+      
+      // Calculate price per liter (before VAT)
+      const pricePerUnit = quantity > 0 ? totalPrice / quantity / 1.15 : 0;
+      const amountBeforeTax = totalPrice / 1.15; // Assuming total includes VAT
+      
+      if (productMap.has(fuelType)) {
+        const existing = productMap.get(fuelType)!;
+        existing.quantity += quantity;
+        existing.amountBeforeTax += amountBeforeTax;
+        existing.vat += calculateVAT(amountBeforeTax);
+        existing.total += amountBeforeTax + calculateVAT(amountBeforeTax);
+        // Recalculate price per unit for aggregated items
+        existing.pricePerUnit = existing.quantity > 0 
+          ? existing.amountBeforeTax / existing.quantity 
+          : 0;
+      } else {
+        const vat = calculateVAT(amountBeforeTax);
+        const total = amountBeforeTax + vat;
+        productMap.set(fuelType, {
+          product: fuelType,
+          quantity: Number(quantity),
+          pricePerUnit: Number(pricePerUnit.toFixed(2)),
+          amountBeforeTax: Number(amountBeforeTax.toFixed(2)),
+          vat: Number(vat.toFixed(2)),
+          total: Number(total.toFixed(2)),
+        });
+      }
+    });
+
+    // Convert map to array
+    const items: InvoiceItem[] = Array.from(productMap.values()).map(
+      (item) => ({
+        ...item,
+        amountBeforeTax: Number(item.amountBeforeTax.toFixed(2)),
+        vat: Number(item.vat.toFixed(2)),
+        total: Number(item.total.toFixed(2)),
+      })
+    );
+
+    // Calculate totals
+    const subtotal = items.reduce((sum, item) => sum + item.amountBeforeTax, 0);
+    const vatAmount = items.reduce((sum, item) => sum + item.vat, 0);
+    const total = items.reduce((sum, item) => sum + item.total, 0);
+
+    // Clean service distributer data
+    const cleanServiceDistributerData = Object.fromEntries(
+      Object.entries(serviceDistributerData || {}).filter(([_, v]) => v !== undefined)
+    );
+
+    // Clean orders
+    const cleanOrders = orders.map((o) => {
+      const orderId = o.id || o.docId;
+      return Object.fromEntries(
+        Object.entries({ ...o, id: orderId }).filter(
+          ([_, v]) => v !== undefined
+        )
+      );
+    });
+
+    const invoice: Omit<Invoice, "id"> = {
+      invoiceNumber,
+      type: "Service Distributer Monthly Invoice",
+      createdAt: Timestamp.fromDate(lastDayOfMonth),
+      serviceDistributerData: cleanServiceDistributerData,
+      monthName,
+      orders: cleanOrders,
+      items,
+      subtotal: Number(subtotal.toFixed(2)),
+      vatAmount: Number(vatAmount.toFixed(2)),
+      total: Number(total.toFixed(2)),
+    };
+
+    // Remove any undefined values
+    const cleanInvoice = Object.fromEntries(
+      Object.entries(invoice).filter(([_, v]) => v !== undefined)
+    ) as Omit<Invoice, "id">;
+
+    const invoicesRef = collection(db, "invoices");
+    const docRef = await addDoc(invoicesRef, cleanInvoice);
+
+    return {
+      id: docRef.id,
+      ...cleanInvoice,
+    };
+  } catch (error) {
+    console.error("Error generating service distributer monthly invoice:", error);
+    throw error;
+  }
+};
+
+/**
  * Create invoice in Firestore
  * @param invoiceData - Invoice data to save
  * @returns Promise with the created invoice document ID
@@ -491,13 +721,14 @@ export const createInvoice = async (
 
 /**
  * Fetch invoices with optional filters
- * @param filters - Optional filters for type, companyUid, or clientId
+ * @param filters - Optional filters for type, companyUid, clientId, or serviceDistributerEmail
  * @returns Promise with array of invoices
  */
 export const fetchInvoices = async (filters?: {
   type?: string;
   companyUid?: string;
   clientId?: string;
+  serviceDistributerEmail?: string;
 }): Promise<Invoice[]> => {
   try {
     const invoicesRef = collection(db, "invoices");
@@ -565,6 +796,13 @@ export const fetchInvoices = async (filters?: {
           (inv) =>
             inv.clientData?.email === filters.clientId ||
             inv.clientData?.uid === filters.clientId
+        );
+      }
+      if (filters.serviceDistributerEmail) {
+        invoices = invoices.filter(
+          (inv) =>
+            inv.serviceDistributerData?.email === filters.serviceDistributerEmail ||
+            inv.serviceDistributerData?.uid === filters.serviceDistributerEmail
         );
       }
     }

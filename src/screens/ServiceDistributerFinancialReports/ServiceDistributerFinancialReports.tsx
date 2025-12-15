@@ -23,9 +23,14 @@ import { RTLSelect } from "../../components/shared/Form/RTLSelect";
 import { FuelTypeIcon } from "../../components/shared/FuelTypeIcon/FuelTypeIcon";
 import { Table } from "../../components/shared/Table/Table";
 import { Pagination } from "../../components/shared/Pagination/Pagination";
-import { fetchOperationsData } from "../../services/firestore";
+import { fetchOperationsData, processServiceDistributerMonthlyInvoice, generateAllServiceDistributerMonthlyInvoices, waitForAuthState } from "../../services/firestore";
 import { LoadingSpinner } from "../../components/shared/Spinner/LoadingSpinner";
 import { OrderDetailsModal } from "./components/OrderDetailsModal";
+import { fetchInvoices, convertMonthNameToArabic } from "../../services/invoiceService";
+import { Invoice } from "../../types/invoice";
+import { useNavigate } from "react-router-dom";
+import { ROUTES } from "../../constants/routes";
+import { useToast } from "../../context/ToastContext";
 
 // Operation interface
 interface Operation {
@@ -44,8 +49,11 @@ interface Operation {
 interface SalesInvoice {
   id: string;
   reportNumber: string;
+  invoiceNumber: string;
   reportPeriod: string;
+  monthName?: string;
   hasAttachment: boolean;
+  createdAt?: Date | any; // For sorting
 }
 
 // Purchase Invoice interface
@@ -152,32 +160,7 @@ const mockOperations: Operation[] = [
 ];
 
 
-// Mock sales invoices data
-const mockSalesInvoices: SalesInvoice[] = [
-  { id: "1", reportNumber: "RPT-0825#12355545", reportPeriod: "مارس - 2025", hasAttachment: true },
-  { id: "2", reportNumber: "RPT-0825#12355545", reportPeriod: "فبراير - 2025", hasAttachment: false },
-  { id: "3", reportNumber: "RPT-0825#12355545", reportPeriod: "يناير - 2025", hasAttachment: true },
-  { id: "4", reportNumber: "RPT-0825#12355545", reportPeriod: "ديسمبر - 2025", hasAttachment: true },
-  { id: "5", reportNumber: "RPT-0825#12355545", reportPeriod: "نوفمبر - 2025", hasAttachment: false },
-  { id: "6", reportNumber: "RPT-0825#12355545", reportPeriod: "أكتوبر - 2025", hasAttachment: true },
-  { id: "7", reportNumber: "RPT-0825#12355545", reportPeriod: "سبتمبر - 2025", hasAttachment: true },
-  { id: "8", reportNumber: "RPT-0825#12355545", reportPeriod: "أغسطس - 2025", hasAttachment: false },
-  { id: "9", reportNumber: "RPT-0825#12355545", reportPeriod: "يوليو - 2025", hasAttachment: true },
-  { id: "10", reportNumber: "RPT-0825#12355545", reportPeriod: "يونيو - 2025", hasAttachment: false },
-  { id: "11", reportNumber: "RPT-0825#12355545", reportPeriod: "مايو - 2025", hasAttachment: true },
-  { id: "12", reportNumber: "RPT-0825#12355545", reportPeriod: "أبريل - 2025", hasAttachment: true },
-  { id: "13", reportNumber: "RPT-0825#12355545", reportPeriod: "مارس - 2024", hasAttachment: false },
-  { id: "14", reportNumber: "RPT-0825#12355545", reportPeriod: "فبراير - 2024", hasAttachment: true },
-  { id: "15", reportNumber: "RPT-0825#12355545", reportPeriod: "يناير - 2024", hasAttachment: true },
-  { id: "16", reportNumber: "RPT-0825#12355545", reportPeriod: "ديسمبر - 2024", hasAttachment: false },
-  { id: "17", reportNumber: "RPT-0825#12355545", reportPeriod: "نوفمبر - 2024", hasAttachment: true },
-  { id: "18", reportNumber: "RPT-0825#12355545", reportPeriod: "أكتوبر - 2024", hasAttachment: true },
-  { id: "19", reportNumber: "RPT-0825#12355545", reportPeriod: "سبتمبر - 2024", hasAttachment: false },
-  { id: "20", reportNumber: "RPT-0825#12355545", reportPeriod: "أغسطس - 2024", hasAttachment: true },
-  { id: "21", reportNumber: "RPT-0825#12355545", reportPeriod: "يوليو - 2024", hasAttachment: true },
-  { id: "22", reportNumber: "RPT-0825#12355545", reportPeriod: "يونيو - 2024", hasAttachment: false },
-  { id: "23", reportNumber: "RPT-0825#12355545", reportPeriod: "مايو - 2024", hasAttachment: true },
-];
+// Sales invoices will be loaded from Firestore
 
 // Mock purchase invoices data
 const mockPurchaseInvoices: PurchaseInvoice[] = [
@@ -204,6 +187,8 @@ const mockPayments: Payment[] = [
 ];
 
 function ServiceDistributerFinancialReports() {
+  const navigate = useNavigate();
+  const { addToast } = useToast();
   const [activeTab, setActiveTab] = useState("operations");
   const [currentPage, setCurrentPage] = useState(1);
   const [salesInvoicePage, setSalesInvoicePage] = useState(1);
@@ -216,6 +201,8 @@ function ServiceDistributerFinancialReports() {
   const [toDate, setToDate] = useState("");
   const [operations, setOperations] = useState<Operation[]>([]);
   const [isLoadingOperations, setIsLoadingOperations] = useState(true);
+  const [salesInvoices, setSalesInvoices] = useState<SalesInvoice[]>([]);
+  const [isLoadingSalesInvoices, setIsLoadingSalesInvoices] = useState(false);
   const [stationOptions, setStationOptions] = useState<Array<{ value: string; label: string }>>([
     { value: "all", label: "جميع المحطات" },
   ]);
@@ -223,7 +210,7 @@ function ServiceDistributerFinancialReports() {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const itemsPerPage = 8;
-  const totalSalesInvoices = mockSalesInvoices.length;
+  const totalSalesInvoices = salesInvoices.length;
   const totalPurchaseInvoices = mockPurchaseInvoices.length;
   const totalPayments = mockPayments.length;
 
@@ -262,6 +249,81 @@ function ServiceDistributerFinancialReports() {
 
     loadOperations();
   }, []);
+
+  // Fetch sales invoices on component mount and when tab changes
+  useEffect(() => {
+    const loadSalesInvoices = async () => {
+      if (activeTab !== "sales-invoices") return;
+      
+      try {
+        setIsLoadingSalesInvoices(true);
+        const currentUser = await waitForAuthState();
+        if (!currentUser || !currentUser.email) {
+          setSalesInvoices([]);
+          return;
+        }
+
+        // Automatically generate invoices for any missing months
+        try {
+          await generateAllServiceDistributerMonthlyInvoices();
+        } catch (error) {
+          console.error("Error auto-generating invoices:", error);
+          // Don't show error to user, just log it - invoices will be loaded anyway
+        }
+
+        // Then fetch all invoices
+        const invoices = await fetchInvoices({
+          type: "Service Distributer Monthly Invoice",
+          serviceDistributerEmail: currentUser.email,
+        });
+
+        // Transform invoices to SalesInvoice format
+        const transformedInvoices: SalesInvoice[] = invoices.map((invoice: Invoice) => ({
+          id: invoice.id,
+          reportNumber: `INV-${invoice.invoiceNumber}`,
+          invoiceNumber: invoice.invoiceNumber,
+          reportPeriod: invoice.monthName 
+            ? convertMonthNameToArabic(invoice.monthName) 
+            : "غير محدد",
+          monthName: invoice.monthName,
+          hasAttachment: false, // You can add attachment logic later
+          createdAt: invoice.createdAt, // Store original date for sorting
+        }));
+
+        // Sort by date (newest first) - using createdAt date
+        transformedInvoices.sort((a, b) => {
+          const dateA = a.createdAt instanceof Date 
+            ? a.createdAt 
+            : a.createdAt?.toDate 
+            ? a.createdAt.toDate() 
+            : new Date(a.createdAt || 0);
+          
+          const dateB = b.createdAt instanceof Date 
+            ? b.createdAt 
+            : b.createdAt?.toDate 
+            ? b.createdAt.toDate() 
+            : new Date(b.createdAt || 0);
+          
+          // Sort descending (newest first)
+          return dateB.getTime() - dateA.getTime();
+        });
+
+        setSalesInvoices(transformedInvoices);
+      } catch (error) {
+        console.error("Error loading sales invoices:", error);
+        addToast({
+          title: "خطأ",
+          message: "فشل في تحميل فواتير البيع",
+          type: "error",
+        });
+        setSalesInvoices([]);
+      } finally {
+        setIsLoadingSalesInvoices(false);
+      }
+    };
+
+    loadSalesInvoices();
+  }, [activeTab, addToast]);
 
   const tabs = [
     { id: "operations", label: "العمليات" },
@@ -310,8 +372,8 @@ function ServiceDistributerFinancialReports() {
   // Paginate sales invoices
   const paginatedSalesInvoices = useMemo(() => {
     const startIndex = (salesInvoicePage - 1) * itemsPerPage;
-    return mockSalesInvoices.slice(startIndex, startIndex + itemsPerPage);
-  }, [salesInvoicePage]);
+    return salesInvoices.slice(startIndex, startIndex + itemsPerPage);
+  }, [salesInvoices, salesInvoicePage]);
 
   const totalSalesInvoicePages = Math.ceil(totalSalesInvoices / itemsPerPage);
 
@@ -354,8 +416,7 @@ function ServiceDistributerFinancialReports() {
   };
 
   const handleViewReport = (invoiceId: string) => {
-    console.log("View report for invoice:", invoiceId);
-    // TODO: Navigate to report details page
+    navigate(`${ROUTES.FUEL_INVOICE_DETAIL.replace(":id", invoiceId)}`);
   };
 
   const handleViewAttachment = (invoiceId: string) => {
@@ -831,95 +892,101 @@ function ServiceDistributerFinancialReports() {
         {/* Filter Bar - Only show in operations tab */}
         {activeTab === "operations" && (
           <>
-            <div className="w-full p-4">
-              <div className="flex flex-col gap-4">
-                {/* First row: All filter inputs (reversed) */}
-                <div className="flex items-end gap-4 flex-wrap">
-                  <div className="flex-1 min-w-[150px]">
-                    <DateInput
-                      label="إلى تاريخ"
-                      value={toDate}
-                      onChange={setToDate}
-                      placeholder="mm/dd/yyyy"
-                    />
-                  </div>
-                  <div className="flex-1 min-w-[150px]">
-                    <DateInput
-                      label="من تاريخ"
-                      value={fromDate}
-                      onChange={setFromDate}
-                      placeholder="mm/dd/yyyy"
-                    />
-                  </div>
-                  <div className="flex-1 min-w-[200px]">
-                    <RTLSelect
-                      label="اسم المحطة"
-                      value={selectedStation}
-                      onChange={setSelectedStation}
-                      options={stationOptions}
-                      placeholder="جميع المحطات"
-                    />
-                  </div>
-                  <div className="flex-1 min-w-[200px]">
-                    <label className="block text-xs text-color-mode-text-icons-t-placeholder mb-1">
-                      ابحث برقم العملية
-                    </label>
-                    <input
-                      type="text"
-                      value={operationNumberSearch}
-                      onChange={(e) => setOperationNumberSearch(e.target.value)}
-                      placeholder="ابحث برقم العملية..."
-                      className="w-full h-[46px] px-4 rounded-lg border border-solid border-color-mode-text-icons-t-placeholder hover:border-color-mode-text-icons-t-sec focus:border-color-mode-text-icons-t-blue focus:outline-none text-sm text-color-mode-text-icons-t-blue"
-                      dir="rtl"
-                    />
-                  </div>
-                  <div className="flex-1 min-w-[200px]">
-                    <label className="block text-xs text-color-mode-text-icons-t-placeholder mb-1">
-                      بحث عام
-                    </label>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-color-mode-text-icons-t-sec" />
-                      <input
-                        type="text"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="ابحث..."
-                        className="w-full h-[46px] pl-10 pr-4 rounded-lg border border-solid border-color-mode-text-icons-t-placeholder hover:border-color-mode-text-icons-t-sec focus:border-color-mode-text-icons-t-blue focus:outline-none text-sm text-color-mode-text-icons-t-blue"
-                        dir="rtl"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Second row: Buttons (reversed and left-aligned) */}
-                <div className="flex items-center gap-2 justify-start">
-                  <button className="flex items-center gap-2 h-[46px] px-4 rounded-lg bg-blue-900 hover:bg-blue-950 text-white text-sm transition-colors">
-                    <span>تطبيق الفلاتر</span>
-                    <SlidersHorizontal className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={handleReset}
-                    className="flex items-center gap-2 h-[46px] px-4 rounded-lg border border-color-mode-text-icons-t-placeholder hover:border-color-mode-text-icons-t-sec bg-white text-color-mode-text-icons-t-blue text-sm transition-colors"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    <span>إعادة تعيين</span>
-                  </button>
+        <div className="w-full p-4">
+          <div className="flex flex-col gap-4">
+            {/* First row: All filter inputs (reversed) */}
+            <div className="flex items-end gap-4 flex-wrap">
+              <div className="flex-1 min-w-[150px]">
+                <DateInput
+                  label="إلى تاريخ"
+                  value={toDate}
+                  onChange={setToDate}
+                  placeholder="mm/dd/yyyy"
+                />
+              </div>
+              <div className="flex-1 min-w-[150px]">
+                <DateInput
+                  label="من تاريخ"
+                  value={fromDate}
+                  onChange={setFromDate}
+                  placeholder="mm/dd/yyyy"
+                />
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <RTLSelect
+                  label="اسم المحطة"
+                  value={selectedStation}
+                  onChange={setSelectedStation}
+                  options={stationOptions}
+                  placeholder="جميع المحطات"
+                />
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-xs text-color-mode-text-icons-t-placeholder mb-1">
+                  ابحث برقم العملية
+                </label>
+                <input
+                  type="text"
+                  value={operationNumberSearch}
+                  onChange={(e) => setOperationNumberSearch(e.target.value)}
+                  placeholder="ابحث برقم العملية..."
+                  className="w-full h-[46px] px-4 rounded-lg border border-solid border-color-mode-text-icons-t-placeholder hover:border-color-mode-text-icons-t-sec focus:border-color-mode-text-icons-t-blue focus:outline-none text-sm text-color-mode-text-icons-t-blue"
+                  dir="rtl"
+                />
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-xs text-color-mode-text-icons-t-placeholder mb-1">
+                  بحث عام
+                </label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-color-mode-text-icons-t-sec" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="ابحث..."
+                    className="w-full h-[46px] pl-10 pr-4 rounded-lg border border-solid border-color-mode-text-icons-t-placeholder hover:border-color-mode-text-icons-t-sec focus:border-color-mode-text-icons-t-blue focus:outline-none text-sm text-color-mode-text-icons-t-blue"
+                    dir="rtl"
+                  />
                 </div>
               </div>
             </div>
-            <div className="w-full h-px bg-gray-200"></div>
+
+            {/* Second row: Buttons (reversed and left-aligned) */}
+            <div className="flex items-center gap-2 justify-start">
+                  <button className="flex items-center gap-2 h-[46px] px-4 rounded-lg bg-blue-900 hover:bg-blue-950 text-white text-sm transition-colors">
+                <span>تطبيق الفلاتر</span>
+                <SlidersHorizontal className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleReset}
+                className="flex items-center gap-2 h-[46px] px-4 rounded-lg border border-color-mode-text-icons-t-placeholder hover:border-color-mode-text-icons-t-sec bg-white text-color-mode-text-icons-t-blue text-sm transition-colors"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>إعادة تعيين</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="w-full h-px bg-gray-200"></div>
           </>
         )}
 
         {/* Data Table */}
         <div className="w-full p-4 border-b border-gray-200">
           {activeTab === "sales-invoices" ? (
-            <Table
-              columns={salesInvoiceColumns}
-              data={paginatedSalesInvoices}
-              loading={false}
-              emptyMessage="لا توجد فواتير بيع"
-            />
+            isLoadingSalesInvoices ? (
+              <div className="flex items-center justify-center p-8">
+                <LoadingSpinner message="جاري تحميل فواتير البيع..." />
+              </div>
+            ) : (
+              <Table
+                columns={salesInvoiceColumns}
+                data={paginatedSalesInvoices}
+                loading={false}
+                emptyMessage="لا توجد فواتير بيع"
+              />
+            )
           ) : activeTab === "purchase-invoices" ? (
             <Table
               columns={purchaseInvoiceColumns}
@@ -940,12 +1007,12 @@ function ServiceDistributerFinancialReports() {
                 <LoadingSpinner message="جاري تحميل العمليات..." />
               </div>
             ) : (
-              <Table
-                columns={columns}
-                data={paginatedOperations}
-                loading={false}
-                emptyMessage="لا توجد عمليات"
-              />
+          <Table
+            columns={columns}
+            data={paginatedOperations}
+            loading={false}
+            emptyMessage="لا توجد عمليات"
+          />
             )
           ) : null}
         </div>
@@ -1002,22 +1069,22 @@ function ServiceDistributerFinancialReports() {
             </>
           ) : activeTab === "operations" ? (
             <>
-              <div className="text-sm text-color-mode-text-icons-t-sec">
+          <div className="text-sm text-color-mode-text-icons-t-sec">
                 عرض {paginatedOperations.length} من {filteredOperations.length} عملية
-              </div>
-              <Pagination
-                currentPage={currentPage}
+          </div>
+          <Pagination
+            currentPage={currentPage}
                 totalPages={Math.ceil(filteredOperations.length / itemsPerPage)}
-                onPageChange={setCurrentPage}
-                previousLabel=""
-                nextLabel=""
+            onPageChange={setCurrentPage}
+            previousLabel=""
+            nextLabel=""
                 useEasternArabic={true}
                 showArrowOnly={true}
                 maxVisiblePages={3}
-              />
+      />
             </>
           ) : null}
-        </div>
+    </div>
       </div>
 
       {/* Order Details Modal */}
