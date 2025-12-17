@@ -15,6 +15,7 @@ import {
   Download,
   CheckCircle,
   XCircle,
+  Loader2,
 } from "lucide-react";
 import { SummaryCard } from "../../components/shared/SummaryCard/SummaryCard";
 import { Tabs } from "../../components/shared/Tabs/Tabs";
@@ -31,6 +32,10 @@ import { Invoice } from "../../types/invoice";
 import { useNavigate } from "react-router-dom";
 import { ROUTES } from "../../constants/routes";
 import { useToast } from "../../context/ToastContext";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { storage } from "../../config/firebase";
+import { doc, updateDoc } from "firebase/firestore";
+import { db } from "../../config/firebase";
 
 // Operation interface
 interface Operation {
@@ -53,6 +58,7 @@ interface SalesInvoice {
   reportPeriod: string;
   monthName?: string;
   hasAttachment: boolean;
+  attachmentUrl?: string;
   createdAt?: Date | any; // For sorting
 }
 
@@ -208,6 +214,7 @@ function ServiceDistributerFinancialReports() {
   ]);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [uploadingInvoiceId, setUploadingInvoiceId] = useState<string | null>(null);
 
   const itemsPerPage = 8;
   const totalSalesInvoices = salesInvoices.length;
@@ -286,7 +293,8 @@ function ServiceDistributerFinancialReports() {
             ? convertMonthNameToArabic(invoice.monthName) 
             : "غير محدد",
           monthName: invoice.monthName,
-          hasAttachment: false, // You can add attachment logic later
+          hasAttachment: !!(invoice as any).attachmentUrl, // Check if attachment URL exists
+          attachmentUrl: (invoice as any).attachmentUrl,
           createdAt: invoice.createdAt, // Store original date for sorting
         }));
 
@@ -420,13 +428,119 @@ function ServiceDistributerFinancialReports() {
   };
 
   const handleViewAttachment = (invoiceId: string) => {
-    console.log("View attachment for invoice:", invoiceId);
-    // TODO: Open attachment viewer
+    const invoice = salesInvoices.find((inv) => inv.id === invoiceId);
+    if (invoice?.attachmentUrl) {
+      window.open(invoice.attachmentUrl, "_blank");
+    } else {
+      addToast({
+        title: "خطأ",
+        message: "المرفق غير متاح",
+        type: "error",
+      });
+    }
   };
 
-  const handleUploadAttachment = (invoiceId: string) => {
-    console.log("Upload attachment for invoice:", invoiceId);
-    // TODO: Open file upload dialog
+  const handleUploadAttachment = async (invoiceId: string) => {
+    try {
+      // Create a hidden file input element
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "application/pdf";
+      input.style.display = "none";
+
+      // Handle file selection
+      input.onchange = async (e: Event) => {
+        const target = e.target as HTMLInputElement;
+        const file = target.files?.[0];
+
+        if (!file) {
+          return;
+        }
+
+        // Validate file type
+        if (file.type !== "application/pdf") {
+          addToast({
+            title: "خطأ",
+            message: "يجب أن يكون الملف بصيغة PDF فقط",
+            type: "error",
+          });
+          return;
+        }
+
+        // Validate file size (e.g., max 10MB)
+        const maxSize = 10 * 1024 * 1024; // 10MB
+        if (file.size > maxSize) {
+          addToast({
+            title: "خطأ",
+            message: "حجم الملف كبير جداً. الحد الأقصى 10 ميجابايت",
+            type: "error",
+          });
+          return;
+        }
+
+        try {
+          setUploadingInvoiceId(invoiceId);
+          
+          // Get current user for organizing storage
+          const currentUser = await waitForAuthState();
+          if (!currentUser || !currentUser.email) {
+            throw new Error("المستخدم غير مسجل الدخول");
+          }
+
+          // Create storage path
+          const timestamp = Date.now();
+          const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+          const storagePath = `service-distributer-invoices/${currentUser.email}/${invoiceId}/${timestamp}-${sanitizedFileName}`;
+          
+          // Upload to Firebase Storage
+          const storageRef = ref(storage, storagePath);
+          await uploadBytes(storageRef, file);
+          const downloadURL = await getDownloadURL(storageRef);
+
+          // Update invoice document in Firestore
+          const invoiceRef = doc(db, "invoices", invoiceId);
+          await updateDoc(invoiceRef, {
+            attachmentUrl: downloadURL,
+          });
+
+          // Update local state
+          setSalesInvoices((prev) =>
+            prev.map((inv) =>
+              inv.id === invoiceId
+                ? { ...inv, hasAttachment: true, attachmentUrl: downloadURL }
+                : inv
+            )
+          );
+
+          addToast({
+            title: "نجح",
+            message: "تم رفع المرفق بنجاح",
+            type: "success",
+          });
+        } catch (error: any) {
+          console.error("Error uploading attachment:", error);
+          addToast({
+            title: "خطأ",
+            message: error.message || "فشل في رفع المرفق",
+            type: "error",
+          });
+        } finally {
+          setUploadingInvoiceId(null);
+        }
+      };
+
+      // Trigger file input click
+      document.body.appendChild(input);
+      input.click();
+      document.body.removeChild(input);
+    } catch (error: any) {
+      console.error("Error setting up file upload:", error);
+      addToast({
+        title: "خطأ",
+        message: "حدث خطأ أثناء إعداد رفع الملف",
+        type: "error",
+      });
+    }
   };
 
   const handleDownloadInvoice = (invoiceId: string) => {
@@ -468,11 +582,23 @@ function ServiceDistributerFinancialReports() {
           ) : (
             <button
               onClick={() => handleUploadAttachment(row.id)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-dashed border-gray-300 hover:border-gray-400 bg-gray-50 hover:bg-gray-100 text-gray-700 text-sm font-medium transition-colors"
+              disabled={uploadingInvoiceId === row.id}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-dashed border-gray-300 hover:border-gray-400 bg-gray-50 hover:bg-gray-100 text-gray-700 text-sm font-medium transition-colors ${
+                uploadingInvoiceId === row.id ? "opacity-50 cursor-not-allowed" : ""
+              }`}
               aria-label="رفع المرفق"
             >
-              <Upload className="w-4 h-4" />
-              <span>رفع المرفق</span>
+              {uploadingInvoiceId === row.id ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>جاري الرفع...</span>
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4" />
+                  <span>رفع المرفق</span>
+                </>
+              )}
             </button>
           )}
         </div>
