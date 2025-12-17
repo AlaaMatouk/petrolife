@@ -109,14 +109,23 @@ const dummyStationData: StationData[] = [
 interface ControlPanelSectionProps {
   currentPage: number;
   setTotalPages: (pages: number) => void;
+  selectedCompany: string;
+  selectedCity: string;
+  onCompaniesExtracted: (companies: string[]) => void;
+  onCitiesExtracted: (cities: string[]) => void;
 }
 
 export const ControlPanelSection = ({
   currentPage,
   setTotalPages,
+  selectedCompany,
+  selectedCity,
+  onCompaniesExtracted,
+  onCitiesExtracted,
 }: ControlPanelSectionProps): JSX.Element => {
   const { addToast } = useToast();
   const [stationData, setStationData] = useState<StationData[]>([]);
+  const [allStations, setAllStations] = useState<StationData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -165,9 +174,30 @@ export const ControlPanelSection = ({
             };
           });
 
+        setAllStations(transformedStations);
         setStationData(transformedStations);
 
-        // Update total pages
+        // Extract unique companies and cities
+        const uniqueCompanies = Array.from(
+          new Set(
+            transformedStations
+              .map((station) => station.company)
+              .filter((company) => company && company !== "N/A" && company.trim() !== "")
+          )
+        );
+        const uniqueCities = Array.from(
+          new Set(
+            transformedStations
+              .map((station) => station.city)
+              .filter((city) => city && city !== "N/A" && city.trim() !== "")
+          )
+        );
+
+        // Pass unique values to parent
+        onCompaniesExtracted(uniqueCompanies);
+        onCitiesExtracted(uniqueCities);
+
+        // Update total pages based on filtered data
         const pages = Math.ceil(transformedStations.length / ITEMS_PER_PAGE);
         setTotalPages(pages);
       } catch (err) {
@@ -179,7 +209,32 @@ export const ControlPanelSection = ({
     };
 
     loadStations();
-  }, []);
+  }, [onCompaniesExtracted, onCitiesExtracted, setTotalPages]);
+
+  // Filter stations based on selected company and city
+  useEffect(() => {
+    let filteredStations = [...allStations];
+
+    // Filter by company
+    if (selectedCompany && selectedCompany !== "كل الشركات") {
+      filteredStations = filteredStations.filter(
+        (station) => station.company === selectedCompany
+      );
+    }
+
+    // Filter by city
+    if (selectedCity && selectedCity !== "كل المدن") {
+      filteredStations = filteredStations.filter(
+        (station) => station.city === selectedCity
+      );
+    }
+
+    setStationData(filteredStations);
+
+    // Update total pages based on filtered data
+    const pages = Math.ceil(filteredStations.length / ITEMS_PER_PAGE);
+    setTotalPages(pages);
+  }, [selectedCompany, selectedCity, allStations, setTotalPages]);
 
   // Handler for toggling station status
   const handleToggleStatus = async (stationId: string | number) => {
@@ -266,7 +321,40 @@ export const ControlPanelSection = ({
           };
         });
 
-      setStationData(transformedStations);
+      setAllStations(transformedStations);
+      
+      // Extract unique companies and cities after refresh
+      const uniqueCompanies = Array.from(
+        new Set(
+          transformedStations
+            .map((station) => station.company)
+            .filter((company) => company && company !== "N/A" && company.trim() !== "")
+        )
+      );
+      const uniqueCities = Array.from(
+        new Set(
+          transformedStations
+            .map((station) => station.city)
+            .filter((city) => city && city !== "N/A" && city.trim() !== "")
+        )
+      );
+
+      onCompaniesExtracted(uniqueCompanies);
+      onCitiesExtracted(uniqueCities);
+      
+      // Apply filters after refresh
+      let filteredStations = [...transformedStations];
+      if (selectedCompany && selectedCompany !== "كل الشركات") {
+        filteredStations = filteredStations.filter(
+          (station) => station.company === selectedCompany
+        );
+      }
+      if (selectedCity && selectedCity !== "كل المدن") {
+        filteredStations = filteredStations.filter(
+          (station) => station.city === selectedCity
+        );
+      }
+      setStationData(filteredStations);
     } catch (error) {
       console.error("Error toggling station status:", error);
       addToast({
