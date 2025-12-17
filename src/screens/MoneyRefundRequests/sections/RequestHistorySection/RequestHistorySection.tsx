@@ -1,77 +1,73 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, FileChartColumnIncreasing } from "lucide-react";
-import { Table, TimeFilter, ExportButton, Pagination, LoadingSpinner } from "../../../../components/shared";
+import {
+  Table,
+  TimeFilter,
+  ExportButton,
+  Pagination,
+  LoadingSpinner,
+} from "../../../../components/shared";
+import { fetchUserWithdrawalRequests } from "../../../../services/firestore";
 
 // Helper function to format date
-const formatDate = (date: Date): string => {
-  if (!date) return '-';
-  
+const formatDate = (date: any): string => {
+  if (!date) return "-";
+
   try {
-    return date.toLocaleString('ar-EG', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
+    if (date.toDate && typeof date.toDate === "function") {
+      return new Date(date.toDate()).toLocaleString("ar-EG", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    }
+    if (date instanceof Date) {
+      return date.toLocaleString("ar-EG", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    }
+    return new Date(date).toLocaleString("ar-EG", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   } catch (error) {
     return String(date);
   }
 };
 
-// Generate dummy refund requests data
-const generateDummyRequests = () => {
-  const requests: any[] = [];
-  const now = new Date();
-  const statuses = [
-    { text: 'مكتمل', type: 'completed' },
-    { text: 'جاري المراجعة', type: 'reviewing' },
-    { text: 'ملغي', type: 'cancelled' },
-  ];
-  const amounts = [500, 750, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000];
-  
-  // Generate ~200 requests spread across the last 12 months
-  for (let i = 0; i < 200; i++) {
-    // Random date within last 12 months
-    const daysAgo = Math.floor(Math.random() * 365);
-    const hoursAgo = Math.floor(Math.random() * 24);
-    const minutesAgo = Math.floor(Math.random() * 60);
-    const requestDate = new Date(now);
-    requestDate.setDate(requestDate.getDate() - daysAgo);
-    requestDate.setHours(requestDate.getHours() - hoursAgo);
-    requestDate.setMinutes(requestDate.getMinutes() - minutesAgo);
-    
-    // Mix of statuses: mostly completed (70%), some reviewing (25%), few cancelled (5%)
-    const statusRand = Math.random();
-    let statusInfo;
-    if (statusRand < 0.7) {
-      statusInfo = statuses[0]; // مكتمل
-    } else if (statusRand < 0.95) {
-      statusInfo = statuses[1]; // جاري المراجعة
-    } else {
-      statusInfo = statuses[2]; // ملغي
-    }
-    
-    // Random amount
-    const amount = amounts[Math.floor(Math.random() * amounts.length)];
-    
-    // Generate request ID (e.g., "21A254")
-    const idNumber = String(254 + i).padStart(3, '0');
-    const requestId = `21A${idNumber}`;
-    
-    requests.push({
-      id: requestId,
-      status: statusInfo.text,
-      statusType: statusInfo.type,
-      amount: String(amount),
-      date: formatDate(requestDate),
-      rawDate: requestDate,
-    });
+// Helper function to get status in Arabic
+const getStatusText = (status: string): { text: string; type: string } => {
+  const statusLower = status?.toLowerCase() || "";
+
+  if (
+    statusLower === "approved" ||
+    statusLower === "مكتمل" ||
+    statusLower === "موافق"
+  ) {
+    return { text: "مكتمل", type: "completed" };
   }
-  
-  // Sort by date descending (newest first)
-  return requests.sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
+  if (statusLower === "pending" || statusLower === "جاري المراجعة") {
+    return { text: "جاري المراجعة", type: "reviewing" };
+  }
+  if (
+    statusLower === "rejected" ||
+    statusLower === "ملغي" ||
+    statusLower === "مرفوض"
+  ) {
+    return { text: "ملغي", type: "cancelled" };
+  }
+
+  return { text: status, type: "unknown" };
 };
 
 export const RequestHistorySection = (): JSX.Element => {
@@ -80,50 +76,72 @@ export const RequestHistorySection = (): JSX.Element => {
   const [currentPage, setCurrentPage] = useState(1);
   const [requests, setRequests] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   const ITEMS_PER_PAGE = 10;
 
-  // Load dummy refund requests data
+  // Fetch wallet withdrawal requests
   useEffect(() => {
-    setIsLoading(true);
-    // Simulate loading delay
-    setTimeout(() => {
-      const dummyData = generateDummyRequests();
-      setRequests(dummyData);
-      setIsLoading(false);
-    }, 500);
+    const loadRequests = async () => {
+      setIsLoading(true);
+      try {
+        const data = await fetchUserWithdrawalRequests();
+
+        // Transform to request format
+        const transformedRequests = data.map((request) => {
+          const statusInfo = getStatusText(request.status);
+
+          return {
+            id: request.id || "-",
+            status: statusInfo.text,
+            statusType: statusInfo.type,
+            amount: String(request.withdrawalAmount || 0),
+            date: formatDate(request.requestDate || request.createdDate),
+            rawDate: request.requestDate || request.createdDate,
+          };
+        });
+
+        setRequests(transformedRequests);
+      } catch (error) {
+        console.error("Error loading withdrawal requests:", error);
+        setRequests([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadRequests();
   }, []);
 
   // Apply time filter
-  const filteredRequests = requests.filter(request => {
-    if (selectedTimeFilter === 'الكل') {
+  const filteredRequests = requests.filter((request) => {
+    if (selectedTimeFilter === "الكل") {
       return true;
     }
-    
+
     const now = new Date();
-    const requestDate = request.rawDate instanceof Date 
-      ? request.rawDate 
+    const requestDate = request.rawDate?.toDate
+      ? request.rawDate.toDate()
       : new Date(request.rawDate || 0);
-    
+
     let startDate = new Date();
-    
+
     switch (selectedTimeFilter) {
-      case 'اخر اسبوع':
+      case "اخر اسبوع":
         startDate.setDate(now.getDate() - 7);
         break;
-      case 'اخر 30 يوم':
+      case "اخر 30 يوم":
         startDate.setDate(now.getDate() - 30);
         break;
-      case 'اخر 6 شهور':
+      case "اخر 6 شهور":
         startDate.setMonth(now.getMonth() - 6);
         break;
-      case 'اخر 12 شهر':
+      case "اخر 12 شهر":
         startDate.setFullYear(now.getFullYear() - 1);
         break;
       default:
         return true;
     }
-    
+
     return requestDate >= startDate;
   });
 
@@ -132,14 +150,17 @@ export const RequestHistorySection = (): JSX.Element => {
       key: "export",
       label: "",
       width: "min-w-[113px]",
-      render: () => <ExportButton className="!border-0 inline-flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded transition-colors" />,
+      render: () => (
+        <ExportButton className="!border-0 inline-flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded transition-colors" />
+      ),
     },
     {
       key: "status",
       label: "حالة الطلب",
       width: "min-w-[140px]",
       sortable: false,
-      render: (value: string, row: any) => getStatusBadge(row.status, row.statusType),
+      render: (value: string, row: any) =>
+        getStatusBadge(row.status, row.statusType),
     },
     {
       key: "amount",
@@ -202,10 +223,16 @@ export const RequestHistorySection = (): JSX.Element => {
             className={`${baseClasses} w-[115px] mt-[-2.00px] mb-[-2.00px]`}
             style={{ backgroundColor: "#FFFCEC" }}
           >
-            <div className="relative w-fit mt-[-1.00px] font-[number:var(--subtitle-subtitle-3-font-weight)] text-[length:var(--subtitle-subtitle-3-font-size)] tracking-[var(--subtitle-subtitle-3-letter-spacing)] leading-[var(--subtitle-subtitle-3-line-height)] [direction:rtl] font-subtitle-subtitle-3 whitespace-nowrap [font-style:var(--subtitle-subtitle-3-font-style)]" style={{ color: "#E76500" }}>
+            <div
+              className="relative w-fit mt-[-1.00px] font-[number:var(--subtitle-subtitle-3-font-weight)] text-[length:var(--subtitle-subtitle-3-font-size)] tracking-[var(--subtitle-subtitle-3-letter-spacing)] leading-[var(--subtitle-subtitle-3-line-height)] [direction:rtl] font-subtitle-subtitle-3 whitespace-nowrap [font-style:var(--subtitle-subtitle-3-font-style)]"
+              style={{ color: "#E76500" }}
+            >
               {status}
             </div>
-            <div className="relative w-1.5 h-1.5 rounded-[3px]" style={{ backgroundColor: "#E76500" }} />
+            <div
+              className="relative w-1.5 h-1.5 rounded-[3px]"
+              style={{ backgroundColor: "#E76500" }}
+            />
           </div>
         );
       case "cancelled":
@@ -231,7 +258,7 @@ export const RequestHistorySection = (): JSX.Element => {
         <div className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
           <div className="inline-flex items-center gap-[var(--corner-radius-medium)] relative flex-[0_0_auto]">
             <button
-              onClick={() => navigate('/wallet')}
+              onClick={() => navigate("/wallet")}
               className="flex flex-col w-10 items-center justify-center gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative self-stretch bg-color-mode-surface-bg-icon-gray rounded-[var(--corner-radius-small)] hover:opacity-80 transition-opacity"
               aria-label="العودة"
             >
@@ -246,10 +273,10 @@ export const RequestHistorySection = (): JSX.Element => {
             />
           </div>
 
-            <div className="inline-flex gap-1.5 items-center relative flex-[0_0_auto]">
-              <h1 className="relative w-[162px] h-5 mt-[-1.00px] font-[number:var(--subtitle-subtitle-2-font-weight)] text-color-mode-text-icons-t-sec text-[length:var(--subtitle-subtitle-2-font-size)] tracking-[var(--subtitle-subtitle-2-letter-spacing)] leading-[var(--subtitle-subtitle-2-line-height)] [direction:rtl] font-subtitle-subtitle-2 whitespace-nowrap [font-style:var(--subtitle-subtitle-2-font-style)]">
-                سجل طلبات الاسترداد
-              </h1>
+          <div className="inline-flex gap-1.5 items-center relative flex-[0_0_auto]">
+            <h1 className="relative w-[162px] h-5 mt-[-1.00px] font-[number:var(--subtitle-subtitle-2-font-weight)] text-color-mode-text-icons-t-sec text-[length:var(--subtitle-subtitle-2-font-size)] tracking-[var(--subtitle-subtitle-2-letter-spacing)] leading-[var(--subtitle-subtitle-2-line-height)] [direction:rtl] font-subtitle-subtitle-2 whitespace-nowrap [font-style:var(--subtitle-subtitle-2-font-style)]">
+              سجل طلبات الاسترداد
+            </h1>
 
             <FileChartColumnIncreasing className="w-[18px] h-[18px] text-gray-500" />
           </div>

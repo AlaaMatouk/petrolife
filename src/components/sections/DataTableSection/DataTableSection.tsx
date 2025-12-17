@@ -36,6 +36,9 @@ export interface DataTableSectionProps<T> {
   fetchData: () => Promise<T[]>;
   onToggleStatus?: (id: number | string) => void;
   onDelete?: (id: number | string) => void;
+  onApprove?: (id: number | string) => void; // New: For wallet request approval
+  onReject?: (id: number | string) => void; // New: For wallet request rejection
+  processingId?: string | null; // New: For showing loading state on specific row
   addNewRoute: string;
   onAddClick?: () => void; // Custom handler for add button click
   customAddButtonRef?: React.RefObject<HTMLButtonElement>; // Ref for custom add button
@@ -56,7 +59,11 @@ export interface DataTableSectionProps<T> {
   showFuelDeliveryButton?: boolean; // New prop to show fuel delivery requests button
   showModifyButton?: boolean; // New prop to show Modify button instead of action menu
   refreshTrigger?: number; // New prop to trigger data refresh when changed
-  customExportHandler?: (data: any[], filters: Record<string, string>, format: "excel" | "pdf") => Promise<void>; // Custom export handler for specialized reports
+  customExportHandler?: (
+    data: any[],
+    filters: Record<string, string>,
+    format: "excel" | "pdf"
+  ) => Promise<void>; // Custom export handler for specialized reports
 }
 
 // Generic Action Menu Component
@@ -69,6 +76,9 @@ interface ActionMenuProps<
   customActionButtons?: boolean;
   showModifyButton?: boolean;
   onDelete?: (id: number | string) => void;
+  onApprove?: (id: number | string) => void; // New: For wallet request approval
+  onReject?: (id: number | string) => void; // New: For wallet request rejection
+  processingId?: string | null; // New: For showing loading state
 }
 
 const ActionMenu = <
@@ -84,6 +94,9 @@ const ActionMenu = <
   customActionButtons = false,
   showModifyButton = false,
   onDelete,
+  onApprove,
+  onReject,
+  processingId,
 }: ActionMenuProps<T>) => {
   const [isOpen, setIsOpen] = useState(false);
   const [buttonRef, setButtonRef] = useState<HTMLButtonElement | null>(null);
@@ -91,6 +104,9 @@ const ActionMenu = <
   const [isProcessing, setIsProcessing] = useState(false);
   const navigate = useNavigate();
   const { addToast } = useToast();
+
+  // Check if this item is being processed
+  const isThisItemProcessing = processingId === String(item.id);
 
   const handleAction = async (action: string) => {
     console.log(
@@ -194,6 +210,24 @@ const ActionMenu = <
     // TODO: Implement modify service logic
     // alert(`تعديل الخدمة: ${item.id}`);
     navigate(`/application-services/${item.id}`);
+  };
+
+  // New: Handle wallet request approval
+  const handleApproveWalletRequest = async () => {
+    if (isProcessing || !onApprove) return;
+
+    setIsOpen(false);
+    // Call parent handler which handles confirmation and processing
+    onApprove(item.id);
+  };
+
+  // New: Handle wallet request rejection
+  const handleRejectWalletRequest = async () => {
+    if (isProcessing || !onReject) return;
+
+    setIsOpen(false);
+    // Call parent handler which handles confirmation and processing
+    onReject(item.id);
   };
 
   const updateMenuPosition = () => {
@@ -310,6 +344,38 @@ const ActionMenu = <
                       <XCircle className="w-4 h-4" />
                     </button>
                   </>
+                ) : onApprove && onReject ? (
+                  // Wallet request approve/reject buttons
+                  <>
+                    <button
+                      onClick={handleApproveWalletRequest}
+                      disabled={isThisItemProcessing}
+                      className={`w-full px-4 py-2 text-right text-sm flex items-center justify-end gap-2 transition-colors ${
+                        isThisItemProcessing
+                          ? "text-gray-400 cursor-not-allowed bg-gray-50"
+                          : "text-green-600 hover:bg-green-50"
+                      }`}
+                    >
+                      <span>
+                        {isThisItemProcessing ? "جاري المعالجة..." : "الموافقة"}
+                      </span>
+                      <CheckCircle className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={handleRejectWalletRequest}
+                      disabled={isThisItemProcessing}
+                      className={`w-full px-4 py-2 text-right text-sm flex items-center justify-end gap-2 transition-colors ${
+                        isThisItemProcessing
+                          ? "text-gray-400 cursor-not-allowed bg-gray-50"
+                          : "text-red-600 hover:bg-red-50"
+                      }`}
+                    >
+                      <span>
+                        {isThisItemProcessing ? "جاري المعالجة..." : "الرفض"}
+                      </span>
+                      <XCircle className="w-4 h-4" />
+                    </button>
+                  </>
                 ) : showModifyButton ? (
                   <>
                     <button
@@ -367,7 +433,11 @@ interface ExportMenuProps {
   title: string;
   entityNamePlural: string;
   filters?: Record<string, string>;
-  customExportHandler?: (data: any[], filters: Record<string, string>, format: "excel" | "pdf") => Promise<void>;
+  customExportHandler?: (
+    data: any[],
+    filters: Record<string, string>,
+    format: "excel" | "pdf"
+  ) => Promise<void>;
 }
 
 const ExportMenu = ({
@@ -391,9 +461,13 @@ const ExportMenu = ({
         addToast({
           type: "success",
           title: "نجح التصدير",
-          message: `تم تصدير التقرير ${filters.reportType === "تحليلي" ? "التفصيلي" : filters.reportType === "تفصيلي" || filters.reportType === "ملخص" ? "الإجمالي" : ""} بنجاح كـ ${
-            format === "excel" ? "Excel" : "PDF"
-          }`,
+          message: `تم تصدير التقرير ${
+            filters.reportType === "تحليلي"
+              ? "التفصيلي"
+              : filters.reportType === "تفصيلي" || filters.reportType === "ملخص"
+              ? "الإجمالي"
+              : ""
+          } بنجاح كـ ${format === "excel" ? "Excel" : "PDF"}`,
         });
         setIsOpen(false);
         return;
@@ -589,6 +663,9 @@ export const DataTableSection = <
   showFuelDeliveryButton = false,
   showModifyButton = false,
   onDelete,
+  onApprove,
+  onReject,
+  processingId,
   refreshTrigger = 0,
   customExportHandler,
 }: DataTableSectionProps<T>): JSX.Element => {
@@ -866,6 +943,9 @@ export const DataTableSection = <
               customActionButtons={customActionButtons}
               showModifyButton={showModifyButton}
               onDelete={onDelete}
+              onApprove={onApprove}
+              onReject={onReject}
+              processingId={processingId}
             />
           ),
         };
@@ -885,6 +965,55 @@ export const DataTableSection = <
           ),
         };
       }
+      // Custom render for ibanImage column
+      if (col.key === "ibanImage") {
+        return {
+          ...col,
+          render: (value: any) => {
+            if (!value || value === "-") {
+              return <span className="text-gray-400">-</span>;
+            }
+            if (typeof value === "object" && value.url) {
+              return (
+                <a
+                  href={value.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
+                  </svg>
+                  {value.display || "عرض الصورة"}
+                </a>
+              );
+            }
+            // Fallback for string URLs
+            return (
+              <a
+                href={value}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:text-blue-800 underline text-xs break-all"
+                onClick={(e) => e.stopPropagation()}
+              >
+                عرض الصورة
+              </a>
+            );
+          },
+        };
+      }
       return col;
     });
   }, [
@@ -895,6 +1024,9 @@ export const DataTableSection = <
     showModifyButton,
     onDelete,
     onToggleStatus,
+    onApprove,
+    onReject,
+    processingId,
   ]);
 
   return (

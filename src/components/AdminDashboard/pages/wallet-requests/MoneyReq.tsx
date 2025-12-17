@@ -1,21 +1,27 @@
 import { DataTableSection } from "../../../sections/DataTableSection";
 import { DollarSign, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useState, useCallback, useEffect } from "react";
+import {
+  fetchAllAdminWithdrawalRequests,
+  approveWalletWithdrawalRequest,
+  rejectWalletWithdrawalRequest,
+} from "../../../../services/firestore";
+import { auth } from "../../../../config/firebase";
+import { useToast } from "../../../../hooks/useToast";
 
 type MoneyRefundRequest = {
-  id: number;
+  id: string;
   requestNumber: string;
   clientName: string;
-  orderType: string;
   oldBalance: string;
-  addedBalance: string;
-  requestDate: string;
-  status: string;
-  responsible: string;
-  withdrawalAmount: string;
+  withdrawalAmount: string | number;
   companyIban: string;
   bankName: string;
   ibanImage: string;
+  requestDate: string;
+  status: string;
+  responsible: string;
 };
 
 const columns = [
@@ -23,95 +29,185 @@ const columns = [
   { key: "responsible", label: "المسؤول", priority: "high" as const },
   { key: "status", label: "حالة الطلب", priority: "high" as const },
   { key: "requestDate", label: "تاريخ الانشاء", priority: "high" as const },
-  { key: "withdrawalAmount", label: "قيمة الاسترداد", priority: "high" as const },
-  { key: "companyIban", label: "Company IBAN", priority: "high" as const },
-  { key: "bankName", label: "اسم البنك", priority: "high" as const },
-  { key: "ibanImage", label: "صورة IBAN البنكي", priority: "high" as const },
+  {
+    key: "withdrawalAmount",
+    label: "قيمة الاسترداد",
+    priority: "high" as const,
+  },
+  { key: "oldBalance", label: "الرصيد القديم", priority: "medium" as const },
+  { key: "clientName", label: "اسم العميل", priority: "medium" as const },
+  { key: "companyIban", label: "Company IBAN", priority: "medium" as const },
+  { key: "bankName", label: "اسم البنك", priority: "medium" as const },
+  { key: "ibanImage", label: "صورة IBAN البنكي", priority: "low" as const },
 ];
-
-const fetchMoneyRefundRequests = async (): Promise<MoneyRefundRequest[]> => {
-  // Mock data for now
-  return [
-    {
-      id: 1,
-      requestNumber: "MR-1001",
-      clientName: "شركة الأفق",
-      orderType: "استرداد مباشر",
-      oldBalance: "5,000 ر.س",
-      addedBalance: "2,500 ر.س",
-      requestDate: "2025-01-15",
-      status: "مكتمل",
-      responsible: "أحمد محمد",
-      withdrawalAmount: "2,500 ر.س",
-      companyIban: "SA1234567890123456789012",
-      bankName: "البنك الأهلي السعودي",
-      ibanImage: "-",
-    },
-    {
-      id: 2,
-      requestNumber: "MR-1002",
-      clientName: "محمد أحمد",
-      orderType: "استرداد بنكي",
-      oldBalance: "3,200 ر.س",
-      addedBalance: "800 ر.س",
-      requestDate: "2025-01-14",
-      status: "قيد المراجعة",
-      responsible: "سارة أحمد",
-      withdrawalAmount: "800 ر.س",
-      companyIban: "SA9876543210987654321098",
-      bankName: "مصرف الراجحي",
-      ibanImage: "-",
-    },
-    {
-      id: 3,
-      requestNumber: "MR-1003",
-      clientName: "مؤسسة الرواد",
-      orderType: "استرداد مباشر",
-      oldBalance: "8,000 ر.س",
-      addedBalance: "1,200 ر.س",
-      requestDate: "2025-01-13",
-      status: "مرفوض",
-      responsible: "خالد السعد",
-      withdrawalAmount: "1,200 ر.س",
-      companyIban: "SA1122334455667788990011",
-      bankName: "البنك السعودي للاستثمار",
-      ibanImage: "-",
-    },
-    {
-      id: 4,
-      requestNumber: "MR-1004",
-      clientName: "عبدالله القحطاني",
-      orderType: "استرداد بنكي",
-      oldBalance: "2,000 ر.س",
-      addedBalance: "500 ر.س",
-      requestDate: "2025-01-12",
-      status: "مكتمل",
-      responsible: "نورا العتيبي",
-      withdrawalAmount: "500 ر.س",
-      companyIban: "SA5566778899001122334455",
-      bankName: "البنك السعودي الفرنسي",
-      ibanImage: "-",
-    },
-    {
-      id: 5,
-      requestNumber: "MR-1005",
-      clientName: "شركة النخيل",
-      orderType: "استرداد مباشر",
-      oldBalance: "10,000 ر.س",
-      addedBalance: "3,200 ر.س",
-      requestDate: "2025-01-11",
-      status: "قيد المراجعة",
-      responsible: "فهد المطيري",
-      withdrawalAmount: "3,200 ر.س",
-      companyIban: "SA9988776655443322110099",
-      bankName: "بنك الجزيرة",
-      ibanImage: "-",
-    },
-  ];
-};
 
 export const MoneyReq = () => {
   const navigate = useNavigate();
+  const { addToast } = useToast();
+  const [rawWithdrawalRequestsData, setRawWithdrawalRequestsData] = useState<
+    any[]
+  >([]);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+
+  // Fetch data
+  const fetchDataWithState = useCallback(async () => {
+    const data = await fetchAllAdminWithdrawalRequests();
+
+    // Transform data to make IBAN image more user-friendly
+    const transformedData = data.map((item: any) => ({
+      ...item,
+      ibanImage:
+        item.ibanImage && item.ibanImage !== "-"
+          ? {
+              url: item.ibanImage,
+              display: "عرض الصورة",
+            }
+          : "-",
+    }));
+
+    setRawWithdrawalRequestsData(data); // Keep original for processing
+    return transformedData; // Return transformed for display
+  }, []);
+
+  useEffect(() => {
+    fetchDataWithState();
+  }, [fetchDataWithState]);
+
+  // Handle approve
+  const handleApprove = async (id: string | number) => {
+    const requestId = String(id);
+    const currentUser = auth.currentUser;
+
+    if (!currentUser) {
+      addToast({
+        type: "error",
+        message: "يجب تسجيل الدخول كمسؤول",
+        duration: 3000,
+      });
+      return;
+    }
+
+    // Find the request to check its status
+    const request = rawWithdrawalRequestsData.find((r) => r.id === requestId);
+    if (!request) {
+      addToast({
+        type: "error",
+        message: "الطلب غير موجود",
+        duration: 3000,
+      });
+      return;
+    }
+
+    // Get status from correct location
+    const currentStatus = request.status || "pending";
+    if (currentStatus !== "pending") {
+      addToast({
+        type: "error",
+        message: `لا يمكن الموافقة على طلب ${currentStatus}`,
+        duration: 3000,
+      });
+      return;
+    }
+
+    try {
+      setProcessingId(requestId);
+
+      await approveWalletWithdrawalRequest(requestId, {
+        uid: currentUser.uid,
+        email: currentUser.email!,
+        name: currentUser.displayName || currentUser.email!,
+      });
+
+      addToast({
+        type: "success",
+        message: "تمت الموافقة على طلب السحب بنجاح وتم خصم المبلغ من الرصيد",
+        duration: 4000,
+      });
+
+      // Refresh data
+      await fetchDataWithState();
+    } catch (error: any) {
+      console.error("Error approving withdrawal request:", error);
+      addToast({
+        type: "error",
+        message: error.message || "فشل في الموافقة على الطلب",
+        duration: 3000,
+      });
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // Handle reject
+  const handleReject = async (id: string | number) => {
+    const requestId = String(id);
+    const currentUser = auth.currentUser;
+
+    if (!currentUser) {
+      addToast({
+        type: "error",
+        message: "يجب تسجيل الدخول كمسؤول",
+        duration: 3000,
+      });
+      return;
+    }
+
+    // Find the request
+    const request = rawWithdrawalRequestsData.find((r) => r.id === requestId);
+    if (!request) {
+      addToast({
+        type: "error",
+        message: "الطلب غير موجود",
+        duration: 3000,
+      });
+      return;
+    }
+
+    const currentStatus = request.status || "pending";
+    if (currentStatus !== "pending") {
+      addToast({
+        type: "error",
+        message: `لا يمكن رفض طلب ${currentStatus}`,
+        duration: 3000,
+      });
+      return;
+    }
+
+    try {
+      setProcessingId(requestId);
+
+      // Optional: Prompt for rejection reason
+      const reason = prompt("سبب الرفض (اختياري):");
+
+      await rejectWalletWithdrawalRequest(
+        requestId,
+        {
+          uid: currentUser.uid,
+          email: currentUser.email!,
+          name: currentUser.displayName || currentUser.email!,
+        },
+        reason || undefined
+      );
+
+      addToast({
+        type: "success",
+        message: `تم رفض طلب السحب رقم ${request.requestNumber} بنجاح`,
+        duration: 3000,
+      });
+
+      // Refresh data
+      await fetchDataWithState();
+    } catch (error: any) {
+      console.error("Error rejecting withdrawal request:", error);
+      addToast({
+        type: "error",
+        message: error.message || "فشل في رفض الطلب",
+        duration: 3000,
+      });
+    } finally {
+      setProcessingId(null);
+    }
+  };
 
   return (
     <>
@@ -134,13 +230,16 @@ export const MoneyReq = () => {
         entityNamePlural="طلبات"
         icon={DollarSign}
         columns={columns}
-        fetchData={fetchMoneyRefundRequests}
+        fetchData={fetchDataWithState}
         addNewRoute="/moneyrefundrequests"
         viewDetailsRoute={(id) => `/wallet-requests/moneyrefundrequests/${id}`}
         loadingMessage="جاري تحميل طلبات استرداد الأموال..."
         itemsPerPage={10}
         showTimeFilter={false}
         showAddButton={false}
+        onApprove={handleApprove}
+        onReject={handleReject}
+        processingId={processingId}
       />
     </>
   );

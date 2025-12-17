@@ -3648,14 +3648,27 @@ export const processSubscriptionPayment = async (subscriptionData: {
   vat: number;
   companyId: string;
   company: any;
-}): Promise<{ invoiceId: string; subscriptionPaymentId: string; orderId: string }> => {
+}): Promise<{
+  invoiceId: string;
+  subscriptionPaymentId: string;
+  orderId: string;
+}> => {
   try {
     const currentUser = auth.currentUser;
     if (!currentUser) {
       throw new Error("No user is currently logged in");
     }
 
-    const { subscriptionId, subscription, vehicleCount, totalWithVAT, totalWithoutVAT, vat, companyId, company } = subscriptionData;
+    const {
+      subscriptionId,
+      subscription,
+      vehicleCount,
+      totalWithVAT,
+      totalWithoutVAT,
+      vat,
+      companyId,
+      company,
+    } = subscriptionData;
 
     // Validate required data with detailed error messages
     if (!subscriptionId) {
@@ -3671,21 +3684,25 @@ export const processSubscriptionPayment = async (subscriptionData: {
     // Construct finalCompanyId from available sources
     // companyId from parameter, or company.id, or company.email (which might be the doc ID)
     const finalCompanyId = companyId || company.id || company.email || "";
-    
+
     if (!finalCompanyId) {
       console.error("Company data received:", company);
-      throw new Error("Company ID is missing - cannot proceed with subscription. Please ensure company data is loaded.");
+      throw new Error(
+        "Company ID is missing - cannot proceed with subscription. Please ensure company data is loaded."
+      );
     }
 
     // Get email from company data (may be in different fields)
     const companyEmail = company.email || company.userEmail || "";
     if (!companyEmail) {
-      console.warn("Company email not found, but continuing with subscription payment");
+      console.warn(
+        "Company email not found, but continuing with subscription payment"
+      );
     }
 
     // Calculate dates
     const subscriptionStartDate = new Date();
-    
+
     // Safely determine periodValueInDays
     let periodValueInDays = subscription.periodValueInDays;
     if (!periodValueInDays) {
@@ -3700,7 +3717,7 @@ export const processSubscriptionPayment = async (subscriptionData: {
           periodNameStr = String(subscription.periodName.en).toLowerCase();
         }
       }
-      
+
       // Check if it's monthly
       if (periodNameStr.includes("شهري") || periodNameStr.includes("monthly")) {
         periodValueInDays = 30;
@@ -3708,12 +3725,18 @@ export const processSubscriptionPayment = async (subscriptionData: {
         periodValueInDays = 365; // Default to annual
       }
     }
-    
+
     const subscriptionEndDate = new Date(subscriptionStartDate);
-    subscriptionEndDate.setDate(subscriptionEndDate.getDate() + periodValueInDays);
+    subscriptionEndDate.setDate(
+      subscriptionEndDate.getDate() + periodValueInDays
+    );
 
     // Validate finalCompanyId is not null/empty
-    if (!finalCompanyId || typeof finalCompanyId !== "string" || finalCompanyId.trim() === "") {
+    if (
+      !finalCompanyId ||
+      typeof finalCompanyId !== "string" ||
+      finalCompanyId.trim() === ""
+    ) {
       throw new Error("Invalid company ID");
     }
 
@@ -3730,7 +3753,8 @@ export const processSubscriptionPayment = async (subscriptionData: {
       }
 
       const companyData = companyDoc.data();
-      const currentBalance = companyData.balance || companyData.walletBalance || 0;
+      const currentBalance =
+        companyData.balance || companyData.walletBalance || 0;
 
       // Verify sufficient balance
       if (currentBalance < totalWithVAT) {
@@ -3741,12 +3765,19 @@ export const processSubscriptionPayment = async (subscriptionData: {
       const newBalance = currentBalance - totalWithVAT;
 
       // 2. Create subscription payment document
-      const subscriptionPaymentRef = doc(collection(db, "subscriptions-payment"));
+      const subscriptionPaymentRef = doc(
+        collection(db, "subscriptions-payment")
+      );
       const subscriptionPaymentData = {
         company: {
           id: company.id || finalCompanyId,
           email: companyEmail || companyData.email || "",
-          name: company.name || company.brandName || companyData.name || companyData.brandName || "",
+          name:
+            company.name ||
+            company.brandName ||
+            companyData.name ||
+            companyData.brandName ||
+            "",
         },
         selectedSubscription: {
           id: subscriptionId,
@@ -3791,7 +3822,10 @@ export const processSubscriptionPayment = async (subscriptionData: {
         selectedOption: {
           name: {
             ar: subscription.title?.ar || subscription.title?.en || "اشتراك",
-            en: subscription.title?.en || subscription.title?.ar || "Subscription",
+            en:
+              subscription.title?.en ||
+              subscription.title?.ar ||
+              "Subscription",
           },
         },
         totalPrice: totalWithVAT,
@@ -3828,7 +3862,9 @@ export const processSubscriptionPayment = async (subscriptionData: {
     });
 
     // 5. Generate invoice (outside transaction)
-    const { generateInvoiceNumber, calculateVAT } = await import("./invoiceService");
+    const { generateInvoiceNumber, calculateVAT } = await import(
+      "./invoiceService"
+    );
     const invoiceNumber = await generateInvoiceNumber();
     const vatRate = 15;
 
@@ -3847,7 +3883,7 @@ export const processSubscriptionPayment = async (subscriptionData: {
     // Safely extract period name - use "شهري" for monthly, "سنوي" for yearly
     // PRIORITIZE periodValueInDays first, as it's the most reliable indicator
     let periodName = "سنوي"; // Default to yearly
-    
+
     // First check periodValueInDays (most reliable)
     if (periodValueInDays === 30) {
       periodName = "شهري";
@@ -3859,7 +3895,11 @@ export const processSubscriptionPayment = async (subscriptionData: {
         const periodStr = subscription.periodName.toLowerCase();
         if (periodStr.includes("شهري") || periodStr.includes("monthly")) {
           periodName = "شهري";
-        } else if (periodStr.includes("سنوي") || periodStr.includes("yearly") || periodStr.includes("annual")) {
+        } else if (
+          periodStr.includes("سنوي") ||
+          periodStr.includes("yearly") ||
+          periodStr.includes("annual")
+        ) {
           periodName = "سنوي";
         } else {
           periodName = subscription.periodName;
@@ -3868,7 +3908,11 @@ export const processSubscriptionPayment = async (subscriptionData: {
         const periodStr = String(subscription.periodName.ar).toLowerCase();
         if (periodStr.includes("شهري") || periodStr.includes("monthly")) {
           periodName = "شهري";
-        } else if (periodStr.includes("سنوي") || periodStr.includes("yearly") || periodStr.includes("annual")) {
+        } else if (
+          periodStr.includes("سنوي") ||
+          periodStr.includes("yearly") ||
+          periodStr.includes("annual")
+        ) {
           periodName = "سنوي";
         } else {
           periodName = subscription.periodName.ar;
@@ -3877,14 +3921,18 @@ export const processSubscriptionPayment = async (subscriptionData: {
         const periodStr = String(subscription.periodName.en).toLowerCase();
         if (periodStr.includes("monthly") || periodStr.includes("شهري")) {
           periodName = "شهري";
-        } else if (periodStr.includes("yearly") || periodStr.includes("annual") || periodStr.includes("سنوي")) {
+        } else if (
+          periodStr.includes("yearly") ||
+          periodStr.includes("annual") ||
+          periodStr.includes("سنوي")
+        ) {
           periodName = "سنوي";
         } else {
           periodName = subscription.periodName.en;
         }
       }
     }
-    
+
     // Safely extract subscription description
     let subscriptionDescription = "اشتراك نظام إدارة الأسطول";
     if (subscription.description) {
@@ -3899,8 +3947,8 @@ export const processSubscriptionPayment = async (subscriptionData: {
 
     // Format dates for invoice
     const formatDateForInvoice = (date: Date): string => {
-      const day = String(date.getDate()).padStart(2, '0');
-      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, "0");
+      const month = String(date.getMonth() + 1).padStart(2, "0");
       const year = date.getFullYear();
       return `${day}/${month}/${year}`;
     };
@@ -3924,10 +3972,14 @@ export const processSubscriptionPayment = async (subscriptionData: {
     // Get company data from transaction result or use passed company data
     const companyDocRefForInvoice = doc(db, "companies", finalCompanyId);
     const companyDocForInvoice = await getDoc(companyDocRefForInvoice);
-    const companyDataForInvoice = companyDocForInvoice.exists() ? companyDocForInvoice.data() : company || {};
-    
+    const companyDataForInvoice = companyDocForInvoice.exists()
+      ? companyDocForInvoice.data()
+      : company || {};
+
     const cleanCompanyData = Object.fromEntries(
-      Object.entries(companyDataForInvoice).filter(([_, v]) => v !== undefined && v !== null)
+      Object.entries(companyDataForInvoice).filter(
+        ([_, v]) => v !== undefined && v !== null
+      )
     );
 
     const invoiceData: any = {
@@ -4851,8 +4903,10 @@ export const fetchAllAdminWalletRequests = async () => {
     );
 
     const requestsRef = collection(db, "companies-wallets-requests");
-    const q = query(requestsRef, orderBy("actionDate", "desc"));
-    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
+    // Query by createdDate (new requests) or actionDate (old requests) - get all and sort
+    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(
+      requestsRef
+    );
 
     const allRequestsData: any[] = [];
 
@@ -4893,17 +4947,43 @@ export const fetchAllAdminWalletRequests = async () => {
 
     querySnapshot.forEach((doc) => {
       const data = doc.data();
+
+      // Determine the date to use (createdDate for new requests, actionDate for old ones)
+      const dateToUse = data.createdDate || data.actionDate || data.requestDate;
+
+      // Get status from correct location (data.status for new, data.requestedUser.status for old)
+      const status = data.status || data.requestedUser?.status || "pending";
+
+      // Get order type
+      const orderType = data.type || "-";
+
+      // Get responsible person (processedBy for new, actionUser for old)
+      const responsible =
+        data.processedBy?.name || data.actionUser?.name || "-";
+
       allRequestsData.push({
         id: doc.id,
-        requestNumber: data.refid || doc.id, // رقم العملية - use refid if available, otherwise fall back to doc.id
+        requestNumber: data.refid || doc.id, // رقم العملية
         clientName: data.requestedUser?.name || "-", // العميل
-        orderType: "-", // نوع الشحن
+        orderType: orderType, // نوع الشحن
         oldBalance: data.requestedUser?.balance || "-", // الرصيد القديم
         addedBalance: data.value || "-", // الرصيد المضاف
-        requestDate: formatDate(data.actionDate), // تاريخ الانشاء
-        status: data.requestedUser?.status || "-", // حالة الطلب
-        responsible: data.actionUser?.name || "-", // المسؤول
+        requestDate: formatDate(dateToUse), // تاريخ الانشاء
+        status: status, // حالة الطلب
+        responsible: responsible, // المسؤول
+        rawDate: dateToUse, // For sorting
       });
+    });
+
+    // Sort by date descending (newest first)
+    allRequestsData.sort((a, b) => {
+      const dateA = a.rawDate?.toDate
+        ? a.rawDate.toDate()
+        : new Date(a.rawDate || 0);
+      const dateB = b.rawDate?.toDate
+        ? b.rawDate.toDate()
+        : new Date(b.rawDate || 0);
+      return dateB.getTime() - dateA.getTime();
     });
 
     console.log(
@@ -14993,6 +15073,845 @@ export const fetchOrdersByDateRange = async (
     return ordersData;
   } catch (error) {
     console.error("❌ Error fetching orders by date range:", error);
+    throw error;
+  }
+};
+
+// ============================================================================
+// WALLET CHARGE REQUEST MANAGEMENT
+// ============================================================================
+
+/**
+ * Helper: Generate unique 8-digit refid for wallet requests
+ * @returns Promise with unique 8-digit refid string
+ */
+const generateUniqueRefid = async (): Promise<string> => {
+  const maxAttempts = 20;
+  for (let i = 0; i < maxAttempts; i++) {
+    const refid = Math.floor(10000000 + Math.random() * 90000000).toString();
+
+    // Check uniqueness in companies-wallets-requests collection
+    const requestsRef = collection(db, "companies-wallets-requests");
+    const q = query(requestsRef, where("refid", "==", refid));
+    const snapshot = await getDocs(q);
+
+    if (snapshot.empty) {
+      console.log(`✅ Generated unique refid: ${refid}`);
+      return refid;
+    }
+    console.log(`⚠️ Refid ${refid} already exists, retrying...`);
+  }
+  throw new Error("Failed to generate unique refid after 20 attempts");
+};
+
+/**
+ * Helper: Upload transfer image to Firebase Storage
+ * @param file - Image file to upload
+ * @param userId - User ID for organizing storage
+ * @returns Promise with download URL
+ */
+const uploadTransferImage = async (
+  file: File,
+  userId: string
+): Promise<string> => {
+  try {
+    const timestamp = Date.now();
+    const fileName = `wallet-transfers/${userId}/${timestamp}-${file.name}`;
+    const storageRef = ref(storage, fileName);
+
+    console.log(`📤 Uploading transfer image: ${fileName}`);
+    await uploadBytes(storageRef, file);
+    const downloadURL = await getDownloadURL(storageRef);
+
+    console.log(`✅ Image uploaded successfully: ${downloadURL}`);
+    return downloadURL;
+  } catch (error) {
+    console.error("❌ Error uploading transfer image:", error);
+    throw new Error("Failed to upload transfer image");
+  }
+};
+
+/**
+ * Submit a manual wallet charge request
+ * SECURITY: Does NOT modify balance - only creates request with "pending" status
+ * @param requestData - Request form data from user
+ * @returns Promise with created request ID
+ */
+export const submitWalletChargeRequest = async (requestData: {
+  transferAmount: number;
+  bankName: string;
+  accountNumber: string;
+  transferImage?: File;
+}): Promise<string> => {
+  try {
+    console.log("\n💰 ========================================");
+    console.log("📝 SUBMITTING WALLET CHARGE REQUEST");
+    console.log("========================================");
+
+    // Validate user authentication
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      throw new Error("User not authenticated");
+    }
+    console.log("👤 User:", currentUser.email);
+
+    // Validate amount
+    if (requestData.transferAmount <= 0) {
+      throw new Error("Transfer amount must be greater than 0");
+    }
+    console.log("💵 Amount:", requestData.transferAmount);
+
+    // Get current company data
+    const company = await fetchCurrentCompany();
+    if (!company) {
+      throw new Error("Company not found");
+    }
+    console.log("🏢 Company:", company.name);
+    console.log("💰 Current Balance:", company.balance || 0);
+
+    // Generate unique 8-digit refid
+    const refid = await generateUniqueRefid();
+
+    // Upload image if provided
+    let transferImageUrl: string | undefined;
+    if (requestData.transferImage) {
+      transferImageUrl = await uploadTransferImage(
+        requestData.transferImage,
+        currentUser.uid
+      );
+    }
+
+    // Create request document
+    const requestsRef = collection(db, "companies-wallets-requests");
+    const newRequest = {
+      refid,
+      companyId: company.id, // Store company document ID for easy lookup
+      requestedUser: {
+        uid: currentUser.uid,
+        email: currentUser.email!,
+        name: company.name,
+        balance: company.balance || 0, // Current balance at time of request
+      },
+      value: requestData.transferAmount,
+      type: "manual",
+      transferDetails: {
+        bankName: requestData.bankName,
+        accountNumber: requestData.accountNumber,
+        transferImage: transferImageUrl,
+      },
+      status: "pending",
+      createdDate: serverTimestamp(),
+      requestDate: serverTimestamp(),
+    };
+
+    const docRef = await addDoc(requestsRef, newRequest);
+
+    console.log("✅ Wallet charge request created successfully");
+    console.log("📋 Request ID:", docRef.id);
+    console.log("🔢 Refid:", refid);
+    console.log("========================================\n");
+
+    return docRef.id;
+  } catch (error: any) {
+    console.error("❌ Error submitting wallet charge request:", error);
+    throw error;
+  }
+};
+
+/**
+ * Approve wallet charge request (ATOMIC TRANSACTION)
+ * SECURITY: Uses Firestore transaction for atomicity
+ * Updates request status to "approved" AND increments company balance
+ * @param requestId - Request document ID
+ * @param adminUser - Admin processing the request
+ * @returns Promise with success boolean
+ */
+export const approveWalletChargeRequest = async (
+  requestId: string,
+  adminUser: { uid: string; email: string; name: string }
+): Promise<boolean> => {
+  try {
+    console.log("\n✅ ========================================");
+    console.log("📝 APPROVING WALLET CHARGE REQUEST");
+    console.log("========================================");
+    console.log("📋 Request ID:", requestId);
+    console.log("👤 Admin:", adminUser.email);
+
+    // STEP 1: Fetch request and find company BEFORE transaction
+    const requestRef = doc(db, "companies-wallets-requests", requestId);
+    const requestSnap = await getDoc(requestRef);
+
+    if (!requestSnap.exists()) {
+      throw new Error("Request not found");
+    }
+
+    const requestData = requestSnap.data();
+    console.log("💵 Request Amount:", requestData.value);
+
+    // Find company document ID
+    let companyDocId: string;
+
+    if (requestData.companyId) {
+      // New requests: Use stored company ID
+      console.log("🏢 Using stored Company ID:", requestData.companyId);
+      companyDocId = requestData.companyId;
+    } else {
+      // Old requests: Query by UID or email (fallback for legacy data)
+      console.log("🔍 Searching for company by UID/email...");
+      const companiesRef = collection(db, "companies");
+
+      // Try by UID
+      let qByUid = query(
+        companiesRef,
+        where("uid", "==", requestData.requestedUser.uid)
+      );
+      let companySnapshot = await getDocs(qByUid);
+
+      // If not found, try by email
+      if (companySnapshot.empty && requestData.requestedUser.email) {
+        console.log("🔍 Not found by UID, trying email...");
+        const qByEmail = query(
+          companiesRef,
+          where("email", "==", requestData.requestedUser.email)
+        );
+        companySnapshot = await getDocs(qByEmail);
+      }
+
+      // If still not found, try by createdUserId
+      if (companySnapshot.empty && requestData.requestedUser.email) {
+        console.log("🔍 Not found by email, trying createdUserId...");
+        const qByCreatedUserId = query(
+          companiesRef,
+          where("createdUserId", "==", requestData.requestedUser.email)
+        );
+        companySnapshot = await getDocs(qByCreatedUserId);
+      }
+
+      if (companySnapshot.empty) {
+        throw new Error("Company not found");
+      }
+
+      companyDocId = companySnapshot.docs[0].id;
+      console.log("✓ Found Company ID:", companyDocId);
+    }
+
+    // STEP 2: Run atomic transaction
+    const result = await runTransaction(db, async (transaction) => {
+      // Re-read request inside transaction to ensure consistency
+      const requestSnap = await transaction.get(requestRef);
+
+      if (!requestSnap.exists()) {
+        throw new Error("Request not found");
+      }
+
+      const requestData = requestSnap.data();
+
+      // Validate request status
+      if (requestData.status !== "pending") {
+        throw new Error(`Request already ${requestData.status}`);
+      }
+      console.log("✓ Request status is pending");
+
+      // Get company document
+      const companyDocRef = doc(db, "companies", companyDocId);
+      const companySnap = await transaction.get(companyDocRef);
+
+      if (!companySnap.exists()) {
+        throw new Error("Company not found");
+      }
+
+      const companyData = companySnap.data();
+      const currentBalance = companyData.balance || 0;
+      const newBalance = currentBalance + requestData.value;
+
+      console.log("💰 Current Balance:", currentBalance);
+      console.log("➕ Adding:", requestData.value);
+      console.log("💰 New Balance:", newBalance);
+
+      // Update request status
+      transaction.update(requestRef, {
+        status: "approved",
+        processedAt: serverTimestamp(),
+        processedBy: adminUser,
+      });
+
+      // Update company balance
+      transaction.update(companyDocRef, {
+        balance: newBalance,
+      });
+
+      console.log("✅ Transaction completed successfully");
+      return true;
+    });
+
+    console.log("========================================\n");
+    return result;
+  } catch (error: any) {
+    console.error("❌ Error approving wallet request:", error);
+    throw error;
+  }
+};
+
+/**
+ * Reject wallet charge request
+ * SECURITY: Only updates request status, does NOT modify balance
+ * @param requestId - Request document ID
+ * @param adminUser - Admin processing the request
+ * @param reason - Optional rejection reason
+ * @returns Promise with success boolean
+ */
+export const rejectWalletChargeRequest = async (
+  requestId: string,
+  adminUser: { uid: string; email: string; name: string },
+  reason?: string
+): Promise<boolean> => {
+  try {
+    console.log("\n❌ ========================================");
+    console.log("📝 REJECTING WALLET CHARGE REQUEST");
+    console.log("========================================");
+    console.log("📋 Request ID:", requestId);
+    console.log("👤 Admin:", adminUser.email);
+    if (reason) console.log("📝 Reason:", reason);
+
+    const requestRef = doc(db, "companies-wallets-requests", requestId);
+    const requestSnap = await getDoc(requestRef);
+
+    if (!requestSnap.exists()) {
+      throw new Error("Request not found");
+    }
+
+    const requestData = requestSnap.data();
+
+    if (requestData.status !== "pending") {
+      throw new Error(`Request already ${requestData.status}`);
+    }
+
+    await updateDoc(requestRef, {
+      status: "rejected",
+      processedAt: serverTimestamp(),
+      processedBy: adminUser,
+      rejectionReason: reason || "لم يتم تحديد سبب",
+    });
+
+    console.log("✅ Request rejected successfully");
+    console.log("========================================\n");
+    return true;
+  } catch (error: any) {
+    console.error("❌ Error rejecting wallet request:", error);
+    throw error;
+  }
+};
+
+// WALLET WITHDRAWAL/REFUND REQUEST MANAGEMENT
+// ============================================================================
+
+/**
+ * Helper: Generate unique 8-digit refid for withdrawal requests
+ * @returns Promise with unique 8-digit refid string
+ */
+const generateUniqueWithdrawalRefid = async (): Promise<string> => {
+  const maxAttempts = 20;
+  for (let i = 0; i < maxAttempts; i++) {
+    const refid = Math.floor(10000000 + Math.random() * 90000000).toString();
+
+    // Check uniqueness in companies-wallets-withdrawals collection
+    const requestsRef = collection(db, "companies-wallets-withdrawals");
+    const q = query(requestsRef, where("refid", "==", refid));
+    const snapshot = await getDocs(q);
+
+    if (snapshot.empty) {
+      console.log(`✅ Generated unique withdrawal refid: ${refid}`);
+      return refid;
+    }
+    console.log(`⚠️ Withdrawal refid ${refid} already exists, retrying...`);
+  }
+  throw new Error(
+    "Failed to generate unique withdrawal refid after 20 attempts"
+  );
+};
+
+/**
+ * Helper: Upload IBAN image to Firebase Storage
+ * @param file - Image file to upload
+ * @param userId - User ID for organizing storage
+ * @returns Promise with download URL
+ */
+const uploadIbanImage = async (file: File, userId: string): Promise<string> => {
+  try {
+    const timestamp = Date.now();
+    const fileName = `wallet-withdrawals/${userId}/${timestamp}-${file.name}`;
+    const storageRef = ref(storage, fileName);
+
+    console.log(`📤 Uploading IBAN image: ${fileName}`);
+    await uploadBytes(storageRef, file);
+    const downloadURL = await getDownloadURL(storageRef);
+
+    console.log(`✅ IBAN image uploaded successfully: ${downloadURL}`);
+    return downloadURL;
+  } catch (error) {
+    console.error("❌ Error uploading IBAN image:", error);
+    throw new Error("Failed to upload IBAN image");
+  }
+};
+
+/**
+ * Submit a wallet withdrawal/refund request
+ * SECURITY: Does NOT modify balance - only creates request with "pending" status
+ * @param requestData - Request form data from user
+ * @returns Promise with created request ID
+ */
+export const submitWalletWithdrawalRequest = async (requestData: {
+  accountNumber: string;
+  companyIban: string;
+  bankName: string;
+  withdrawalAmount: number;
+  withdrawalType: "all" | "custom";
+  refundReason: string;
+  ibanImage?: File;
+}): Promise<string> => {
+  try {
+    console.log("\n💸 ========================================");
+    console.log("📝 SUBMITTING WALLET WITHDRAWAL REQUEST");
+    console.log("========================================");
+
+    // Validate user authentication
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      throw new Error("User not authenticated");
+    }
+    console.log("👤 User:", currentUser.email);
+
+    // Validate amount
+    if (requestData.withdrawalAmount <= 0) {
+      throw new Error("Withdrawal amount must be greater than 0");
+    }
+    console.log("💵 Withdrawal Amount:", requestData.withdrawalAmount);
+
+    // Get current company data
+    const company = await fetchCurrentCompany();
+    if (!company) {
+      throw new Error("Company not found");
+    }
+    console.log("🏢 Company:", company.name);
+    console.log("💰 Current Balance:", company.balance || 0);
+
+    // Check sufficient balance (pre-validation)
+    const currentBalance = company.balance || 0;
+    if (currentBalance < requestData.withdrawalAmount) {
+      throw new Error(`رصيد غير كافٍ. الرصيد الحالي: ${currentBalance} ر.س`);
+    }
+
+    // Generate unique 8-digit refid
+    const refid = await generateUniqueWithdrawalRefid();
+
+    // Upload IBAN image if provided
+    let ibanImageUrl: string | undefined;
+    if (requestData.ibanImage) {
+      ibanImageUrl = await uploadIbanImage(
+        requestData.ibanImage,
+        currentUser.uid
+      );
+    }
+
+    // Create withdrawal request document
+    const requestsRef = collection(db, "companies-wallets-withdrawals");
+    const newRequest = {
+      refid,
+      companyId: company.id, // Store company document ID for easy lookup
+      requestedUser: {
+        uid: currentUser.uid,
+        email: currentUser.email!,
+        name: company.name,
+        balance: currentBalance, // Current balance at time of request
+      },
+      accountNumber: requestData.accountNumber,
+      companyIban: requestData.companyIban,
+      bankName: requestData.bankName,
+      withdrawalAmount: requestData.withdrawalAmount,
+      withdrawalType: requestData.withdrawalType,
+      refundReason: requestData.refundReason,
+      ibanImageUrl: ibanImageUrl,
+      status: "pending",
+      createdDate: serverTimestamp(),
+      requestDate: serverTimestamp(),
+    };
+
+    const docRef = await addDoc(requestsRef, newRequest);
+
+    console.log("✅ Wallet withdrawal request created successfully");
+    console.log("📋 Request ID:", docRef.id);
+    console.log("🔢 Refid:", refid);
+    console.log("========================================\n");
+
+    return docRef.id;
+  } catch (error: any) {
+    console.error("❌ Error submitting wallet withdrawal request:", error);
+    throw error;
+  }
+};
+
+/**
+ * Approve wallet withdrawal request (ATOMIC TRANSACTION)
+ * SECURITY: Uses Firestore transaction for atomicity
+ * Updates request status to "approved" AND decrements company balance
+ * VALIDATES sufficient balance before deduction
+ * @param requestId - Request document ID
+ * @param adminUser - Admin processing the request
+ * @returns Promise with success boolean
+ */
+export const approveWalletWithdrawalRequest = async (
+  requestId: string,
+  adminUser: { uid: string; email: string; name: string }
+): Promise<boolean> => {
+  try {
+    console.log("\n✅ ========================================");
+    console.log("📝 APPROVING WALLET WITHDRAWAL REQUEST");
+    console.log("========================================");
+    console.log("📋 Request ID:", requestId);
+    console.log("👤 Admin:", adminUser.email);
+
+    // STEP 1: Fetch request and find company BEFORE transaction
+    const requestRef = doc(db, "companies-wallets-withdrawals", requestId);
+    const requestSnap = await getDoc(requestRef);
+
+    if (!requestSnap.exists()) {
+      throw new Error("Request not found");
+    }
+
+    const requestData = requestSnap.data();
+    console.log("💵 Withdrawal Amount:", requestData.withdrawalAmount);
+
+    // Find company document ID
+    let companyDocId: string;
+
+    if (requestData.companyId) {
+      // New requests: Use stored company ID
+      console.log("🏢 Using stored Company ID:", requestData.companyId);
+      companyDocId = requestData.companyId;
+    } else {
+      // Old requests: Query by UID or email (fallback for legacy data)
+      console.log("🔍 Searching for company by UID/email...");
+      const companiesRef = collection(db, "companies");
+
+      // Try by UID
+      let qByUid = query(
+        companiesRef,
+        where("uid", "==", requestData.requestedUser.uid)
+      );
+      let companySnapshot = await getDocs(qByUid);
+
+      // If not found, try by email
+      if (companySnapshot.empty && requestData.requestedUser.email) {
+        console.log("🔍 Not found by UID, trying email...");
+        const qByEmail = query(
+          companiesRef,
+          where("email", "==", requestData.requestedUser.email)
+        );
+        companySnapshot = await getDocs(qByEmail);
+      }
+
+      // If still not found, try by createdUserId
+      if (companySnapshot.empty && requestData.requestedUser.email) {
+        console.log("🔍 Not found by email, trying createdUserId...");
+        const qByCreatedUserId = query(
+          companiesRef,
+          where("createdUserId", "==", requestData.requestedUser.email)
+        );
+        companySnapshot = await getDocs(qByCreatedUserId);
+      }
+
+      if (companySnapshot.empty) {
+        throw new Error("Company not found");
+      }
+
+      companyDocId = companySnapshot.docs[0].id;
+      console.log("✓ Found Company ID:", companyDocId);
+    }
+
+    // STEP 2: Run atomic transaction
+    const result = await runTransaction(db, async (transaction) => {
+      // Re-read request inside transaction to ensure consistency
+      const requestSnap = await transaction.get(requestRef);
+
+      if (!requestSnap.exists()) {
+        throw new Error("Request not found");
+      }
+
+      const requestData = requestSnap.data();
+
+      // Validate request status
+      if (requestData.status !== "pending") {
+        throw new Error(`Request already ${requestData.status}`);
+      }
+      console.log("✓ Request status is pending");
+
+      // Get company document
+      const companyDocRef = doc(db, "companies", companyDocId);
+      const companySnap = await transaction.get(companyDocRef);
+
+      if (!companySnap.exists()) {
+        throw new Error("Company not found");
+      }
+
+      const companyData = companySnap.data();
+      const currentBalance = companyData.balance || 0;
+      const withdrawalAmount = requestData.withdrawalAmount;
+
+      // CRITICAL: Validate sufficient balance
+      if (currentBalance < withdrawalAmount) {
+        throw new Error(
+          `رصيد غير كافٍ. الرصيد الحالي: ${currentBalance} ر.س، المبلغ المطلوب: ${withdrawalAmount} ر.س`
+        );
+      }
+
+      const newBalance = currentBalance - withdrawalAmount;
+
+      console.log("💰 Current Balance:", currentBalance);
+      console.log("➖ Withdrawing:", withdrawalAmount);
+      console.log("💰 New Balance:", newBalance);
+
+      // Update request status
+      transaction.update(requestRef, {
+        status: "approved",
+        processedAt: serverTimestamp(),
+        processedBy: adminUser,
+      });
+
+      // Update company balance (DEDUCTION)
+      transaction.update(companyDocRef, {
+        balance: newBalance,
+      });
+
+      console.log("✅ Transaction completed successfully");
+      return true;
+    });
+
+    console.log("========================================\n");
+    return result;
+  } catch (error: any) {
+    console.error("❌ Error approving withdrawal request:", error);
+    throw error;
+  }
+};
+
+/**
+ * Reject wallet withdrawal request
+ * SECURITY: Only updates request status, does NOT modify balance
+ * @param requestId - Request document ID
+ * @param adminUser - Admin processing the request
+ * @param reason - Optional rejection reason
+ * @returns Promise with success boolean
+ */
+export const rejectWalletWithdrawalRequest = async (
+  requestId: string,
+  adminUser: { uid: string; email: string; name: string },
+  reason?: string
+): Promise<boolean> => {
+  try {
+    console.log("\n❌ ========================================");
+    console.log("📝 REJECTING WALLET WITHDRAWAL REQUEST");
+    console.log("========================================");
+    console.log("📋 Request ID:", requestId);
+    console.log("👤 Admin:", adminUser.email);
+    if (reason) console.log("📝 Reason:", reason);
+
+    const requestRef = doc(db, "companies-wallets-withdrawals", requestId);
+    const requestSnap = await getDoc(requestRef);
+
+    if (!requestSnap.exists()) {
+      throw new Error("Request not found");
+    }
+
+    const requestData = requestSnap.data();
+
+    if (requestData.status !== "pending") {
+      throw new Error(`Request already ${requestData.status}`);
+    }
+
+    await updateDoc(requestRef, {
+      status: "rejected",
+      processedAt: serverTimestamp(),
+      processedBy: adminUser,
+      rejectionReason: reason || "لم يتم تحديد سبب",
+    });
+
+    console.log("✅ Withdrawal request rejected successfully");
+    console.log("========================================\n");
+    return true;
+  } catch (error: any) {
+    console.error("❌ Error rejecting withdrawal request:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all withdrawal requests for admin dashboard
+ * @returns Promise with all withdrawal requests data
+ */
+export const fetchAllAdminWithdrawalRequests = async () => {
+  try {
+    console.log(
+      "\n🔄 Fetching admin withdrawal requests from companies-wallets-withdrawals..."
+    );
+
+    const requestsRef = collection(db, "companies-wallets-withdrawals");
+    const querySnapshot = await getDocs(requestsRef);
+
+    const allRequestsData: any[] = [];
+
+    const formatDate = (timestamp: any): string => {
+      if (!timestamp) return "-";
+      try {
+        if (timestamp.toDate && typeof timestamp.toDate === "function") {
+          return new Date(timestamp.toDate()).toLocaleString("ar-EG", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        }
+        if (timestamp instanceof Date) {
+          return timestamp.toLocaleString("ar-EG", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        }
+        return new Date(timestamp).toLocaleString("ar-EG", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      } catch (error) {
+        return String(timestamp);
+      }
+    };
+
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+
+      // Get date from multiple possible fields
+      const dateToUse = data.createdDate || data.actionDate || data.requestDate;
+
+      // Get status from correct location (support both old and new structures)
+      const status = data.status || data.requestedUser?.status || "pending";
+
+      // Get responsible person
+      const responsible =
+        data.processedBy?.name || data.actionUser?.name || "-";
+
+      allRequestsData.push({
+        id: doc.id,
+        requestNumber: data.refid || doc.id,
+        clientName: data.requestedUser?.name || "-",
+        oldBalance: data.requestedUser?.balance || "-",
+        withdrawalAmount: data.withdrawalAmount || "-",
+        companyIban: data.companyIban || "-",
+        bankName: data.bankName || "-",
+        ibanImage: data.ibanImageUrl || "-",
+        requestDate: formatDate(dateToUse),
+        status: status,
+        responsible: responsible,
+        rawDate: dateToUse,
+      });
+    });
+
+    // Sort by date descending (newest first)
+    allRequestsData.sort((a, b) => {
+      const dateA = a.rawDate?.toDate
+        ? a.rawDate.toDate()
+        : new Date(a.rawDate || 0);
+      const dateB = b.rawDate?.toDate
+        ? b.rawDate.toDate()
+        : new Date(b.rawDate || 0);
+      return dateB.getTime() - dateA.getTime();
+    });
+
+    console.log(
+      `✅ Total admin withdrawal requests found: ${allRequestsData.length}`
+    );
+    return allRequestsData;
+  } catch (error) {
+    console.error("❌ Error fetching admin withdrawal requests:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch user's own withdrawal requests
+ * @returns Promise with user's withdrawal requests
+ */
+export const fetchUserWithdrawalRequests = async () => {
+  try {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      throw new Error("User not authenticated");
+    }
+
+    console.log("\n🔄 Fetching user withdrawal requests...");
+    console.log("👤 Current User UID:", currentUser.uid);
+
+    // Get current company to also search by companyId
+    const company = await fetchCurrentCompany();
+
+    const requestsRef = collection(db, "companies-wallets-withdrawals");
+
+    // Try multiple query strategies for maximum compatibility
+    let userRequests: any[] = [];
+
+    // Strategy 1: Query by requestedUser.uid
+    const qByUid = query(
+      requestsRef,
+      where("requestedUser.uid", "==", currentUser.uid)
+    );
+    const snapshotByUid = await getDocs(qByUid);
+
+    snapshotByUid.forEach((doc) => {
+      const data = doc.data();
+      userRequests.push({
+        id: doc.id,
+        ...data,
+      });
+    });
+
+    // Strategy 2: If company exists and no results, try by companyId
+    if (userRequests.length === 0 && company) {
+      console.log("🔍 No results by UID, trying by companyId:", company.id);
+      const qByCompanyId = query(
+        requestsRef,
+        where("companyId", "==", company.id)
+      );
+      const snapshotByCompanyId = await getDocs(qByCompanyId);
+
+      snapshotByCompanyId.forEach((doc) => {
+        const data = doc.data();
+        userRequests.push({
+          id: doc.id,
+          ...data,
+        });
+      });
+    }
+
+    // Sort by date descending
+    userRequests.sort((a, b) => {
+      const dateA = a.createdDate?.toDate
+        ? a.createdDate.toDate()
+        : new Date(a.createdDate || 0);
+      const dateB = b.createdDate?.toDate
+        ? b.createdDate.toDate()
+        : new Date(b.createdDate || 0);
+      return dateB.getTime() - dateA.getTime();
+    });
+
+    console.log(`✅ Found ${userRequests.length} withdrawal requests for user`);
+    return userRequests;
+  } catch (error) {
+    console.error("❌ Error fetching user withdrawal requests:", error);
     throw error;
   }
 };
