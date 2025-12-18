@@ -14580,6 +14580,140 @@ export const generateAllServiceDistributerMonthlyInvoices = async (): Promise<st
 };
 
 /**
+ * Generate commission invoices for all existing orders grouped by month
+ * @returns Promise with array of created invoice IDs
+ */
+export const generateAllServiceDistributerCommissionInvoices = async (): Promise<string[]> => {
+  try {
+    // Wait for auth state
+    const currentUser = await waitForAuthState();
+    if (!currentUser || !currentUser.email) {
+      throw new Error("No authenticated user found");
+    }
+
+    const serviceDistributerEmail = currentUser.email;
+
+    // Fetch all orders from stationscompany-orders
+    const ordersRef = collection(db, "stationscompany-orders");
+    const q = query(ordersRef, orderBy("orderDate", "desc"));
+    const querySnapshot = await getDocs(q);
+
+    const allOrders: any[] = [];
+    querySnapshot.forEach((doc) => {
+      allOrders.push({
+        id: doc.id,
+        ...doc.data(),
+      });
+    });
+
+    // Filter orders by current user's stations
+    const userOrders = allOrders.filter((order) => {
+      const carStationCreatedUserId = order.carStation?.createdUserId;
+      return (
+        carStationCreatedUserId &&
+        carStationCreatedUserId.toLowerCase() === serviceDistributerEmail.toLowerCase()
+      );
+    });
+
+    if (userOrders.length === 0) {
+      console.log(`No orders found for service distributer ${serviceDistributerEmail}`);
+      return [];
+    }
+
+    // Group orders by month
+    const ordersByMonth = new Map<string, any[]>();
+    
+    userOrders.forEach((order) => {
+      const orderDate = order.orderDate?.toDate
+        ? order.orderDate.toDate()
+        : order.createdDate?.toDate
+        ? order.createdDate.toDate()
+        : new Date(order.orderDate || order.createdDate || 0);
+      
+      const monthKey = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, "0")}`;
+      
+      if (!ordersByMonth.has(monthKey)) {
+        ordersByMonth.set(monthKey, []);
+      }
+      ordersByMonth.get(monthKey)!.push(order);
+    });
+
+    // Fetch existing commission invoices
+    const { fetchInvoices } = await import("./invoiceService");
+    const existingInvoices = await fetchInvoices({
+      type: "Service Distributer Commission Invoice",
+      serviceDistributerEmail: serviceDistributerEmail,
+    });
+
+    // Create a set of existing month keys
+    const existingMonthKeys = new Set<string>();
+    existingInvoices.forEach((inv) => {
+      if (inv.monthName) {
+        // Extract year-month from monthName (e.g., "January 2025" -> "2025-01")
+        const monthNames = [
+          "January", "February", "March", "April", "May", "June",
+          "July", "August", "September", "October", "November", "December"
+        ];
+        const parts = inv.monthName.split(" ");
+        if (parts.length === 2) {
+          const monthName = parts[0];
+          const year = parts[1];
+          const monthIndex = monthNames.indexOf(monthName);
+          if (monthIndex !== -1) {
+            const monthKey = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+            existingMonthKeys.add(monthKey);
+          }
+        }
+      }
+    });
+
+    // Generate invoices for months that don't have invoices yet
+    const createdInvoiceIds: string[] = [];
+    const { generateServiceDistributerCommissionInvoice, getMonthName } = await import("./invoiceService");
+
+    const serviceDistributerData = {
+      email: serviceDistributerEmail,
+      uid: currentUser.uid,
+    };
+
+    for (const [monthKey, orders] of ordersByMonth.entries()) {
+      // Skip if invoice already exists for this month
+      if (existingMonthKeys.has(monthKey)) {
+        console.log(`Commission invoice already exists for month ${monthKey}, skipping...`);
+        continue;
+      }
+
+      // Parse month key to create Date object
+      const [year, month] = monthKey.split("-");
+      const monthDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+
+      try {
+        const invoice = await generateServiceDistributerCommissionInvoice(
+          serviceDistributerEmail,
+          monthDate,
+          orders,
+          serviceDistributerData
+        );
+        createdInvoiceIds.push(invoice.id);
+        console.log(`✅ Created commission invoice for ${getMonthName(monthDate)}`);
+      } catch (error: any) {
+        // If error is "No commission items to invoice", skip silently
+        if (error.message && error.message.includes("No commission items")) {
+          console.log(`⚠️ No commission items for ${monthKey}, skipping...`);
+          continue;
+        }
+        console.error(`Error creating commission invoice for ${monthKey}:`, error);
+      }
+    }
+
+    return createdInvoiceIds;
+  } catch (error) {
+    console.error("Error generating all service distributer commission invoices:", error);
+    throw error;
+  }
+};
+
+/**
  * Process monthly sales invoice for current service distributer
  * @param targetMonth - Target month date (defaults to previous month)
  * @returns Promise with created invoice ID or null if already exists

@@ -702,6 +702,265 @@ export const generateServiceDistributerMonthlyInvoice = async (
 };
 
 /**
+ * Generate monthly commission invoice for a service distributer
+ * @param serviceDistributerEmail - Service distributer email
+ * @param month - Target month date
+ * @param orders - Array of orders for the month from stationscompany-orders
+ * @param serviceDistributerData - Service distributer data
+ * @returns Promise with the created invoice
+ */
+export const generateServiceDistributerCommissionInvoice = async (
+  serviceDistributerEmail: string,
+  month: Date,
+  orders: any[],
+  serviceDistributerData: any
+): Promise<Invoice> => {
+  try {
+    const monthName = getMonthName(month);
+    const lastDayOfMonth = getLastDayOfMonth(month);
+    
+    // Check for duplicate invoice before creating
+    const existingInvoices = await fetchInvoices({
+      type: "Service Distributer Commission Invoice",
+    });
+    
+    // Check if invoice already exists for this month
+    const invoiceYear = month.getFullYear();
+    const monthIndex = month.getMonth();
+    
+    const duplicateInvoice = existingInvoices.find((inv) => {
+      if (inv.monthName !== monthName) return false;
+      
+      const invDate = inv.createdAt instanceof Date
+        ? inv.createdAt
+        : inv.createdAt?.toDate
+        ? inv.createdAt.toDate()
+        : new Date(inv.createdAt || 0);
+      
+      const invYear = invDate.getFullYear();
+      const invMonth = invDate.getMonth();
+      
+      if (invYear !== invoiceYear || invMonth !== monthIndex) return false;
+      
+      const invServiceDistributerEmail = 
+        inv.serviceDistributerData?.email ||
+        inv.serviceDistributerData?.uid;
+      
+      return invServiceDistributerEmail === serviceDistributerEmail;
+    });
+    
+    if (duplicateInvoice) {
+      console.log(
+        `⚠️ Commission invoice already exists for service distributer ${serviceDistributerEmail} for ${monthName}. Returning existing invoice.`
+      );
+      return duplicateInvoice;
+    }
+
+    // Import commission settings helper
+    const { fetchCommissionSettings } = await import("./firestore");
+    let commissionSettings;
+    try {
+      commissionSettings = await fetchCommissionSettings();
+    } catch (error) {
+      console.warn("⚠️ Could not fetch commission settings, using defaults:", error);
+      commissionSettings = { petrol: 0, diesel: 0 };
+    }
+
+    // Helper function to determine if fuel type is diesel
+    const isDiesel = (fuelType: string): boolean => {
+      const normalized = fuelType.toLowerCase().trim();
+      return normalized.includes("ديزل") || normalized.includes("ديزيل") || normalized.includes("diesel");
+    };
+
+    // Helper function to normalize fuel type to standard categories
+    const normalizeFuelType = (fuelType: string): string => {
+      const normalized = fuelType.toLowerCase().trim();
+      if (normalized.includes("ديزل") || normalized.includes("ديزيل") || normalized.includes("diesel")) {
+        return "ديزل";
+      } else if (normalized.includes("95")) {
+        return "بنزين 95";
+      } else if (normalized.includes("91")) {
+        return "بنزين 91";
+      }
+      // Default to petrol if can't determine
+      return "بنزين 91";
+    };
+
+    // Helper function to extract fuel type from order
+    const extractFuelType = (order: any): string => {
+      if (order.selectedOption?.name?.ar) {
+        return order.selectedOption.name.ar;
+      }
+      if (order.selectedOption?.name?.en) {
+        return order.selectedOption.name.en;
+      }
+      if (order.selectedOption?.title?.ar) {
+        return order.selectedOption.title.ar;
+      }
+      if (order.selectedOption?.title?.en) {
+        return order.selectedOption.title.en;
+      }
+      if (order.service?.title?.ar) {
+        return order.service.title.ar;
+      }
+      if (order.service?.title?.en) {
+        return order.service.title.en;
+      }
+      return "غير محدد";
+    };
+
+    // Group orders by normalized fuel type and calculate commission
+    const fuelTypeMap = new Map<string, {
+      quantity: number;
+      totalCommission: number;
+      commissionRate: number;
+      productName: string;
+    }>();
+
+    orders.forEach((order) => {
+      const fuelType = extractFuelType(order);
+      const normalizedType = normalizeFuelType(fuelType);
+      const liters = parseFloat(order.totalLitre || 0);
+      
+      if (isNaN(liters) || liters <= 0) return;
+
+      // Get commission rate from order (stored at time of order) or use current settings
+      const storedCommissionRate = order.commissionRateUsed;
+      const commissionRate = storedCommissionRate !== undefined && storedCommissionRate !== null
+        ? storedCommissionRate
+        : isDiesel(fuelType)
+        ? commissionSettings.diesel
+        : commissionSettings.petrol;
+
+      const commission = liters * commissionRate;
+
+      if (fuelTypeMap.has(normalizedType)) {
+        const existing = fuelTypeMap.get(normalizedType)!;
+        existing.quantity += liters;
+        existing.totalCommission += commission;
+        // Use weighted average for commission rate if different rates were used
+        const totalLiters = existing.quantity;
+        existing.commissionRate = existing.totalCommission / totalLiters;
+      } else {
+        const productName = `خدمة تسويق ${normalizedType}`;
+        fuelTypeMap.set(normalizedType, {
+          quantity: liters,
+          totalCommission: commission,
+          commissionRate: commissionRate,
+          productName: productName,
+        });
+      }
+    });
+
+    // Convert to invoice items
+    const items: InvoiceItem[] = Array.from(fuelTypeMap.values()).map((item) => {
+      const amountBeforeTax = item.totalCommission;
+      const vat = calculateVAT(amountBeforeTax);
+      const total = amountBeforeTax + vat;
+
+      return {
+        product: item.productName,
+        quantity: Number(item.quantity.toFixed(2)),
+        pricePerUnit: Number(item.commissionRate.toFixed(4)), // Commission rate per liter
+        amountBeforeTax: Number(amountBeforeTax.toFixed(2)),
+        vat: Number(vat.toFixed(2)),
+        total: Number(total.toFixed(2)),
+      };
+    });
+
+    // If no items, return null (no commission to invoice)
+    if (items.length === 0) {
+      console.log(`No commission items found for service distributer ${serviceDistributerEmail} for ${monthName}`);
+      throw new Error("No commission items to invoice");
+    }
+
+    // Calculate totals
+    const subtotal = items.reduce((sum, item) => sum + item.amountBeforeTax, 0);
+    const vatAmount = items.reduce((sum, item) => sum + item.vat, 0);
+    const total = items.reduce((sum, item) => sum + item.total, 0);
+
+    // Generate invoice number in format COM-YYYY-XXX
+    const year = month.getFullYear();
+    const invoiceNumberBase = `COM-${year}-`;
+    
+    // Find the next available number for this year
+    let invoiceNumber = "";
+    let attempt = 1;
+    const maxAttempts = 1000;
+    
+    while (attempt <= maxAttempts) {
+      const candidateNumber = `${invoiceNumberBase}${String(attempt).padStart(3, "0")}`;
+      
+      // Check if this invoice number already exists
+      const checkQuery = query(
+        collection(db, "invoices"),
+        where("invoiceNumber", "==", candidateNumber)
+      );
+      const checkSnapshot = await getDocs(checkQuery);
+      
+      if (checkSnapshot.empty) {
+        invoiceNumber = candidateNumber;
+        break;
+      }
+      
+      attempt++;
+    }
+    
+    if (!invoiceNumber) {
+      // Fallback to timestamp-based number
+      const timestamp = Date.now();
+      invoiceNumber = `COM-${year}-${timestamp.toString().slice(-3)}`;
+    }
+
+    // Clean service distributer data
+    const cleanServiceDistributerData = Object.fromEntries(
+      Object.entries(serviceDistributerData || {}).filter(([_, v]) => v !== undefined)
+    );
+
+    // Clean orders
+    const cleanOrders = orders.map((o) => {
+      const orderId = o.id || o.docId;
+      return Object.fromEntries(
+        Object.entries({ ...o, id: orderId }).filter(
+          ([_, v]) => v !== undefined
+        )
+      );
+    });
+
+    const invoice: Omit<Invoice, "id"> = {
+      invoiceNumber,
+      type: "Service Distributer Commission Invoice",
+      createdAt: Timestamp.fromDate(lastDayOfMonth),
+      serviceDistributerData: cleanServiceDistributerData,
+      monthName,
+      orders: cleanOrders,
+      items,
+      subtotal: Number(subtotal.toFixed(2)),
+      vatAmount: Number(vatAmount.toFixed(2)),
+      total: Number(total.toFixed(2)),
+    };
+
+    // Remove any undefined values
+    const cleanInvoice = Object.fromEntries(
+      Object.entries(invoice).filter(([_, v]) => v !== undefined)
+    ) as Omit<Invoice, "id">;
+
+    const invoicesRef = collection(db, "invoices");
+    const docRef = await addDoc(invoicesRef, cleanInvoice);
+
+    console.log(`✅ Created commission invoice ${invoiceNumber} for ${monthName}`);
+
+    return {
+      id: docRef.id,
+      ...cleanInvoice,
+    };
+  } catch (error) {
+    console.error("Error generating service distributer commission invoice:", error);
+    throw error;
+  }
+};
+
+/**
  * Create invoice in Firestore
  * @param invoiceData - Invoice data to save
  * @returns Promise with the created invoice document ID

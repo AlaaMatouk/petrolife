@@ -12,7 +12,7 @@ export interface InvoiceItem {
 export interface Invoice {
   id: string;
   invoiceNumber: string;
-  type: "Client" | "Company Monthly Invoice" | "Subscription" | "Service Distributer Monthly Invoice";
+  type: "Client" | "Company Monthly Invoice" | "Subscription" | "Service Distributer Monthly Invoice" | "Service Distributer Commission Invoice";
   createdAt: Date | Timestamp;
   // For clients
   clientData?: any;

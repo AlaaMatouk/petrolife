@@ -40,6 +40,9 @@ export const ROUTES = {
   
   // Fuel Invoice
   FUEL_INVOICE_DETAIL: "/fuel-invoice/:id",
+  
+  // Commission Invoice
+  COMMISSION_INVOICE_DETAIL: "/commission-invoice/:id",
 
   // Settings
   SETTINGS: "/settings",

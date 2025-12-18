@@ -24,7 +24,7 @@ import { RTLSelect } from "../../components/shared/Form/RTLSelect";
 import { FuelTypeIcon } from "../../components/shared/FuelTypeIcon/FuelTypeIcon";
 import { Table } from "../../components/shared/Table/Table";
 import { Pagination } from "../../components/shared/Pagination/Pagination";
-import { fetchOperationsData, processServiceDistributerMonthlyInvoice, generateAllServiceDistributerMonthlyInvoices, waitForAuthState } from "../../services/firestore";
+import { fetchOperationsData, processServiceDistributerMonthlyInvoice, generateAllServiceDistributerMonthlyInvoices, generateAllServiceDistributerCommissionInvoices, waitForAuthState } from "../../services/firestore";
 import { LoadingSpinner } from "../../components/shared/Spinner/LoadingSpinner";
 import { OrderDetailsModal } from "./components/OrderDetailsModal";
 import { fetchInvoices, convertMonthNameToArabic } from "../../services/invoiceService";
@@ -209,6 +209,8 @@ function ServiceDistributerFinancialReports() {
   const [isLoadingOperations, setIsLoadingOperations] = useState(true);
   const [salesInvoices, setSalesInvoices] = useState<SalesInvoice[]>([]);
   const [isLoadingSalesInvoices, setIsLoadingSalesInvoices] = useState(false);
+  const [purchaseInvoices, setPurchaseInvoices] = useState<PurchaseInvoice[]>([]);
+  const [isLoadingPurchaseInvoices, setIsLoadingPurchaseInvoices] = useState(false);
   const [stationOptions, setStationOptions] = useState<Array<{ value: string; label: string }>>([
     { value: "all", label: "جميع المحطات" },
   ]);
@@ -218,7 +220,7 @@ function ServiceDistributerFinancialReports() {
 
   const itemsPerPage = 8;
   const totalSalesInvoices = salesInvoices.length;
-  const totalPurchaseInvoices = mockPurchaseInvoices.length;
+  const totalPurchaseInvoices = purchaseInvoices.length;
   const totalPayments = mockPayments.length;
 
   // Fetch operations data on component mount
@@ -333,6 +335,82 @@ function ServiceDistributerFinancialReports() {
     loadSalesInvoices();
   }, [activeTab, addToast]);
 
+  // Fetch purchase invoices (commission invoices) on component mount and when tab changes
+  useEffect(() => {
+    const loadPurchaseInvoices = async () => {
+      if (activeTab !== "purchase-invoices") return;
+      
+      try {
+        setIsLoadingPurchaseInvoices(true);
+        const currentUser = await waitForAuthState();
+        if (!currentUser || !currentUser.email) {
+          setPurchaseInvoices([]);
+          return;
+        }
+
+        // Automatically generate invoices for any missing months
+        try {
+          await generateAllServiceDistributerCommissionInvoices();
+        } catch (error) {
+          console.error("Error auto-generating commission invoices:", error);
+          // Don't show error to user, just log it - invoices will be loaded anyway
+        }
+
+        // Then fetch all commission invoices
+        const invoices = await fetchInvoices({
+          type: "Service Distributer Commission Invoice",
+          serviceDistributerEmail: currentUser.email,
+        });
+
+        // Transform invoices to PurchaseInvoice format
+        const transformedInvoices: PurchaseInvoice[] = invoices.map((invoice: Invoice) => ({
+          id: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          invoicePeriod: invoice.monthName 
+            ? convertMonthNameToArabic(invoice.monthName) 
+            : "غير محدد",
+          commissionValue: invoice.subtotal, // Commission value is the subtotal (before VAT)
+          status: "under_review" as const, // Default status, can be updated later
+        }));
+
+        // Sort by date (newest first) - using createdAt date
+        transformedInvoices.sort((a, b) => {
+          const invoiceA = invoices.find(inv => inv.id === a.id);
+          const invoiceB = invoices.find(inv => inv.id === b.id);
+          
+          const dateA = invoiceA?.createdAt instanceof Date 
+            ? invoiceA.createdAt 
+            : invoiceA?.createdAt?.toDate 
+            ? invoiceA.createdAt.toDate() 
+            : new Date(invoiceA?.createdAt || 0);
+          
+          const dateB = invoiceB?.createdAt instanceof Date 
+            ? invoiceB.createdAt 
+            : invoiceB?.createdAt?.toDate 
+            ? invoiceB.createdAt.toDate() 
+            : new Date(invoiceB?.createdAt || 0);
+          
+          // Sort descending (newest first)
+          return dateB.getTime() - dateA.getTime();
+        });
+
+        setPurchaseInvoices(transformedInvoices);
+      } catch (error) {
+        console.error("Error loading purchase invoices:", error);
+        addToast({
+          title: "خطأ",
+          message: "فشل في تحميل فواتير الشراء",
+          type: "error",
+        });
+        setPurchaseInvoices([]);
+      } finally {
+        setIsLoadingPurchaseInvoices(false);
+      }
+    };
+
+    loadPurchaseInvoices();
+  }, [activeTab, addToast]);
+
   const tabs = [
     { id: "operations", label: "العمليات" },
     { id: "sales-invoices", label: "فواتير البيع" },
@@ -388,8 +466,8 @@ function ServiceDistributerFinancialReports() {
   // Paginate purchase invoices
   const paginatedPurchaseInvoices = useMemo(() => {
     const startIndex = (purchaseInvoicePage - 1) * itemsPerPage;
-    return mockPurchaseInvoices.slice(startIndex, startIndex + itemsPerPage);
-  }, [purchaseInvoicePage]);
+    return purchaseInvoices.slice(startIndex, startIndex + itemsPerPage);
+  }, [purchaseInvoices, purchaseInvoicePage]);
 
   const totalPurchaseInvoicePages = Math.ceil(totalPurchaseInvoices / itemsPerPage);
 
@@ -425,6 +503,10 @@ function ServiceDistributerFinancialReports() {
 
   const handleViewReport = (invoiceId: string) => {
     navigate(`${ROUTES.FUEL_INVOICE_DETAIL.replace(":id", invoiceId)}`);
+  };
+
+  const handleViewCommissionInvoice = (invoiceId: string) => {
+    navigate(`${ROUTES.COMMISSION_INVOICE_DETAIL.replace(":id", invoiceId)}`);
   };
 
   const handleViewAttachment = (invoiceId: string) => {
@@ -664,18 +746,18 @@ function ServiceDistributerFinancialReports() {
   // Purchase Invoice table columns
   const purchaseInvoiceColumns = [
     {
-      key: "download",
-      label: "تحميل الفاتورة",
+      key: "viewInvoice",
+      label: "عرض الفاتورة",
       width: "w-48 min-w-[180px]",
       render: (_: any, row: PurchaseInvoice) => (
         <div className="flex items-center justify-center">
           <button
-            onClick={() => handleDownloadInvoice(row.id)}
+            onClick={() => handleViewCommissionInvoice(row.id)}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-900 hover:bg-blue-950 text-white text-sm font-medium transition-colors"
-            aria-label="تحميل الفاتورة"
+            aria-label="عرض الفاتورة"
           >
-            <Download className="w-4 h-4" />
-            <span>تحميل الفاتورة</span>
+            <Eye className="w-4 h-4" />
+            <span>عرض الفاتورة</span>
           </button>
         </div>
       ),
@@ -1094,12 +1176,18 @@ function ServiceDistributerFinancialReports() {
               />
             )
           ) : activeTab === "purchase-invoices" ? (
-            <Table
-              columns={purchaseInvoiceColumns}
-              data={paginatedPurchaseInvoices}
-              loading={false}
-              emptyMessage="لا توجد فواتير شراء"
-            />
+            isLoadingPurchaseInvoices ? (
+              <div className="flex items-center justify-center p-8">
+                <LoadingSpinner message="جاري تحميل فواتير الشراء..." />
+              </div>
+            ) : (
+              <Table
+                columns={purchaseInvoiceColumns}
+                data={paginatedPurchaseInvoices}
+                loading={false}
+                emptyMessage="لا توجد فواتير شراء"
+              />
+            )
           ) : activeTab === "payments" ? (
             <Table
               columns={paymentColumns}
