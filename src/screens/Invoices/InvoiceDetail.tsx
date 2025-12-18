@@ -5,6 +5,7 @@ import { fetchInvoiceById } from "../../services/invoiceService";
 import { Invoice } from "../../types/invoice";
 import { LoadingSpinner } from "../../components/shared";
 import { useToast } from "../../context/ToastContext";
+import { generateZatcaQrFromInvoice } from "../../utils/zatcaQr";
 
 export const InvoiceDetail = (): JSX.Element => {
   const { id } = useParams<{ id: string }>();
@@ -12,6 +13,7 @@ export const InvoiceDetail = (): JSX.Element => {
   const { addToast } = useToast();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [qrCodeBase64, setQrCodeBase64] = useState<string | null>(null);
 
   useEffect(() => {
     const loadInvoice = async () => {
@@ -48,6 +50,17 @@ export const InvoiceDetail = (): JSX.Element => {
 
     loadInvoice();
   }, [id, navigate, addToast]);
+
+  // Generate QR code when invoice is loaded
+  useEffect(() => {
+    const generateQrCode = async () => {
+      if (invoice) {
+        const qrCode = await generateZatcaQrFromInvoice(invoice, invoice.createdAt);
+        setQrCodeBase64(qrCode);
+      }
+    };
+    generateQrCode();
+  }, [invoice]);
 
   if (isLoading) {
     return (
@@ -304,7 +317,15 @@ export const InvoiceDetail = (): JSX.Element => {
               رمز الاستجابة السريعة
             </h3>
             <div className="w-32 h-32 bg-gray-100 border border-color-mode-text-icons-t-placeholder rounded-[var(--corner-radius-small)] flex items-center justify-center">
-              <div className="text-center text-xs text-gray-400">QR Code</div>
+              {qrCodeBase64 ? (
+                <img 
+                  src={qrCodeBase64} 
+                  alt="ZATCA QR Code" 
+                  className="w-full h-full object-contain p-2"
+                />
+              ) : (
+                <div className="text-center text-xs text-gray-400">QR Code</div>
+              )}
             </div>
             <span className="font-[number:var(--caption-caption-1-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--caption-caption-1-font-size)] tracking-[var(--caption-caption-1-letter-spacing)] leading-[var(--caption-caption-1-line-height)] [direction:rtl] font-caption-caption-1 text-center [font-style:var(--caption-caption-1-font-style)]">
               متوافق مع الزكاة والضريبية

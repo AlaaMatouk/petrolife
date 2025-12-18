@@ -6,6 +6,7 @@ import { Invoice } from "../../types/invoice";
 import { LoadingSpinner } from "../../components/shared";
 import { useToast } from "../../context/ToastContext";
 import { fetchCurrentStationsCompany } from "../../services/firestore";
+import { generateZatcaQrFromInvoice } from "../../utils/zatcaQr";
 
 export const FuelInvoiceDetail = (): JSX.Element => {
   const { id } = useParams<{ id: string }>();
@@ -14,6 +15,7 @@ export const FuelInvoiceDetail = (): JSX.Element => {
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [serviceDistributer, setServiceDistributer] = useState<any | null>(null);
+  const [qrCodeBase64, setQrCodeBase64] = useState<string | null>(null);
 
   useEffect(() => {
     const loadInvoice = async () => {
@@ -55,6 +57,17 @@ export const FuelInvoiceDetail = (): JSX.Element => {
 
     loadInvoice();
   }, [id, navigate, addToast]);
+
+  // Generate QR code when invoice is loaded
+  useEffect(() => {
+    const generateQrCode = async () => {
+      if (invoice) {
+        const qrCode = await generateZatcaQrFromInvoice(invoice, invoice.createdAt);
+        setQrCodeBase64(qrCode);
+      }
+    };
+    generateQrCode();
+  }, [invoice]);
 
   if (isLoading) {
     return (
@@ -356,15 +369,23 @@ export const FuelInvoiceDetail = (): JSX.Element => {
         {/* Financial Summary */}
         <div className="flex items-start justify-between gap-8 relative self-stretch w-full pt-6 border-t border-color-mode-text-icons-t-placeholder">
           <div className="flex flex-col items-start gap-3 flex-shrink-0">
-            {/* QR Code Placeholder */}
+            {/* QR Code */}
             <div className="flex flex-col items-center gap-2">
               <h3 className="relative w-fit font-[number:var(--headline-h7-font-weight)] text-[#2C346C] text-[length:var(--headline-h7-font-size)] tracking-[var(--headline-h7-letter-spacing)] leading-[var(--headline-h7-line-height)] [direction:rtl] font-headline-h7 [font-style:var(--headline-h7-font-style)]">
                 رمز الاستجابة السريعة
               </h3>
               <div className="w-32 h-32 bg-color-mode-surface-secondary-gray border border-color-mode-text-icons-t-placeholder rounded-[var(--corner-radius-small)] flex items-center justify-center">
-                <span className="text-color-mode-text-icons-t-placeholder text-xs">
-                  QR Code
-                </span>
+                {qrCodeBase64 ? (
+                  <img 
+                    src={qrCodeBase64} 
+                    alt="ZATCA QR Code" 
+                    className="w-full h-full object-contain p-2"
+                  />
+                ) : (
+                  <span className="text-color-mode-text-icons-t-placeholder text-xs">
+                    QR Code
+                  </span>
+                )}
               </div>
             </div>
           </div>

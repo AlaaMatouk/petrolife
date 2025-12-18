@@ -681,26 +681,6 @@ function ServiceDistributerFinancialReports() {
       ),
     },
     {
-      key: "status",
-      label: "حالة الفاتورة",
-      width: "w-40 min-w-[160px]",
-      render: (_: any, row: PurchaseInvoice) => (
-        <div className="flex items-center justify-center">
-          {row.status === "paid" ? (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-50 border border-green-200">
-              <CheckCircle className="w-4 h-4 text-green-600" />
-              <span className="text-green-700 text-sm font-medium">مدفوعة</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200">
-              <Clock className="w-4 h-4 text-blue-600" />
-              <span className="text-blue-700 text-sm font-medium">قيد المراجعة</span>
-            </div>
-          )}
-        </div>
-      ),
-    },
-    {
       key: "commissionValue",
       label: "قيمة العمولات",
       width: "flex-1 grow min-w-[180px]",
