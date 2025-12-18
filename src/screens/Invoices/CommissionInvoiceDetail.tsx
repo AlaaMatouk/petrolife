@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Printer, ArrowLeft, Phone, Mail, User } from "lucide-react";
 import { fetchInvoiceById } from "../../services/invoiceService";
 import { Invoice } from "../../types/invoice";
@@ -8,10 +8,12 @@ import { useToast } from "../../context/ToastContext";
 import { fetchCurrentStationsCompany } from "../../services/firestore";
 import { generateZatcaQrFromInvoice } from "../../utils/zatcaQr";
 import { convertMonthNameToArabic } from "../../services/invoiceService";
+import { ROUTES } from "../../constants/routes";
 
 export const CommissionInvoiceDetail = (): JSX.Element => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { addToast } = useToast();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -38,7 +40,12 @@ export const CommissionInvoiceDetail = (): JSX.Element => {
             message: "الفاتورة غير موجودة",
             type: "error",
           });
-          navigate(-1);
+          const tab = searchParams.get("tab");
+          if (tab) {
+            navigate(`${ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS}?tab=${tab}`);
+          } else {
+            navigate(ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS);
+          }
           return;
         }
         setInvoice(fetchedInvoice);
@@ -50,7 +57,12 @@ export const CommissionInvoiceDetail = (): JSX.Element => {
           message: "فشل في تحميل الفاتورة",
           type: "error",
         });
-        navigate(-1);
+        const tab = searchParams.get("tab");
+        if (tab) {
+          navigate(`${ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS}?tab=${tab}`);
+        } else {
+          navigate(ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS);
+        }
       } finally {
         setIsLoading(false);
       }

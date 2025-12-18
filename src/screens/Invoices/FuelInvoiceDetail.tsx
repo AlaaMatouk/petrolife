@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Printer, ArrowLeft, Phone, Mail, User } from "lucide-react";
 import { fetchInvoiceById } from "../../services/invoiceService";
 import { Invoice } from "../../types/invoice";
@@ -7,10 +7,12 @@ import { LoadingSpinner } from "../../components/shared";
 import { useToast } from "../../context/ToastContext";
 import { fetchCurrentStationsCompany } from "../../services/firestore";
 import { generateZatcaQrFromInvoice } from "../../utils/zatcaQr";
+import { ROUTES } from "../../constants/routes";
 
 export const FuelInvoiceDetail = (): JSX.Element => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { addToast } = useToast();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -37,7 +39,12 @@ export const FuelInvoiceDetail = (): JSX.Element => {
             message: "الفاتورة غير موجودة",
             type: "error",
           });
-          navigate(-1);
+          const tab = searchParams.get("tab");
+          if (tab) {
+            navigate(`${ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS}?tab=${tab}`);
+          } else {
+            navigate(ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS);
+          }
           return;
         }
         setInvoice(fetchedInvoice);
@@ -49,7 +56,12 @@ export const FuelInvoiceDetail = (): JSX.Element => {
           message: "فشل في تحميل الفاتورة",
           type: "error",
         });
-        navigate(-1);
+        const tab = searchParams.get("tab");
+        if (tab) {
+          navigate(`${ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS}?tab=${tab}`);
+        } else {
+          navigate(ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -160,7 +172,14 @@ export const FuelInvoiceDetail = (): JSX.Element => {
     <div className="flex flex-col w-full items-center justify-center gap-5 py-8">
       {/* Back Button */}
       <button
-        onClick={() => navigate(-1)}
+        onClick={() => {
+          const tab = searchParams.get("tab");
+          if (tab) {
+            navigate(`${ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS}?tab=${tab}`);
+          } else {
+            navigate(ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS);
+          }
+        }}
         className="self-start mr-auto mb-2 flex items-center gap-2 px-4 py-2 text-color-mode-text-icons-t-primary-gray hover:bg-color-mode-surface-secondary-gray rounded-[var(--corner-radius-small)] transition-colors print:hidden"
         title="العودة"
       >

@@ -29,7 +29,7 @@ import { LoadingSpinner } from "../../components/shared/Spinner/LoadingSpinner";
 import { OrderDetailsModal } from "./components/OrderDetailsModal";
 import { fetchInvoices, convertMonthNameToArabic } from "../../services/invoiceService";
 import { Invoice } from "../../types/invoice";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ROUTES } from "../../constants/routes";
 import { useToast } from "../../context/ToastContext";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -195,7 +195,11 @@ const mockPayments: Payment[] = [
 function ServiceDistributerFinancialReports() {
   const navigate = useNavigate();
   const { addToast } = useToast();
-  const [activeTab, setActiveTab] = useState("operations");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(() => {
+    // Get tab from URL params, default to "operations"
+    return searchParams.get("tab") || "operations";
+  });
   const [currentPage, setCurrentPage] = useState(1);
   const [salesInvoicePage, setSalesInvoicePage] = useState(1);
   const [purchaseInvoicePage, setPurchaseInvoicePage] = useState(1);
@@ -418,6 +422,13 @@ function ServiceDistributerFinancialReports() {
     { id: "payments", label: "الدفعات" },
   ];
 
+  // Update URL when tab changes
+  useEffect(() => {
+    if (activeTab) {
+      setSearchParams({ tab: activeTab });
+    }
+  }, [activeTab, setSearchParams]);
+
   // Filter operations
   const filteredOperations = useMemo(() => {
     let filtered = [...operations];
@@ -502,11 +513,11 @@ function ServiceDistributerFinancialReports() {
   };
 
   const handleViewReport = (invoiceId: string) => {
-    navigate(`${ROUTES.FUEL_INVOICE_DETAIL.replace(":id", invoiceId)}`);
+    navigate(`${ROUTES.FUEL_INVOICE_DETAIL.replace(":id", invoiceId)}?tab=${activeTab}`);
   };
 
   const handleViewCommissionInvoice = (invoiceId: string) => {
-    navigate(`${ROUTES.COMMISSION_INVOICE_DETAIL.replace(":id", invoiceId)}`);
+    navigate(`${ROUTES.COMMISSION_INVOICE_DETAIL.replace(":id", invoiceId)}?tab=${activeTab}`);
   };
 
   const handleViewAttachment = (invoiceId: string) => {
