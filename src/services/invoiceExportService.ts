@@ -1,11 +1,12 @@
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { Invoice } from "../types/invoice";
+import { generateZatcaQrFromInvoice } from "../utils/zatcaQr";
 
 /**
  * Generate HTML for fuel invoice (Client or Company Monthly Invoice)
  */
-const generateFuelInvoiceHTML = (invoice: Invoice): string => {
+const generateFuelInvoiceHTML = (invoice: Invoice, qrCodeBase64: string | null = null): string => {
   const invoiceDate =
     invoice.createdAt instanceof Date
       ? invoice.createdAt
@@ -221,11 +222,11 @@ const generateFuelInvoiceHTML = (invoice: Invoice): string => {
               <img src="/img/logo-3.png" alt="Logo 3" style="height: 80px;" />
             </div>
             <div style="color: #2C346C; font-weight: 600; margin-top: 8px;">
-              شركة إنجازات الحلول التقنية المعلومات
+              لجميع احتياجات سيارتك
             </div>
-            <div style="margin-top: 4px;">الرياض - طريق خريص 12245</div>
-            <div style="margin-top: 4px;">السجل التجاري: 105525211551</div>
-            <div style="margin-top: 4px;">الرقم الضريبي: 300000000000003</div>
+            <div style="margin-top: 4px;">الرياض-طريق خريص-14221</div>
+            <div style="margin-top: 4px;">رقم السجل التجاري: 1009204448</div>
+            <div style="margin-top: 4px;">الرقم الضريبي: 312894850300003</div>
           </div>
           <div class="invoice-details">
             <h1 style="font-size: 24px; font-weight: 600; margin-bottom: 12px;">فاتورة ضريبية</h1>
@@ -307,7 +308,11 @@ const generateFuelInvoiceHTML = (invoice: Invoice): string => {
             </div>
             <div class="qr-section">
               <h3 class="section-title">رمز الاستجابة السريعة</h3>
-              <div class="qr-box">QR Code</div>
+              <div class="qr-box">
+                ${qrCodeBase64 
+                  ? `<img src="${qrCodeBase64}" alt="ZATCA QR Code" style="width: 100%; height: 100%; object-fit: contain; padding: 8px;" />`
+                  : 'QR Code'}
+              </div>
             </div>
           </div>
         </div>
@@ -325,7 +330,7 @@ const generateFuelInvoiceHTML = (invoice: Invoice): string => {
 /**
  * Generate HTML for subscription invoice
  */
-const generateSubscriptionInvoiceHTML = (invoice: Invoice): string => {
+const generateSubscriptionInvoiceHTML = (invoice: Invoice, qrCodeBase64: string | null = null): string => {
   const invoiceDate =
     invoice.createdAt instanceof Date
       ? invoice.createdAt
@@ -575,7 +580,11 @@ const generateSubscriptionInvoiceHTML = (invoice: Invoice): string => {
             </div>
             <div class="qr-section">
               <h3 class="section-title">رمز الاستجابة السريعة</h3>
-              <div class="qr-box">QR Code</div>
+              <div class="qr-box">
+                ${qrCodeBase64 
+                  ? `<img src="${qrCodeBase64}" alt="ZATCA QR Code" style="width: 100%; height: 100%; object-fit: contain; padding: 8px;" />`
+                  : 'QR Code'}
+              </div>
               <div style="font-size: 12px; color: #6b7280; text-align: center; margin-top: 8px;">
                 متوافق مع الزكاة والضريبية
               </div>
@@ -613,10 +622,13 @@ export const exportInvoiceToPDF = async (invoice: Invoice): Promise<void> => {
       throw new Error("نوع الفاتورة غير مدعوم");
     }
 
+    // Generate QR code for the invoice
+    const qrCodeBase64 = await generateZatcaQrFromInvoice(invoice, invoice.createdAt);
+
     // Generate HTML based on invoice type
     const htmlContent = isSubscription
-      ? generateSubscriptionInvoiceHTML(invoice)
-      : generateFuelInvoiceHTML(invoice);
+      ? generateSubscriptionInvoiceHTML(invoice, qrCodeBase64)
+      : generateFuelInvoiceHTML(invoice, qrCodeBase64);
 
     // Create an iframe to render the HTML
     const iframe = document.createElement("iframe");

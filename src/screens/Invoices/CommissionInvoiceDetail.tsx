@@ -1,18 +1,23 @@
 import React, { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { Printer, ArrowLeft } from "lucide-react";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { Printer, ArrowLeft, Phone, Mail, User } from "lucide-react";
 import { fetchInvoiceById } from "../../services/invoiceService";
 import { Invoice } from "../../types/invoice";
 import { LoadingSpinner } from "../../components/shared";
 import { useToast } from "../../context/ToastContext";
+import { fetchCurrentStationsCompany } from "../../services/firestore";
 import { generateZatcaQrFromInvoice } from "../../utils/zatcaQr";
+import { convertMonthNameToArabic } from "../../services/invoiceService";
+import { ROUTES } from "../../constants/routes";
 
-export const InvoiceDetail = (): JSX.Element => {
+export const CommissionInvoiceDetail = (): JSX.Element => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { addToast } = useToast();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [serviceDistributer, setServiceDistributer] = useState<any | null>(null);
   const [qrCodeBase64, setQrCodeBase64] = useState<string | null>(null);
 
   useEffect(() => {
@@ -24,17 +29,27 @@ export const InvoiceDetail = (): JSX.Element => {
 
       try {
         setIsLoading(true);
-        const fetchedInvoice = await fetchInvoiceById(id);
+        const [fetchedInvoice, distributerData] = await Promise.all([
+          fetchInvoiceById(id),
+          fetchCurrentStationsCompany(),
+        ]);
+        
         if (!fetchedInvoice) {
           addToast({
             title: "خطأ",
             message: "الفاتورة غير موجودة",
             type: "error",
           });
-          navigate(-1);
+          const tab = searchParams.get("tab");
+          if (tab) {
+            navigate(`${ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS}?tab=${tab}`);
+          } else {
+            navigate(ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS);
+          }
           return;
         }
         setInvoice(fetchedInvoice);
+        setServiceDistributer(distributerData);
       } catch (error) {
         console.error("Error loading invoice:", error);
         addToast({
@@ -42,7 +57,12 @@ export const InvoiceDetail = (): JSX.Element => {
           message: "فشل في تحميل الفاتورة",
           type: "error",
         });
-        navigate(-1);
+        const tab = searchParams.get("tab");
+        if (tab) {
+          navigate(`${ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS}?tab=${tab}`);
+        } else {
+          navigate(ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -81,69 +101,18 @@ export const InvoiceDetail = (): JSX.Element => {
     ? invoice.createdAt.toDate()
     : new Date();
 
-  const formattedDate = `${invoiceDate.getDate()} - ${invoiceDate.getMonth() + 1} - ${invoiceDate.getFullYear()}`;
-
-  const customerData = invoice.clientData || invoice.companyData || {};
-  const subscriptionItem = invoice.items[0] || {};
+  const formattedDate = `${invoiceDate.getDate()}-${String(invoiceDate.getMonth() + 1).padStart(2, "0")}-${invoiceDate.getFullYear()}`;
   
-  // Calculate dates from invoice createdAt if not available in item
-  let subscriptionStartDate = subscriptionItem.startDate;
-  let subscriptionEndDate = subscriptionItem.endDate;
-  
-  if (!subscriptionStartDate || !subscriptionEndDate) {
-    // If dates are not in item, calculate from invoice date and period
-    const invoiceDate = invoice.createdAt instanceof Date
-      ? invoice.createdAt
-      : invoice.createdAt?.toDate
-      ? invoice.createdAt.toDate()
-      : new Date();
-    
-    const periodValueInDays = subscriptionItem.periodValueInDays || 365;
-    subscriptionStartDate = `${String(invoiceDate.getDate()).padStart(2, '0')}/${String(invoiceDate.getMonth() + 1).padStart(2, '0')}/${invoiceDate.getFullYear()}`;
-    
-    const endDateCalc = new Date(invoiceDate);
-    endDateCalc.setDate(endDateCalc.getDate() + periodValueInDays);
-    subscriptionEndDate = `${String(endDateCalc.getDate()).padStart(2, '0')}/${String(endDateCalc.getMonth() + 1).padStart(2, '0')}/${endDateCalc.getFullYear()}`;
-  }
+  const invoicePeriod = invoice.monthName 
+    ? convertMonthNameToArabic(invoice.monthName)
+    : "غير محدد";
 
-  // Determine period display - use "شهري" or "سنوي"
-  // PRIORITIZE periodValueInDays first, as it's the most reliable indicator
-  let periodDisplay = subscriptionItem.period;
-  
-  // First check periodValueInDays (most reliable)
-  if (subscriptionItem.periodValueInDays === 30) {
-    periodDisplay = "شهري";
-  } else if (subscriptionItem.periodValueInDays === 365 || subscriptionItem.periodValueInDays === 360) {
-    periodDisplay = "سنوي";
-  } else if (!periodDisplay) {
-    // Fallback: determine from periodValueInDays (if not 30 or 365)
-    if (subscriptionItem.periodValueInDays && subscriptionItem.periodValueInDays <= 31) {
-      periodDisplay = "شهري";
-    } else {
-      periodDisplay = "سنوي";
-    }
-  } else {
-    // Normalize period display string
-    const periodStr = String(periodDisplay).toLowerCase();
-    if (periodStr.includes("شهري") || periodStr.includes("monthly")) {
-      periodDisplay = "شهري";
-    } else if (periodStr.includes("سنوي") || periodStr.includes("yearly") || periodStr.includes("annual")) {
-      periodDisplay = "سنوي";
-    }
-    // Otherwise keep the original value
-  }
-
-  const subscriptionData = {
-    description: subscriptionItem.description || subscriptionItem.product || "اشتراك نظام إدارة الأسطول",
-    packageName: subscriptionItem.packageName || subscriptionItem.product || "غير محدد",
-    period: periodDisplay, // "شهري" or "سنوي"
-    startDate: subscriptionStartDate,
-    endDate: subscriptionEndDate,
-  };
+  const customerData = invoice.serviceDistributerData || {};
 
   const invoiceData = {
     invoiceNumber: invoice.invoiceNumber,
     invoiceDate: formattedDate,
+    invoicePeriod: invoicePeriod,
     customer: {
       name: customerData.name || customerData.brandName || "غير محدد",
       customerId: customerData.id || customerData.uid || "غير محدد",
@@ -152,7 +121,7 @@ export const InvoiceDetail = (): JSX.Element => {
       email: customerData.email || "غير محدد",
       taxNumber: customerData.taxNumber || customerData.vatNumber || "غير محدد",
     },
-    subscription: subscriptionData,
+    items: invoice.items || [],
     financial: {
       subtotal: invoice.subtotal,
       vat: 15,
@@ -194,6 +163,9 @@ export const InvoiceDetail = (): JSX.Element => {
               <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
                 تاريخ الفاتورة: {invoiceData.invoiceDate}
               </span>
+              <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+                فترة الفاتورة: {invoiceData.invoicePeriod}
+              </span>
             </div>
           </div>
 
@@ -231,82 +203,155 @@ export const InvoiceDetail = (): JSX.Element => {
         {/* Customer Information Section */}
         <div className="flex flex-col items-end gap-4 relative self-stretch w-full pt-6 border-t border-color-mode-text-icons-t-placeholder">
           <h3 className="relative w-fit font-[number:var(--headline-h7-font-weight)] text-[#2C346C] text-[length:var(--headline-h7-font-size)] tracking-[var(--headline-h7-letter-spacing)] leading-[var(--headline-h7-line-height)] [direction:rtl] font-headline-h7 [font-style:var(--headline-h7-font-style)]">
-            بيانات العميل
+            معلومات العميل
           </h3>
           <div className="flex items-start gap-8 w-full">
-            {/* Left Column */}
+            {/* Left Column - Contact Info */}
             <div className="flex flex-col gap-2 w-fit pr-4 pl-4">
-              <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                الهاتف: {invoiceData.customer.phone}
-              </span>
-              <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                البريد الإلكتروني: {invoiceData.customer.email}
-              </span>
-              <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                الرقم الضريبي: {invoiceData.customer.taxNumber}
-              </span>
+              <div className="flex items-center gap-2 flex-row-reverse">
+                <Phone className="w-4 h-4 text-color-mode-text-icons-t-primary-gray" />
+                <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:ltr] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+                  {serviceDistributer?.phoneNumber || serviceDistributer?.phone || invoiceData.customer.phone}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 flex-row-reverse">
+                <Mail className="w-4 h-4 text-color-mode-text-icons-t-primary-gray" />
+                <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:ltr] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+                  {serviceDistributer?.email || invoiceData.customer.email}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 flex-row-reverse">
+                <User className="w-4 h-4 text-color-mode-text-icons-t-primary-gray" />
+                <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+                  {serviceDistributer?.contactPerson || serviceDistributer?.name || invoiceData.customer.name}
+                </span>
+              </div>
             </div>
-            {/* Right Column */}
+            {/* Right Column - Company Info */}
             <div className="flex flex-col gap-2 flex-1">
               <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                العميل: {invoiceData.customer.name}
+                {serviceDistributer?.name || invoiceData.customer.name}
               </span>
               <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                رقم العميل: {invoiceData.customer.customerId}
+                الرقم الضريبي: {serviceDistributer?.vatNumber || serviceDistributer?.taxNumber || invoiceData.customer.taxNumber}
               </span>
               <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                العنوان: {invoiceData.customer.address}
+                {serviceDistributer?.formattedLocation?.address?.city 
+                  ? `${serviceDistributer.formattedLocation.address.city}، المملكة العربية السعودية`
+                  : serviceDistributer?.address 
+                  ? `${serviceDistributer.address}، المملكة العربية السعودية`
+                  : invoiceData.customer.address 
+                  ? `${invoiceData.customer.address}، المملكة العربية السعودية`
+                  : "المملكة العربية السعودية"}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Subscription Details Section */}
+        {/* Invoice Details Table */}
         <div className="flex flex-col items-end gap-4 relative self-stretch w-full pt-6 border-t border-color-mode-text-icons-t-placeholder">
           <h3 className="relative w-fit font-[number:var(--headline-h7-font-weight)] text-[#2C346C] text-[length:var(--headline-h7-font-size)] tracking-[var(--headline-h7-letter-spacing)] leading-[var(--headline-h7-line-height)] [direction:rtl] font-headline-h7 [font-style:var(--headline-h7-font-style)]">
-            تفاصيل الاشتراك
+            تفاصيل الفاتورة
           </h3>
-          <div className="relative self-stretch w-full overflow-x-auto">
-            <table className="w-full border-collapse table-auto">
+          <div className="relative w-full overflow-x-auto">
+            <table className="table-auto w-full border-collapse">
               <thead>
                 <tr className="bg-[#2C346C]">
                   <th className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--subtitle-subtitle-3-font-weight)] text-white text-[length:var(--subtitle-subtitle-3-font-size)] tracking-[var(--subtitle-subtitle-3-letter-spacing)] leading-[var(--subtitle-subtitle-3-line-height)] [direction:rtl] font-subtitle-subtitle-3 [font-style:var(--subtitle-subtitle-3-font-style)]">
-                    تاريخ النهاية
+                    الإجمالي
                   </th>
                   <th className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--subtitle-subtitle-3-font-weight)] text-white text-[length:var(--subtitle-subtitle-3-font-size)] tracking-[var(--subtitle-subtitle-3-letter-spacing)] leading-[var(--subtitle-subtitle-3-line-height)] [direction:rtl] font-subtitle-subtitle-3 [font-style:var(--subtitle-subtitle-3-font-style)]">
-                    تاريخ البداية
+                    الضريبة
                   </th>
                   <th className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--subtitle-subtitle-3-font-weight)] text-white text-[length:var(--subtitle-subtitle-3-font-size)] tracking-[var(--subtitle-subtitle-3-letter-spacing)] leading-[var(--subtitle-subtitle-3-line-height)] [direction:rtl] font-subtitle-subtitle-3 [font-style:var(--subtitle-subtitle-3-font-style)]">
-                    مدة الاشتراك
+                    المبلغ قبل الضريبة
                   </th>
                   <th className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--subtitle-subtitle-3-font-weight)] text-white text-[length:var(--subtitle-subtitle-3-font-size)] tracking-[var(--subtitle-subtitle-3-letter-spacing)] leading-[var(--subtitle-subtitle-3-line-height)] [direction:rtl] font-subtitle-subtitle-3 [font-style:var(--subtitle-subtitle-3-font-style)]">
-                    اسم الباقة
+                    سعر اللتر (ريال)
                   </th>
-                  <th className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--subtitle-subtitle-3-font-weight)] text-white text-[length:var(--subtitle-subtitle-3-font-size)] tracking-[var(--subtitle-subtitle-3-letter-spacing)] leading-[var(--subtitle-subtitle-3-line-height)] [direction:rtl] font-subtitle-subtitle-3 whitespace-nowrap [font-style:var(--subtitle-subtitle-3-font-style)]">
-                    الوصف
+                  <th className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--subtitle-subtitle-3-font-weight)] text-white text-[length:var(--subtitle-subtitle-3-font-size)] tracking-[var(--subtitle-subtitle-3-letter-spacing)] leading-[var(--subtitle-subtitle-3-line-height)] [direction:rtl] font-subtitle-subtitle-3 [font-style:var(--subtitle-subtitle-3-font-style)]">
+                    الكمية (لتر)
+                  </th>
+                  <th className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--subtitle-subtitle-3-font-weight)] text-white text-[length:var(--subtitle-subtitle-3-font-size)] tracking-[var(--subtitle-subtitle-3-letter-spacing)] leading-[var(--subtitle-subtitle-3-line-height)] [direction:rtl] font-subtitle-subtitle-3 [font-style:var(--subtitle-subtitle-3-font-style)]">
+                    المنتج
                   </th>
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                    {invoiceData.subscription.endDate}
-                  </td>
-                  <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                    {invoiceData.subscription.startDate}
-                  </td>
-                  <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                    {invoiceData.subscription.period}
-                  </td>
-                  <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                    {invoiceData.subscription.packageName}
-                  </td>
-                  <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                    <div className="max-w-md mx-auto text-right">
-                      {invoiceData.subscription.description}
-                    </div>
-                  </td>
-                </tr>
+                {invoiceData.items.map((item, index) => {
+                  const total = Number(item.total || 0);
+                  const vat = Number(item.vat || 0);
+                  const amountBeforeTax = Number(item.amountBeforeTax || 0);
+                  const pricePerUnit = Number(item.pricePerUnit || 0);
+                  const quantity = Number(item.quantity || 0);
+                  const product = item.product || "غير محدد";
+
+                  return (
+                    <tr key={index}>
+                      <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:ltr] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+                        <span className="flex items-center gap-1 justify-center">
+                          <img
+                            src="/img/Group 33.svg"
+                            alt="SAR"
+                            className="w-4 h-4"
+                          />
+                          {total.toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:ltr] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+                        <span className="flex items-center gap-1 justify-center">
+                          <img
+                            src="/img/Group 33.svg"
+                            alt="SAR"
+                            className="w-4 h-4"
+                          />
+                          {vat.toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:ltr] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+                        <span className="flex items-center gap-1 justify-center">
+                          <img
+                            src="/img/Group 33.svg"
+                            alt="SAR"
+                            className="w-4 h-4"
+                          />
+                          {amountBeforeTax.toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:ltr] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+                        <span className="flex items-center gap-1 justify-center">
+                          <img
+                            src="/img/Group 33.svg"
+                            alt="SAR"
+                            className="w-4 h-4"
+                          />
+                          {pricePerUnit.toLocaleString("en-US", {
+                            minimumFractionDigits: 4,
+                            maximumFractionDigits: 4,
+                          })}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:ltr] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+                        {quantity.toLocaleString("en-US", {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 2,
+                        })}
+                      </td>
+                      <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+                        {product}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -350,7 +395,7 @@ export const InvoiceDetail = (): JSX.Element => {
                   })}
                 </span>
                 <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                  قيمة الاشتراك (بدون الضريبة)
+                  المبلغ قبل الضريبة
                 </span>
               </div>
               <div className="flex items-center justify-between w-full py-2">
@@ -362,7 +407,7 @@ export const InvoiceDetail = (): JSX.Element => {
                   })}
                 </span>
                 <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                  ضريبة القيمة المضافة ({invoiceData.financial.vat}%)
+                  إجمالي الضريبة ({invoiceData.financial.vat}%)
                 </span>
               </div>
               <div className="flex items-center justify-between w-full py-3 bg-[#2C346C] px-4 rounded-[var(--corner-radius-small)]">
@@ -374,29 +419,18 @@ export const InvoiceDetail = (): JSX.Element => {
                   })}
                 </span>
                 <span className="font-[number:var(--subtitle-subtitle-2-font-weight)] text-white text-[length:var(--subtitle-subtitle-2-font-size)] tracking-[var(--subtitle-subtitle-2-letter-spacing)] leading-[var(--subtitle-subtitle-2-line-height)] [direction:rtl] font-subtitle-subtitle-2 [font-style:var(--subtitle-subtitle-2-font-style)]">
-                  الإجمالي شامل الضريبة
+                  الإجمالي الكلي
                 </span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Terms and Conditions */}
-        <div className="flex flex-col items-end gap-3 relative self-stretch w-full pt-6 border-t border-color-mode-text-icons-t-placeholder">
-          <h3 className="relative w-fit font-[number:var(--headline-h7-font-weight)] text-[#2C346C] text-[length:var(--headline-h7-font-size)] tracking-[var(--headline-h7-letter-spacing)] leading-[var(--headline-h7-line-height)] [direction:rtl] font-headline-h7 [font-style:var(--headline-h7-font-style)]">
-            الشروط والأحكام
-          </h3>
-          <div className="flex flex-col items-end gap-2">
-            <p className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-              هذه الفاتورة صادرة الكترونياً ولا تحتاج إلى توقيع
-            </p>
-            <p className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-              جميع الأسعار بالريال السعودي وشاملة ضريبة القيمة المضافة
-            </p>
-          </div>
-          <p className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 mt-2 text-center w-full [font-style:var(--body-body-2-font-style)]">
-            شكراً لثقتكم في خدماتنا
-          </p>
+        {/* Footer Contact Info */}
+        <div className="flex items-center justify-center w-full pt-6 border-t border-color-mode-text-icons-t-placeholder">
+          <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+            8001240513 info@petrolife.sa
+          </span>
         </div>
 
         {/* Print Button */}
@@ -414,4 +448,5 @@ export const InvoiceDetail = (): JSX.Element => {
   );
 };
 
-export default InvoiceDetail;
+export default CommissionInvoiceDetail;
+

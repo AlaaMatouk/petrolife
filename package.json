@@ -10,9 +10,11 @@
     "upload-cars": "tsx scripts/uploadCarData.ts"
   },
   "dependencies": {
+    "@axenda/zatca": "^1.0.4",
     "@heroicons/react": "^2.2.0",
     "@types/file-saver": "^2.0.7",
     "@types/leaflet": "^1.9.21",
+    "buffer": "^6.0.3",
     "chart.js": "^4.5.1",
     "clsx": "2.1.1",
     "exceljs": "^4.4.0",

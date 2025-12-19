@@ -39,6 +39,7 @@ import {
   Invoices,
   InvoiceDetail,
   FuelInvoiceDetail,
+  CommissionInvoiceDetail,
 } from "../screens/Invoices";
 import { IconPreview } from "../screens/IconPreview";
 // admin dashboard
@@ -407,6 +408,10 @@ export const AppRouter = () => {
         <Route
           path={ROUTES.FUEL_INVOICE_DETAIL}
           element={<FuelInvoiceDetail />}
+        />
+        <Route
+          path={ROUTES.COMMISSION_INVOICE_DETAIL}
+          element={<CommissionInvoiceDetail />}
         />
 
         {/* Settings */}

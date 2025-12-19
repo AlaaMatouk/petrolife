@@ -16,4 +16,19 @@ export default defineConfig(({ mode }) => ({
       plugins: [tailwind()],
     },
   },
+  define: {
+    global: "globalThis",
+  },
+  resolve: {
+    alias: {
+      buffer: "buffer",
+    },
+  },
+  optimizeDeps: {
+    esbuildOptions: {
+      define: {
+        global: "globalThis",
+      },
+    },
+  },
 }));
