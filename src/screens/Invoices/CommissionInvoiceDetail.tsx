@@ -185,16 +185,16 @@ export const CommissionInvoiceDetail = (): JSX.Element => {
             </div>
             <div className="flex flex-col items-end gap-1">
               <span className="font-[number:var(--subtitle-subtitle-2-font-weight)] text-[#2C346C] text-[length:var(--subtitle-subtitle-2-font-size)] tracking-[var(--subtitle-subtitle-2-letter-spacing)] leading-[var(--subtitle-subtitle-2-line-height)] [direction:rtl] font-subtitle-subtitle-2 [font-style:var(--subtitle-subtitle-2-font-style)]">
-                شركة انجازات الحلول لتقنية المعلومات
+                لجميع احتياجات سيارتك
               </span>
               <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                الرياض - طريق خريص 12245
+                الرياض-طريق خريص-14221
               </span>
               <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                السجل التجاري 105525211551
+                رقم السجل التجاري: 1009204448
               </span>
               <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                الرقم الضريبي: 300000000000003
+                الرقم الضريبي: 312894850300003
               </span>
             </div>
           </div>

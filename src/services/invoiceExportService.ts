@@ -222,11 +222,11 @@ const generateFuelInvoiceHTML = (invoice: Invoice, qrCodeBase64: string | null =
               <img src="/img/logo-3.png" alt="Logo 3" style="height: 80px;" />
             </div>
             <div style="color: #2C346C; font-weight: 600; margin-top: 8px;">
-              شركة إنجازات الحلول التقنية المعلومات
+              لجميع احتياجات سيارتك
             </div>
-            <div style="margin-top: 4px;">الرياض - طريق خريص 12245</div>
-            <div style="margin-top: 4px;">السجل التجاري: 105525211551</div>
-            <div style="margin-top: 4px;">الرقم الضريبي: 300000000000003</div>
+            <div style="margin-top: 4px;">الرياض-طريق خريص-14221</div>
+            <div style="margin-top: 4px;">رقم السجل التجاري: 1009204448</div>
+            <div style="margin-top: 4px;">الرقم الضريبي: 312894850300003</div>
           </div>
           <div class="invoice-details">
             <h1 style="font-size: 24px; font-weight: 600; margin-bottom: 12px;">فاتورة ضريبية</h1>

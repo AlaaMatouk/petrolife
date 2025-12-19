@@ -79,7 +79,7 @@ interface Payment {
   transferDate: string;
   transferValue: number;
   status: "pending" | "transferred";
-  hasReceipt?: boolean;
+  receiptUrl?: string;
 }
 
 // Mock data
@@ -648,6 +648,7 @@ function ServiceDistributerFinancialReports() {
         transferDate: transferDate,
         transferValue: transfer.transferAmount,
         status: transfer.status,
+        receiptUrl: transfer.receiptUrl,
       };
     });
 
@@ -1013,6 +1014,30 @@ function ServiceDistributerFinancialReports() {
 
   // Payment table columns
   const paymentColumns = [
+    {
+      key: "receipt",
+      label: "إيصال التحويل",
+      width: "w-40 min-w-[160px]",
+      render: (_: any, row: Payment) => (
+        <div className="flex items-center justify-center">
+          {row.receiptUrl ? (
+            <button
+              onClick={() => window.open(row.receiptUrl, "_blank")}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+              aria-label="تحميل الإيصال"
+            >
+              <Download className="w-4 h-4" />
+              <span className="text-sm font-medium">تحميل الإيصال</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 text-gray-500">
+              <Download className="w-4 h-4" />
+              <span className="text-sm font-medium">غير متاح</span>
+            </div>
+          )}
+        </div>
+      ),
+    },
     {
       key: "status",
       label: "حالة التحويل",

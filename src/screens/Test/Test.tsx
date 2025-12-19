@@ -9,8 +9,9 @@ import {
   Wifi,
   Table,
   Database,
+  ShoppingCart,
 } from "lucide-react";
-import { fetchAllServices } from "../../services/firestore";
+import { fetchAllServices, createTestOrderForTransferTesting, updateLastTransferToFullBalance } from "../../services/firestore";
 
 export const Test = (): JSX.Element => {
   const [toggle1, setToggle1] = useState(false);
@@ -26,6 +27,8 @@ export const Test = (): JSX.Element => {
   const [accountStatus3, setAccountStatus3] = useState(true);
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [creatingTestOrder, setCreatingTestOrder] = useState(false);
+  const [testOrderResult, setTestOrderResult] = useState<string | null>(null);
 
   // Fetch services data on component mount
   useEffect(() => {
@@ -43,10 +46,65 @@ export const Test = (): JSX.Element => {
     };
 
     loadServices();
+
+    // Make functions available in console for testing
+    (window as any).createTestOrderForTransferTesting = createTestOrderForTransferTesting;
+    (window as any).updateLastTransferToFullBalance = updateLastTransferToFullBalance;
+    console.log("✅ Test functions available in console:");
+    console.log("  - window.createTestOrderForTransferTesting()");
+    console.log("  - window.updateLastTransferToFullBalance(companyEmail)");
   }, []);
+
+  const handleCreateTestOrder = async () => {
+    setCreatingTestOrder(true);
+    setTestOrderResult(null);
+    try {
+      const orderId = await createTestOrderForTransferTesting();
+      setTestOrderResult(`✅ Test order created successfully! Order ID: ${orderId}`);
+      console.log("✅ Test order created:", orderId);
+    } catch (error: any) {
+      setTestOrderResult(`❌ Error: ${error.message}`);
+      console.error("❌ Error creating test order:", error);
+    } finally {
+      setCreatingTestOrder(false);
+    }
+  };
 
   return (
     <div className="flex flex-col w-full items-start gap-8 p-6">
+      {/* Test Order Creation Section */}
+      <div className="w-full bg-gradient-to-r from-green-500 to-emerald-600 rounded-lg p-6 text-white">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <ShoppingCart className="w-6 h-6" />
+              <h2 className="text-2xl font-bold">
+                إنشاء طلب تجريبي للتحويل
+              </h2>
+            </div>
+            <p className="text-green-100 text-sm mb-4">
+              إنشاء طلب تجريبي بقيمة 3000 ريال لاختبار نظام طلبات التحويل التلقائية
+            </p>
+            {testOrderResult && (
+              <p className={`text-sm font-semibold ${testOrderResult.includes('✅') ? 'text-green-100' : 'text-red-200'}`}>
+                {testOrderResult}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={handleCreateTestOrder}
+            disabled={creatingTestOrder}
+            className="px-6 py-3 bg-white text-green-600 font-semibold rounded-lg hover:bg-green-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            <ShoppingCart className="w-5 h-5" />
+            {creatingTestOrder ? "جاري الإنشاء..." : "إنشاء طلب تجريبي"}
+          </button>
+        </div>
+        <p className="text-green-100 text-xs mt-2">
+          💡 يمكنك أيضاً استخدام: window.createTestOrderForTransferTesting() في Console
+        </p>
+      </div>
+
       {/* Page Header */}
       <div className="w-full bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg p-8 text-white">
         <div className="flex items-center gap-3 mb-2">

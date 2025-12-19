@@ -5,8 +5,8 @@ import { Timestamp } from 'firebase/firestore';
  * Seller information constants for ZATCA QR code generation
  */
 export const SELLER_INFO = {
-  name: 'شركة إنجازات الحلول التقنية المعلومات',
-  vatRegistrationNumber: '300000000000003',
+  name: 'لجميع احتياجات سيارتك',
+  vatRegistrationNumber: '312894850300003',
 } as const;
 
 /**

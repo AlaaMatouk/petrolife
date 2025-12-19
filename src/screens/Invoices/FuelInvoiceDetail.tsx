@@ -138,10 +138,11 @@ export const FuelInvoiceDetail = (): JSX.Element => {
     invoiceDate: formattedDate,
     invoicePeriod: invoice.monthName || `${invoiceDate.toLocaleDateString("ar-SA", { month: "long", year: "numeric" })}`,
     company: {
-      name: "شركة إنجازات الحلول التقنية المعلومات",
-      address: "الرياض - طريق خريص 12245",
-      commercialRegistration: "105525211551",
-      taxNumber: "300000000000003",
+      name: "لجميع احتياجات سيارتك",
+      tagline: "",
+      address: "الرياض-طريق خريص-14221",
+      commercialRegistration: "1009204448",
+      taxNumber: "312894850300003",
     },
     customer: {
       name: customerData.name || customerData.brandName || "غير محدد",
@@ -222,7 +223,7 @@ export const FuelInvoiceDetail = (): JSX.Element => {
               {invoiceData.company.address}
             </span>
             <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-              السجل التجاري: {invoiceData.company.commercialRegistration}
+              رقم السجل التجاري: {invoiceData.company.commercialRegistration}
             </span>
             <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
               الرقم الضريبي: {invoiceData.company.taxNumber}

@@ -1644,9 +1644,11 @@ export const calculateOrderCommission = (
     if (order.selectedOption?.title?.ar) return order.selectedOption.title.ar;
     if (order.selectedOption?.title?.en) return order.selectedOption.title.en;
     if (order.service?.options && Array.isArray(order.service.options)) {
-      const selectedOptionId = order.selectedOption?.id || order.selectedOption?.refId;
+      const selectedOptionId =
+        order.selectedOption?.id || order.selectedOption?.refId;
       const matchingOption = order.service.options.find(
-        (opt: any) => opt.id === selectedOptionId || opt.refId === selectedOptionId
+        (opt: any) =>
+          opt.id === selectedOptionId || opt.refId === selectedOptionId
       );
       if (matchingOption?.name?.ar) return matchingOption.name.ar;
       if (matchingOption?.name?.en) return matchingOption.name.en;
@@ -1659,17 +1661,23 @@ export const calculateOrderCommission = (
   };
 
   const fuelType = extractFuelType(order);
-  const totalLitre = typeof order.totalLitre === "string" 
-    ? parseFloat(order.totalLitre) 
-    : order.totalLitre || 0;
-  const totalPrice = typeof order.totalPrice === "string"
-    ? parseFloat(order.totalPrice)
-    : order.totalPrice || 0;
+  const totalLitre =
+    typeof order.totalLitre === "string"
+      ? parseFloat(order.totalLitre)
+      : order.totalLitre || 0;
+  const totalPrice =
+    typeof order.totalPrice === "string"
+      ? parseFloat(order.totalPrice)
+      : order.totalPrice || 0;
 
   // Determine if diesel
   const isDiesel = (fuelType: string): boolean => {
     const normalized = fuelType.toLowerCase().trim();
-    return normalized.includes("ديزل") || normalized.includes("ديزيل") || normalized.includes("diesel");
+    return (
+      normalized.includes("ديزل") ||
+      normalized.includes("ديزيل") ||
+      normalized.includes("diesel")
+    );
   };
 
   // Use stored commission rate if available, otherwise use current settings
@@ -1718,9 +1726,11 @@ export const saveCommissionToCollection = async (
       if (order.selectedOption?.title?.ar) return order.selectedOption.title.ar;
       if (order.selectedOption?.title?.en) return order.selectedOption.title.en;
       if (order.service?.options && Array.isArray(order.service.options)) {
-        const selectedOptionId = order.selectedOption?.id || order.selectedOption?.refId;
+        const selectedOptionId =
+          order.selectedOption?.id || order.selectedOption?.refId;
         const matchingOption = order.service.options.find(
-          (opt: any) => opt.id === selectedOptionId || opt.refId === selectedOptionId
+          (opt: any) =>
+            opt.id === selectedOptionId || opt.refId === selectedOptionId
         );
         if (matchingOption?.name?.ar) return matchingOption.name.ar;
         if (matchingOption?.name?.en) return matchingOption.name.en;
@@ -1733,12 +1743,14 @@ export const saveCommissionToCollection = async (
     };
 
     const fuelType = extractFuelType(order);
-    const totalLitre = typeof order.totalLitre === "string" 
-      ? parseFloat(order.totalLitre) 
-      : order.totalLitre || 0;
-    const totalPrice = typeof order.totalPrice === "string"
-      ? parseFloat(order.totalPrice)
-      : order.totalPrice || 0;
+    const totalLitre =
+      typeof order.totalLitre === "string"
+        ? parseFloat(order.totalLitre)
+        : order.totalLitre || 0;
+    const totalPrice =
+      typeof order.totalPrice === "string"
+        ? parseFloat(order.totalPrice)
+        : order.totalPrice || 0;
 
     // Check if commission document already exists for this order
     const commissionsRef = collection(db, "commissions");
@@ -1775,7 +1787,9 @@ export const saveCommissionToCollection = async (
     } else {
       // Create new commission document
       const docRef = await addDoc(commissionsRef, commissionDocData);
-      console.log(`✅ Created commission document for order ${orderId}: ${docRef.id}`);
+      console.log(
+        `✅ Created commission document for order ${orderId}: ${docRef.id}`
+      );
       return docRef.id;
     }
   } catch (error) {
@@ -1811,7 +1825,9 @@ export const processOrderCommission = async (
 
     const stationsCompanyEmail = order.carStation?.createdUserId;
     if (!stationsCompanyEmail) {
-      console.warn(`⚠️ Order ${orderId} has no carStation.createdUserId, skipping commission processing`);
+      console.warn(
+        `⚠️ Order ${orderId} has no carStation.createdUserId, skipping commission processing`
+      );
       return;
     }
 
@@ -1829,7 +1845,10 @@ export const processOrderCommission = async (
 
     console.log(`✅ Processed commission for order ${orderId}`);
   } catch (error) {
-    console.error(`❌ Error processing commission for order ${orderId}:`, error);
+    console.error(
+      `❌ Error processing commission for order ${orderId}:`,
+      error
+    );
     throw error;
   }
 };
@@ -1912,7 +1931,7 @@ export const processAllOrdersCommissions = async (
 
     for (let i = 0; i < ordersToProcessList.length; i += batchSize) {
       const batch = ordersToProcessList.slice(i, i + batchSize);
-      
+
       await Promise.all(
         batch.map(async (order) => {
           try {
@@ -1937,34 +1956,40 @@ export const processAllOrdersCommissions = async (
       );
 
       console.log(
-        `✅ Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(ordersToProcessList.length / batchSize)}`
+        `✅ Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(
+          ordersToProcessList.length / batchSize
+        )}`
       );
     }
 
     // Update balances for all affected companies
     // Note: We calculate balance directly here instead of calling updateStationsCompanyBalance
     // to avoid redundant commission processing (updateStationsCompanyBalance also processes commissions)
-    console.log(`🔄 Updating balances for ${companiesToUpdate.size} companies...`);
+    console.log(
+      `🔄 Updating balances for ${companiesToUpdate.size} companies...`
+    );
     await Promise.all(
       Array.from(companiesToUpdate).map(async (email) => {
         try {
           // Calculate balance (commissions are already processed above)
           const balance = await calculateStationsCompanyBalance(email);
-          
+
           // Find and update stationscompany document
           const qRef = query(
             collection(db, "stationscompany"),
             where("email", "==", email.toLowerCase())
           );
           const snapshot = await getDocs(qRef);
-          
+
           if (!snapshot.empty) {
             const docSnap = snapshot.docs[0];
             const docRef = doc(db, "stationscompany", docSnap.id);
             await updateDoc(docRef, {
               balance: balance,
             });
-            console.log(`✅ Updated balance for ${email}: ${balance.toFixed(2)}`);
+            console.log(
+              `✅ Updated balance for ${email}: ${balance.toFixed(2)}`
+            );
           }
         } catch (error) {
           console.error(
@@ -2076,7 +2101,9 @@ export const calculateStationsCompanyBalanceUpToDate = async (
     });
 
     console.log(
-      `✅ Filtered orders for company ${companyEmail} up to ${endDate.toISOString()}: ${filteredOrders.length}`
+      `✅ Filtered orders for company ${companyEmail} up to ${endDate.toISOString()}: ${
+        filteredOrders.length
+      }`
     );
 
     // Fetch commission settings
@@ -2085,12 +2112,17 @@ export const calculateStationsCompanyBalanceUpToDate = async (
     // Calculate balance by summing net amounts (totalPrice - commission)
     let totalBalance = 0;
     for (const order of filteredOrders) {
-      const commissionData = calculateOrderCommission(order, commissionSettings);
+      const commissionData = calculateOrderCommission(
+        order,
+        commissionSettings
+      );
       totalBalance += commissionData.netAmount;
     }
 
     console.log(
-      `💰 Calculated balance for ${companyEmail} up to ${endDate.toISOString()}: ${totalBalance.toFixed(2)} (after commission deduction)`
+      `💰 Calculated balance for ${companyEmail} up to ${endDate.toISOString()}: ${totalBalance.toFixed(
+        2
+      )} (after commission deduction)`
     );
 
     return totalBalance;
@@ -2139,7 +2171,8 @@ export const calculateStationsCompanyBalanceChange = async (
     let isIncrease = false;
 
     if (lastMonthBalance > 0) {
-      percentageChange = ((currentBalance - lastMonthBalance) / lastMonthBalance) * 100;
+      percentageChange =
+        ((currentBalance - lastMonthBalance) / lastMonthBalance) * 100;
       isIncrease = percentageChange > 0;
     } else if (currentBalance > 0) {
       // If last month balance is 0 but current is positive, it's a 100% increase
@@ -2152,7 +2185,11 @@ export const calculateStationsCompanyBalanceChange = async (
     }
 
     console.log(
-      `📊 Balance change for ${companyEmail}: Current: ${currentBalance.toFixed(2)}, Last Month: ${lastMonthBalance.toFixed(2)}, Change: ${percentageChange.toFixed(2)}%`
+      `📊 Balance change for ${companyEmail}: Current: ${currentBalance.toFixed(
+        2
+      )}, Last Month: ${lastMonthBalance.toFixed(
+        2
+      )}, Change: ${percentageChange.toFixed(2)}%`
     );
 
     // Calculate absolute difference
@@ -2185,9 +2222,7 @@ export const calculateStationsCompanyBalance = async (
   companyEmail: string
 ): Promise<number> => {
   try {
-    console.log(
-      `💰 Calculating balance for stationscompany: ${companyEmail}`
-    );
+    console.log(`💰 Calculating balance for stationscompany: ${companyEmail}`);
 
     if (!companyEmail) {
       console.warn("⚠️ No company email provided, returning 0");
@@ -2230,12 +2265,17 @@ export const calculateStationsCompanyBalance = async (
     // Calculate balance by summing net amounts (totalPrice - commission)
     let totalBalance = 0;
     for (const order of filteredOrders) {
-      const commissionData = calculateOrderCommission(order, commissionSettings);
+      const commissionData = calculateOrderCommission(
+        order,
+        commissionSettings
+      );
       totalBalance += commissionData.netAmount;
     }
 
     console.log(
-      `💰 Calculated balance for ${companyEmail}: ${totalBalance.toFixed(2)} (after commission deduction)`
+      `💰 Calculated balance for ${companyEmail}: ${totalBalance.toFixed(
+        2
+      )} (after commission deduction)`
     );
 
     return totalBalance;
@@ -2283,7 +2323,9 @@ export const calculateStationsCompanyTotalCommissions = async (
     });
 
     console.log(
-      `💰 Calculated total commissions for ${companyEmail}: ${totalCommissions.toFixed(2)}`
+      `💰 Calculated total commissions for ${companyEmail}: ${totalCommissions.toFixed(
+        2
+      )}`
     );
 
     return totalCommissions;
@@ -2383,9 +2425,9 @@ export const checkAndCreateTransferRequest = async (
       return null;
     }
 
-    // Create transfer request
+    // Create transfer request with full balance amount
     const transferNumber = generateTransferNumber();
-    const transferAmount = 3000; // Always transfer 3000
+    const transferAmount = currentBalance; // Transfer entire balance
 
     const transferData: Omit<ServiceDistributerTransferRequest, "id"> = {
       transferNumber: transferNumber,
@@ -2422,9 +2464,7 @@ export const fetchServiceDistributerTransfers = async (
   companyEmail: string
 ): Promise<ServiceDistributerTransferRequest[]> => {
   try {
-    console.log(
-      `📊 Fetching transfer requests for: ${companyEmail}`
-    );
+    console.log(`📊 Fetching transfer requests for: ${companyEmail}`);
 
     if (!companyEmail) {
       console.warn("⚠️ No company email provided");
@@ -2434,8 +2474,7 @@ export const fetchServiceDistributerTransfers = async (
     const transfersRef = collection(db, "service-distributer-transfers");
     const q = query(
       transfersRef,
-      where("stationsCompanyEmail", "==", companyEmail.toLowerCase()),
-      orderBy("createdAt", "desc")
+      where("stationsCompanyEmail", "==", companyEmail.toLowerCase())
     );
     const querySnapshot = await getDocs(q);
 
@@ -2445,6 +2484,17 @@ export const fetchServiceDistributerTransfers = async (
         id: doc.id,
         ...doc.data(),
       } as ServiceDistributerTransferRequest);
+    });
+
+    // Sort by createdAt descending (client-side to avoid composite index requirement)
+    transfers.sort((a, b) => {
+      const aDate = a.createdAt?.toDate
+        ? a.createdAt.toDate()
+        : new Date(a.createdAt || 0);
+      const bDate = b.createdAt?.toDate
+        ? b.createdAt.toDate()
+        : new Date(b.createdAt || 0);
+      return bDate.getTime() - aDate.getTime();
     });
 
     console.log(
@@ -2457,6 +2507,362 @@ export const fetchServiceDistributerTransfers = async (
       `❌ Error fetching transfer requests for ${companyEmail}:`,
       error
     );
+    throw error;
+  }
+};
+
+/**
+ * Create a test order with totalPrice of 3000 for transfer request testing
+ * Matches the exact structure of existing orders in stationscompany-orders collection
+ * @param companyEmail - Optional company email (uses current user if not provided)
+ * @returns Promise with the created order document ID
+ */
+export const createTestOrderForTransferTesting = async (
+  companyEmail?: string
+): Promise<string> => {
+  try {
+    console.log("🧪 Creating test order for transfer request testing...");
+
+    // Get current authenticated user
+    const currentUser = await waitForAuthState();
+    if (!currentUser || !currentUser.email) {
+      throw new Error("No authenticated user found");
+    }
+
+    const userEmail = companyEmail || currentUser.email.toLowerCase();
+    console.log(`👤 Using company email: ${userEmail}`);
+
+    // Generate test order refId
+    const testRefId = `TEST-ORDER-${Date.now()}`;
+
+    // Calculate totalLitre to make totalPrice = 3000
+    // Using price of 2 SAR per liter (typical fuel price)
+    const pricePerLiter = 2;
+    const totalLitre = 1500; // 1500 liters * 2 SAR = 3000 SAR
+
+    // Create test order document matching the exact structure
+    const testOrder = {
+      assignedDriver: null,
+      carStation: {
+        address: "Test Address",
+        balance: 0,
+        commercialRegistration: null,
+        createdUserId: userEmail, // This links to the service distributer
+        email: "teststation@carstation.com",
+        formattedLocation: {
+          address: {
+            city: "",
+            country: "Saudi Arabia",
+            countryCode: "SA",
+            highway: "",
+            postcode: "12345",
+            road: "",
+            state: "",
+            stateDistrict: "",
+          },
+          lat: 24.7136,
+          lng: 46.6753,
+          name: "Test Location, Riyadh, Saudi Arabia",
+          placeId: "TEST_PLACE_ID",
+          id: "teststation@carstation.com",
+        },
+        id: "teststation@carstation.com",
+        isActive: true,
+        location: "https://www.google.com/maps",
+        name: "Test Station",
+        options: [
+          {
+            category: {
+              categoryTypeEnum: "subOrdinate",
+              createdDate: null,
+              createdUserEmail: "admin@carstation.com",
+              createdUserId: "ssrhAaHD0uMtP9xfG1wgyKEgYsa2",
+              id: "KQGqqSlB1cg7F7V3hQaX",
+              label: "Fuel 91",
+              majorTypeEnum: "leter",
+              name: {
+                ar: "بنزين ٩١",
+                en: "Fuel 91",
+              },
+              onyxProductId: "P1001",
+              parentId: "v0GnCxTEP4CGiGyY3FEz",
+              refId: "799189389",
+            },
+            companyPrice: pricePerLiter,
+            desc: {
+              ar: " ",
+              en: " Clear",
+            },
+            id: null,
+            onyxProductId: "P1001",
+            price: pricePerLiter,
+            title: {
+              ar: "بنزين ٩٢",
+              en: "Fuel 92",
+            },
+          },
+        ],
+        phoneNumber: "0512345678",
+        taxCertificate: null,
+        type: "stationsCompany",
+        uId: "TEST_UID_123",
+      },
+      cartItems: [],
+      client: {
+        address: null,
+        appleEmail: null,
+        balance: 0,
+        commercialRegistration: null,
+        createdDate: serverTimestamp(),
+        createdUserId: null,
+        email: "testclient@email.com",
+        gmail: "",
+        id: "TEST_CLIENT_ID",
+        idPhoto: "",
+        isActive: null,
+        latLng: null,
+        name: "Test Client",
+        phoneNumber: "0500000000",
+        profilePhoto: "",
+        taxCertificate: null,
+        tokens: [],
+        type: "Customer",
+        uid: "TEST_CLIENT_UID",
+      },
+      clientCar: {
+        carModel: {
+          carModelImageUrl: "",
+          createdDate: serverTimestamp(),
+          createdUserId: "admin@carstation.com",
+          id: "TEST_CAR_MODEL_ID",
+          name: {
+            ar: "سيارة تجريبية",
+            en: "Test Car",
+          },
+        },
+        carType: {
+          carModel: {
+            carModelImageUrl: "",
+            createdDate: serverTimestamp(),
+            createdUserId: "admin@carstation.com",
+            id: "TEST_CAR_MODEL_ID",
+            name: {
+              ar: "سيارة تجريبية",
+              en: "Test Car",
+            },
+          },
+          createdDate: serverTimestamp(),
+          createdUserId: "admin@carstation.com",
+          id: "TEST_CAR_TYPE_ID",
+          name: {
+            ar: "نموذج تجريبي",
+            en: "Test Model",
+          },
+          year: "2024",
+        },
+        createdDate: serverTimestamp(),
+        createdUserId: "TEST_CLIENT_UID",
+        driverIds: null,
+        fuelType: "fuel91",
+        id: "TEST_CAR_ID",
+        name: {
+          ar: "سيارة اختبار",
+          en: "Test Car",
+        },
+        plan: {
+          carSize: "middle",
+          createdDate: Date.now(),
+          createdUserId: "TEST_CLIENT_UID",
+          dailyTrans: "0",
+          exceptionDays: [],
+          id: "TEST_PLAN_ID",
+          plateNumber: {
+            ar: "TEST 123",
+            en: "TEST 123",
+          },
+          size: "middle",
+        },
+      },
+      commissionRateUsed: 0.01,
+      companyUid: null,
+      coupon: null,
+      createdDate: serverTimestamp(),
+      fuelStationsWorker: {
+        carStation: {
+          address: "Test Address",
+          balance: 0,
+          commercialRegistration: null,
+          createdUserId: null,
+          email: "teststation@carstation.com",
+          formattedLocation: null,
+          id: null,
+          isActive: true,
+          location: null,
+          name: "Test Station",
+          options: null,
+          phoneNumber: "0512345678",
+          taxCertificate: null,
+          type: "stationsCompany",
+          uId: null,
+        },
+        createdDate: serverTimestamp(),
+        createdUserId: userEmail,
+        email: "testworker@carstation.com",
+        image: "",
+        isActive: null,
+        name: "Test Worker",
+        phoneNumber: "0512345678",
+        stationsCompany: {
+          address: "Test Address",
+          addressFile: null,
+          brandName: null,
+          commercialRegistration: "",
+          commercialRegistrationNumber: null,
+          createdDate: null,
+          createdUserId: "admin@carstation.com",
+          email: userEmail,
+          formattedLocation: null,
+          id: null,
+          isActive: true,
+          location: null,
+          logo: null,
+          name: "Test Stations Company",
+          phoneNumber: "0512312311",
+          status: null,
+          taxCertificate: "",
+          tokens: [],
+          uId: "TEST_COMPANY_UID",
+          vatNumber: null,
+        },
+        tokens: [],
+        uId: "TEST_WORKER_UID",
+      },
+      isCompany: false,
+      location: null,
+      orderDate: serverTimestamp(),
+      paidFromCustomerBalance: 0,
+      priceBeforeUsingCustomerBalance: 0,
+      reasonForCancelingOrder: null,
+      refId: testRefId,
+      selectedOption: {
+        category: {
+          categoryTypeEnum: "subOrdinate",
+          createdDate: null,
+          createdUserEmail: "admin@carstation.com",
+          createdUserId: "ssrhAaHD0uMtP9xfG1wgyKEgYsa2",
+          id: "KQGqqSlB1cg7F7V3hQaX",
+          label: "Fuel 91",
+          majorTypeEnum: "leter",
+          name: {
+            ar: "بنزين ٩١",
+            en: "Fuel 91",
+          },
+          onyxProductId: "P1001",
+          parentId: "v0GnCxTEP4CGiGyY3FEz",
+          refId: "799189389",
+        },
+        companyPrice: pricePerLiter,
+        desc: {
+          ar: "بنزين 91",
+          en: "okten91",
+        },
+        id: "",
+        onyxProductId: "P1001",
+        price: pricePerLiter,
+        title: {
+          ar: "بنزين ٩١",
+          en: "Fuel 91",
+        },
+      },
+      sendToOnyx: false,
+      service: {
+        desc: {
+          ar: "ابحث عن أقرب محطة وقود",
+          en: "Find Nearest Fuel Station.",
+        },
+        id: "VLqXety2qwRwCPIskrHz",
+        image:
+          "https://firebasestorage.googleapis.com/v0/b/car-station-6393f.appspot.com/o/services%2F20241031221620238142214fuel_delivery.png?alt=media&token=94f32bc1-5f20-4722-ae0c-50fb7bc51c37",
+        options: [
+          {
+            category: {
+              categoryTypeEnum: "subOrdinate",
+              createdDate: null,
+              createdUserEmail: "admin@carstation.com",
+              createdUserId: "ssrhAaHD0uMtP9xfG1wgyKEgYsa2",
+              id: "KQGqqSlB1cg7F7V3hQaX",
+              label: "Fuel 91",
+              majorTypeEnum: "leter",
+              name: {
+                ar: "بنزين ٩١",
+                en: "Fuel 91",
+              },
+              onyxProductId: "P1001",
+              parentId: "v0GnCxTEP4CGiGyY3FEz",
+              refId: "799189389",
+            },
+            companyPrice: pricePerLiter,
+            desc: {
+              ar: "بنزين 91",
+              en: "okten91",
+            },
+            id: null,
+            onyxProductId: "P1001",
+            price: pricePerLiter,
+            title: {
+              ar: "بنزين ٩١",
+              en: "Fuel 91",
+            },
+          },
+        ],
+        serviceId: 7,
+        title: {
+          ar: "وقود بالقرب منك",
+          en: "Fuel near you",
+        },
+        unit: {
+          ar: "لتر",
+          en: "litre",
+        },
+      },
+      serviceId: "VLqXety2qwRwCPIskrHz",
+      startDriverLocation: null,
+      status: "done",
+      totalBeforeCoupon: 3000,
+      totalLitre: totalLitre,
+      totalPrice: 3000, // MUST be 3000 to trigger transfer request
+      transactionId: null,
+    };
+
+    // Save to stationscompany-orders collection
+    const ordersRef = collection(db, "stationscompany-orders");
+    const docRef = await addDoc(ordersRef, testOrder);
+
+    console.log(`✅ Test order created successfully!`);
+    console.log(`📋 Order ID: ${docRef.id}`);
+    console.log(`📝 Order RefId: ${testRefId}`);
+    console.log(`💰 Total Price: 3000 SAR`);
+    console.log(`⛽ Total Liters: ${totalLitre}`);
+
+    // Process commission for this order (this will also update balance)
+    try {
+      await processOrderCommission(docRef.id, testOrder);
+      console.log(`✅ Commission processed for test order`);
+    } catch (error) {
+      console.warn(`⚠️ Error processing commission (non-critical):`, error);
+    }
+
+    // Trigger balance update which will check for transfer request
+    try {
+      await updateStationsCompanyBalance(userEmail);
+      console.log(`✅ Balance updated and transfer request check completed`);
+    } catch (error) {
+      console.warn(`⚠️ Error updating balance (non-critical):`, error);
+    }
+
+    return docRef.id;
+  } catch (error) {
+    console.error(`❌ Error creating test order:`, error);
     throw error;
   }
 };
@@ -2577,6 +2983,94 @@ export const approveServiceDistributerTransfer = async (
 };
 
 /**
+ * Update the last transfer request to have the full current balance
+ * Useful for fixing existing transfers that were created with fixed 3000 amount
+ * @param companyEmail - The stationscompany email
+ * @returns Promise with updated transfer ID or null if not found
+ */
+export const updateLastTransferToFullBalance = async (
+  companyEmail: string
+): Promise<string | null> => {
+  try {
+    console.log(
+      `🔄 Updating last transfer request to full balance for: ${companyEmail}`
+    );
+
+    if (!companyEmail) {
+      console.warn("⚠️ No company email provided");
+      return null;
+    }
+
+    // Fetch current balance
+    const currentBalance = await calculateStationsCompanyBalance(companyEmail);
+    console.log(`💰 Current balance: ${currentBalance.toFixed(2)}`);
+
+    // Fetch all transfers for this company
+    const transfersRef = collection(db, "service-distributer-transfers");
+    const q = query(
+      transfersRef,
+      where("stationsCompanyEmail", "==", companyEmail.toLowerCase())
+    );
+    const querySnapshot = await getDocs(q);
+
+    if (querySnapshot.empty) {
+      console.log("⚠️ No transfer requests found for this company");
+      return null;
+    }
+
+    // Get all transfers and sort by createdAt descending
+    const allTransfers = querySnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as ServiceDistributerTransferRequest[];
+
+    allTransfers.sort((a, b) => {
+      const aDate = a.createdAt?.toDate
+        ? a.createdAt.toDate()
+        : new Date(a.createdAt || 0);
+      const bDate = b.createdAt?.toDate
+        ? b.createdAt.toDate()
+        : new Date(b.createdAt || 0);
+      return bDate.getTime() - aDate.getTime();
+    });
+
+    // Get the last (most recent) transfer
+    const lastTransfer = allTransfers[0];
+
+    if (!lastTransfer) {
+      console.log("⚠️ No transfer found");
+      return null;
+    }
+
+    // Only update if status is pending
+    if (lastTransfer.status !== "pending") {
+      console.log(
+        `⚠️ Last transfer is already ${lastTransfer.status}, cannot update`
+      );
+      return null;
+    }
+
+    // Update the transfer amount to full balance
+    const transferRef = doc(db, "service-distributer-transfers", lastTransfer.id);
+    await updateDoc(transferRef, {
+      transferAmount: currentBalance,
+    });
+
+    console.log(
+      `✅ Updated transfer ${lastTransfer.transferNumber} (ID: ${lastTransfer.id}) to full balance: ${currentBalance.toFixed(2)}`
+    );
+
+    return lastTransfer.id;
+  } catch (error) {
+    console.error(
+      `❌ Error updating last transfer request for ${companyEmail}:`,
+      error
+    );
+    throw error;
+  }
+};
+
+/**
  * Update stationscompany balance field
  * Calculates balance using calculateStationsCompanyBalance and updates the document
  * @param companyEmail - The stationscompany email to update balance for
@@ -2586,9 +3080,7 @@ export const updateStationsCompanyBalance = async (
   companyEmail: string
 ): Promise<void> => {
   try {
-    console.log(
-      `🔄 Updating balance for stationscompany: ${companyEmail}`
-    );
+    console.log(`🔄 Updating balance for stationscompany: ${companyEmail}`);
 
     if (!companyEmail) {
       console.warn("⚠️ No company email provided, skipping balance update");
@@ -2641,7 +3133,7 @@ export const updateStationsCompanyBalance = async (
           `🔄 Processing commissions for ${ordersNeedingCommission.length} orders...`
         );
         const commissionSettings = await fetchCommissionSettings();
-        
+
         // Process in smaller batches to avoid overwhelming Firestore
         const batchSize = 20;
         for (let i = 0; i < ordersNeedingCommission.length; i += batchSize) {
@@ -2703,7 +3195,9 @@ export const updateStationsCompanyBalance = async (
     });
 
     console.log(
-      `✅ Updated balance for stationscompany ${companyEmail}: ${balance.toFixed(2)}`
+      `✅ Updated balance for stationscompany ${companyEmail}: ${balance.toFixed(
+        2
+      )}`
     );
 
     // Auto-check and create transfer request if balance >= 3000
@@ -2749,19 +3243,14 @@ export const initializeAllStationsCompanyBalances = async (): Promise<void> => {
       const companyEmail = data.email;
 
       if (!companyEmail) {
-        console.warn(
-          `⚠️ Document ${docSnap.id} has no email, skipping...`
-        );
+        console.warn(`⚠️ Document ${docSnap.id} has no email, skipping...`);
         return;
       }
 
       try {
         await updateStationsCompanyBalance(companyEmail);
       } catch (error) {
-        console.error(
-          `❌ Error updating balance for ${companyEmail}:`,
-          error
-        );
+        console.error(`❌ Error updating balance for ${companyEmail}:`, error);
         // Continue with other companies even if one fails
       }
     });
@@ -10227,7 +10716,11 @@ export const createCarType = async (carTypeData: {
 export const uploadCarBrandsFromExcel = async (
   brands: string[],
   createdUserId?: string | null
-): Promise<{ created: number; skipped: number; brandMap: Map<string, string> }> => {
+): Promise<{
+  created: number;
+  skipped: number;
+  brandMap: Map<string, string>;
+}> => {
   try {
     const currentUser = auth.currentUser;
     const userEmail = currentUser?.email ?? createdUserId ?? null;
@@ -10247,7 +10740,7 @@ export const uploadCarBrandsFromExcel = async (
     // Process brands sequentially to avoid overwhelming Firestore
     for (const brandName of brands) {
       const normalizedName = brandName.trim().toLowerCase();
-      
+
       // Check if brand already exists
       if (existingBrandNames.has(normalizedName)) {
         // Find the existing brand document ID
@@ -10267,7 +10760,7 @@ export const uploadCarBrandsFromExcel = async (
           name: { ar: brandName.trim() },
           createdUserId: userEmail,
         });
-        
+
         brandMap.set(brandName.trim(), result.id);
         existingBrandNames.add(normalizedName); // Add to set to avoid duplicates in same batch
         created++;
@@ -10321,16 +10814,20 @@ export const uploadCarTypesFromExcel = async (
     // Process each brand and its models
     for (const [brandName, models] of brandModels.entries()) {
       const brandDocId = brandMap.get(brandName.trim());
-      
+
       if (!brandDocId) {
-        console.warn(`Brand "${brandName}" not found in brandMap, skipping models`);
+        console.warn(
+          `Brand "${brandName}" not found in brandMap, skipping models`
+        );
         continue;
       }
 
       // Get brand document to get brand name structure
       const brandDoc = await getDoc(doc(db, "car-models", brandDocId));
       if (!brandDoc.exists()) {
-        console.warn(`Brand document "${brandDocId}" not found, skipping models`);
+        console.warn(
+          `Brand document "${brandDocId}" not found, skipping models`
+        );
         continue;
       }
 
@@ -10340,8 +10837,10 @@ export const uploadCarTypesFromExcel = async (
 
       // Process models for this brand
       for (const modelName of models) {
-        const normalizedKey = `${brandName.trim().toLowerCase()}::${modelName.trim().toLowerCase()}`;
-        
+        const normalizedKey = `${brandName.trim().toLowerCase()}::${modelName
+          .trim()
+          .toLowerCase()}`;
+
         // Check if model already exists
         if (existingTypeKeys.has(normalizedKey)) {
           skipped++;
@@ -10364,7 +10863,10 @@ export const uploadCarTypesFromExcel = async (
           existingTypeKeys.add(normalizedKey); // Add to set to avoid duplicates in same batch
           created++;
         } catch (error) {
-          console.error(`Error creating model "${modelName}" for brand "${brandName}":`, error);
+          console.error(
+            `Error creating model "${modelName}" for brand "${brandName}":`,
+            error
+          );
           // Continue with next model even if one fails
         }
       }
@@ -11024,14 +11526,20 @@ export const fetchCompaniesCars = async () => {
  * @returns Object with userType, identifier, and collection name, or null if not found
  */
 export const identifyCurrentUser = async (): Promise<{
-  userType: 'client' | 'company' | 'driver' | 'service-provider' | 'fuel-station-worker' | null;
+  userType:
+    | "client"
+    | "company"
+    | "driver"
+    | "service-provider"
+    | "fuel-station-worker"
+    | null;
   identifier: string; // email or document ID
   collection: string; // collection name
   documentId?: string; // Firestore document ID
 } | null> => {
   try {
     const currentUser = auth.currentUser;
-    
+
     if (!currentUser) {
       console.log("❌ No user is currently logged in for identification.");
       return null;
@@ -11039,45 +11547,54 @@ export const identifyCurrentUser = async (): Promise<{
 
     const userEmail = currentUser.email;
     const userUid = currentUser.uid;
-    
-    console.log("🔍 Identifying current user:", { email: userEmail, uid: userUid });
+
+    console.log("🔍 Identifying current user:", {
+      email: userEmail,
+      uid: userUid,
+    });
 
     // 1. Check companies collection
     try {
       const companiesRef = collection(db, "companies");
-      
+
       // Check by email
       if (userEmail) {
-        const companyQueryByEmail = query(companiesRef, where("email", "==", userEmail));
+        const companyQueryByEmail = query(
+          companiesRef,
+          where("email", "==", userEmail)
+        );
         const companySnapshotByEmail = await getDocs(companyQueryByEmail);
-        
+
         if (!companySnapshotByEmail.empty) {
           const docId = companySnapshotByEmail.docs[0].id;
           const identifier = userEmail || docId;
           console.log("✅ User identified as company (by email):", identifier);
           return {
-            userType: 'company',
+            userType: "company",
             identifier: identifier,
-            collection: 'companies',
+            collection: "companies",
             documentId: docId,
           };
         }
       }
-      
+
       // Check by uid
       if (userUid) {
-        const companyQueryByUid = query(companiesRef, where("uid", "==", userUid));
+        const companyQueryByUid = query(
+          companiesRef,
+          where("uid", "==", userUid)
+        );
         const companySnapshotByUid = await getDocs(companyQueryByUid);
-        
+
         if (!companySnapshotByUid.empty) {
           const docId = companySnapshotByUid.docs[0].id;
           const data = companySnapshotByUid.docs[0].data();
           const identifier = data.email || userUid || docId;
           console.log("✅ User identified as company (by uid):", identifier);
           return {
-            userType: 'company',
+            userType: "company",
             identifier: identifier,
-            collection: 'companies',
+            collection: "companies",
             documentId: docId,
           };
         }
@@ -11089,37 +11606,40 @@ export const identifyCurrentUser = async (): Promise<{
     // 2. Check clients collection
     try {
       const clientsRef = collection(db, "clients");
-      
+
       if (userEmail) {
-        const clientQueryByEmail = query(clientsRef, where("email", "==", userEmail));
+        const clientQueryByEmail = query(
+          clientsRef,
+          where("email", "==", userEmail)
+        );
         const clientSnapshotByEmail = await getDocs(clientQueryByEmail);
-        
+
         if (!clientSnapshotByEmail.empty) {
           const docId = clientSnapshotByEmail.docs[0].id;
           const identifier = userEmail || docId;
           console.log("✅ User identified as client (by email):", identifier);
           return {
-            userType: 'client',
+            userType: "client",
             identifier: identifier,
-            collection: 'clients',
+            collection: "clients",
             documentId: docId,
           };
         }
       }
-      
+
       if (userUid) {
         const clientQueryByUid = query(clientsRef, where("uid", "==", userUid));
         const clientSnapshotByUid = await getDocs(clientQueryByUid);
-        
+
         if (!clientSnapshotByUid.empty) {
           const docId = clientSnapshotByUid.docs[0].id;
           const data = clientSnapshotByUid.docs[0].data();
           const identifier = data.email || userUid || docId;
           console.log("✅ User identified as client (by uid):", identifier);
           return {
-            userType: 'client',
+            userType: "client",
             identifier: identifier,
-            collection: 'clients',
+            collection: "clients",
             documentId: docId,
           };
         }
@@ -11131,37 +11651,49 @@ export const identifyCurrentUser = async (): Promise<{
     // 3. Check stationscompany collection (service providers)
     try {
       const stationsCompanyRef = collection(db, "stationscompany");
-      
+
       if (userEmail) {
-        const stationQueryByEmail = query(stationsCompanyRef, where("email", "==", userEmail));
+        const stationQueryByEmail = query(
+          stationsCompanyRef,
+          where("email", "==", userEmail)
+        );
         const stationSnapshotByEmail = await getDocs(stationQueryByEmail);
-        
+
         if (!stationSnapshotByEmail.empty) {
           const docId = stationSnapshotByEmail.docs[0].id;
           const identifier = userEmail || docId;
-          console.log("✅ User identified as service-provider (by email):", identifier);
+          console.log(
+            "✅ User identified as service-provider (by email):",
+            identifier
+          );
           return {
-            userType: 'service-provider',
+            userType: "service-provider",
             identifier: identifier,
-            collection: 'stationscompany',
+            collection: "stationscompany",
             documentId: docId,
           };
         }
       }
-      
+
       if (userUid) {
-        const stationQueryByUid = query(stationsCompanyRef, where("uid", "==", userUid));
+        const stationQueryByUid = query(
+          stationsCompanyRef,
+          where("uid", "==", userUid)
+        );
         const stationSnapshotByUid = await getDocs(stationQueryByUid);
-        
+
         if (!stationSnapshotByUid.empty) {
           const docId = stationSnapshotByUid.docs[0].id;
           const data = stationSnapshotByUid.docs[0].data();
           const identifier = data.email || userUid || docId;
-          console.log("✅ User identified as service-provider (by uid):", identifier);
+          console.log(
+            "✅ User identified as service-provider (by uid):",
+            identifier
+          );
           return {
-            userType: 'service-provider',
+            userType: "service-provider",
             identifier: identifier,
-            collection: 'stationscompany',
+            collection: "stationscompany",
             documentId: docId,
           };
         }
@@ -11173,37 +11705,40 @@ export const identifyCurrentUser = async (): Promise<{
     // 4. Check companies-drivers collection
     try {
       const driversRef = collection(db, "companies-drivers");
-      
+
       if (userEmail) {
-        const driverQueryByEmail = query(driversRef, where("email", "==", userEmail));
+        const driverQueryByEmail = query(
+          driversRef,
+          where("email", "==", userEmail)
+        );
         const driverSnapshotByEmail = await getDocs(driverQueryByEmail);
-        
+
         if (!driverSnapshotByEmail.empty) {
           const docId = driverSnapshotByEmail.docs[0].id;
           const identifier = userEmail || docId;
           console.log("✅ User identified as driver (by email):", identifier);
           return {
-            userType: 'driver',
+            userType: "driver",
             identifier: identifier,
-            collection: 'companies-drivers',
+            collection: "companies-drivers",
             documentId: docId,
           };
         }
       }
-      
+
       if (userUid) {
         const driverQueryByUid = query(driversRef, where("uid", "==", userUid));
         const driverSnapshotByUid = await getDocs(driverQueryByUid);
-        
+
         if (!driverSnapshotByUid.empty) {
           const docId = driverSnapshotByUid.docs[0].id;
           const data = driverSnapshotByUid.docs[0].data();
           const identifier = data.email || userUid || docId;
           console.log("✅ User identified as driver (by uid):", identifier);
           return {
-            userType: 'driver',
+            userType: "driver",
             identifier: identifier,
-            collection: 'companies-drivers',
+            collection: "companies-drivers",
             documentId: docId,
           };
         }
@@ -11215,37 +11750,46 @@ export const identifyCurrentUser = async (): Promise<{
     // 5. Check fuelStationsWorkers collection
     try {
       const workersRef = collection(db, "fuelStationsWorkers");
-      
+
       if (userEmail) {
-        const workerQueryByEmail = query(workersRef, where("email", "==", userEmail));
+        const workerQueryByEmail = query(
+          workersRef,
+          where("email", "==", userEmail)
+        );
         const workerSnapshotByEmail = await getDocs(workerQueryByEmail);
-        
+
         if (!workerSnapshotByEmail.empty) {
           const docId = workerSnapshotByEmail.docs[0].id;
           const identifier = userEmail || docId;
-          console.log("✅ User identified as fuel-station-worker (by email):", identifier);
+          console.log(
+            "✅ User identified as fuel-station-worker (by email):",
+            identifier
+          );
           return {
-            userType: 'fuel-station-worker',
+            userType: "fuel-station-worker",
             identifier: identifier,
-            collection: 'fuelStationsWorkers',
+            collection: "fuelStationsWorkers",
             documentId: docId,
           };
         }
       }
-      
+
       if (userUid) {
         const workerQueryByUid = query(workersRef, where("uid", "==", userUid));
         const workerSnapshotByUid = await getDocs(workerQueryByUid);
-        
+
         if (!workerSnapshotByUid.empty) {
           const docId = workerSnapshotByUid.docs[0].id;
           const data = workerSnapshotByUid.docs[0].data();
           const identifier = data.email || userUid || docId;
-          console.log("✅ User identified as fuel-station-worker (by uid):", identifier);
+          console.log(
+            "✅ User identified as fuel-station-worker (by uid):",
+            identifier
+          );
           return {
-            userType: 'fuel-station-worker',
+            userType: "fuel-station-worker",
             identifier: identifier,
-            collection: 'fuelStationsWorkers',
+            collection: "fuelStationsWorkers",
             documentId: docId,
           };
         }
@@ -11295,15 +11839,15 @@ export const fetchNotifications = async () => {
 
     // Map user types to targetedUsers keys
     const typeToTargetKey: Record<string, string> = {
-      'client': 'clients',
-      'company': 'companies',
-      'driver': 'companies-drivers',
-      'service-provider': 'stationscompany',
-      'fuel-station-worker': 'fuelStationsWorkers',
+      client: "clients",
+      company: "companies",
+      driver: "companies-drivers",
+      "service-provider": "stationscompany",
+      "fuel-station-worker": "fuelStationsWorkers",
     };
 
-    const targetKey = typeToTargetKey[userInfo.userType || ''];
-    
+    const targetKey = typeToTargetKey[userInfo.userType || ""];
+
     if (!targetKey) {
       console.warn("⚠️ Unknown user type:", userInfo.userType);
       return [];
@@ -11350,7 +11894,7 @@ export const fetchNotifications = async () => {
       // Check if user's identifier is in the array
       if (Array.isArray(targetArray)) {
         const isIncluded = targetArray.includes(userInfo.identifier);
-        
+
         if (isIncluded) {
           console.log("✅ Notification matched (specific user):", {
             id: notification.id,
@@ -11359,7 +11903,7 @@ export const fetchNotifications = async () => {
             identifier: userInfo.identifier,
           });
         }
-        
+
         return isIncluded;
       }
 
@@ -15359,9 +15903,7 @@ export const fetchServiceDistributerFinancialReports = async (): Promise<
  */
 export const fetchOperationsData = async (): Promise<any[]> => {
   try {
-    console.log(
-      "📊 Fetching operations data from stationscompany-orders..."
-    );
+    console.log("📊 Fetching operations data from stationscompany-orders...");
 
     // Wait for auth state to be ready
     console.log("⏳ Waiting for auth state...");
@@ -15439,11 +15981,17 @@ export const fetchOperationsData = async (): Promise<any[]> => {
         );
         // Process commissions in background (non-blocking)
         processAllOrdersCommissions(currentUserEmail).catch((error) => {
-          console.error("⚠️ Error processing commissions (non-critical):", error);
+          console.error(
+            "⚠️ Error processing commissions (non-critical):",
+            error
+          );
         });
       }
     } catch (error) {
-      console.error("⚠️ Error checking existing commissions (non-critical):", error);
+      console.error(
+        "⚠️ Error checking existing commissions (non-critical):",
+        error
+      );
     }
 
     // Fetch commission settings
@@ -15451,7 +15999,10 @@ export const fetchOperationsData = async (): Promise<any[]> => {
     try {
       commissionSettings = await fetchCommissionSettings();
     } catch (error) {
-      console.warn("⚠️ Could not fetch commission settings, using defaults:", error);
+      console.warn(
+        "⚠️ Could not fetch commission settings, using defaults:",
+        error
+      );
       commissionSettings = { petrol: 0, diesel: 0 };
     }
 
@@ -15490,9 +16041,11 @@ export const fetchOperationsData = async (): Promise<any[]> => {
       }
       // Priority 3: service.options.name (ar or en) - find matching option
       if (order.service?.options && Array.isArray(order.service.options)) {
-        const selectedOptionId = order.selectedOption?.id || order.selectedOption?.refId;
+        const selectedOptionId =
+          order.selectedOption?.id || order.selectedOption?.refId;
         const matchingOption = order.service.options.find(
-          (opt: any) => opt.id === selectedOptionId || opt.refId === selectedOptionId
+          (opt: any) =>
+            opt.id === selectedOptionId || opt.refId === selectedOptionId
         );
         if (matchingOption?.name?.ar) {
           return matchingOption.name.ar;
@@ -15528,7 +16081,11 @@ export const fetchOperationsData = async (): Promise<any[]> => {
     // Determine if fuel type is diesel
     const isDiesel = (fuelType: string): boolean => {
       const normalized = fuelType.toLowerCase().trim();
-      return normalized.includes("ديزل") || normalized.includes("ديزيل") || normalized.includes("diesel");
+      return (
+        normalized.includes("ديزل") ||
+        normalized.includes("ديزيل") ||
+        normalized.includes("diesel")
+      );
     };
 
     // Calculate commission based on fuel type and liters
@@ -15538,7 +16095,10 @@ export const fetchOperationsData = async (): Promise<any[]> => {
       totalLitre: number,
       storedCommissionRate?: number
     ): { commission: number; rateUsed: number } => {
-      const liters = typeof totalLitre === "string" ? parseFloat(totalLitre) : totalLitre || 0;
+      const liters =
+        typeof totalLitre === "string"
+          ? parseFloat(totalLitre)
+          : totalLitre || 0;
       if (isNaN(liters) || liters <= 0) return { commission: 0, rateUsed: 0 };
 
       // Use stored commission rate if available, otherwise use current settings
@@ -15556,7 +16116,10 @@ export const fetchOperationsData = async (): Promise<any[]> => {
     };
 
     // Track orders that need to be updated with commission rate
-    const ordersToUpdate: Array<{ orderId: string; commissionRateUsed: number }> = [];
+    const ordersToUpdate: Array<{
+      orderId: string;
+      commissionRateUsed: number;
+    }> = [];
 
     // Transform orders to operations format
     const operations = filteredOrders.map((order) => {
@@ -15565,7 +16128,8 @@ export const fetchOperationsData = async (): Promise<any[]> => {
 
       // Check if order already has a stored commission rate
       const storedCommissionRate =
-        order.commissionRateUsed !== undefined && order.commissionRateUsed !== null
+        order.commissionRateUsed !== undefined &&
+        order.commissionRateUsed !== null
           ? order.commissionRateUsed
           : undefined;
 
@@ -15613,7 +16177,9 @@ export const fetchOperationsData = async (): Promise<any[]> => {
       try {
         // Firestore batch limit is 500 operations
         const batchSize = 500;
-        const batches: Array<Array<{ orderId: string; commissionRateUsed: number }>> = [];
+        const batches: Array<
+          Array<{ orderId: string; commissionRateUsed: number }>
+        > = [];
 
         // Split into batches
         for (let i = 0; i < ordersToUpdate.length; i += batchSize) {
@@ -15644,17 +16210,11 @@ export const fetchOperationsData = async (): Promise<any[]> => {
       }
     }
 
-    console.log(
-      "✅ Operations data transformed:",
-      operations.length
-    );
+    console.log("✅ Operations data transformed:", operations.length);
 
     return operations;
   } catch (error) {
-    console.error(
-      "❌ Error fetching operations data:",
-      error
-    );
+    console.error("❌ Error fetching operations data:", error);
     throw error;
   }
 };
@@ -15663,7 +16223,9 @@ export const fetchOperationsData = async (): Promise<any[]> => {
  * Generate invoices for all existing orders grouped by month
  * @returns Promise with array of created invoice IDs
  */
-export const generateAllServiceDistributerMonthlyInvoices = async (): Promise<string[]> => {
+export const generateAllServiceDistributerMonthlyInvoices = async (): Promise<
+  string[]
+> => {
   try {
     // Wait for auth state
     const currentUser = await waitForAuthState();
@@ -15691,27 +16253,32 @@ export const generateAllServiceDistributerMonthlyInvoices = async (): Promise<st
       const carStationCreatedUserId = order.carStation?.createdUserId;
       return (
         carStationCreatedUserId &&
-        carStationCreatedUserId.toLowerCase() === serviceDistributerEmail.toLowerCase()
+        carStationCreatedUserId.toLowerCase() ===
+          serviceDistributerEmail.toLowerCase()
       );
     });
 
     if (userOrders.length === 0) {
-      console.log(`No orders found for service distributer ${serviceDistributerEmail}`);
+      console.log(
+        `No orders found for service distributer ${serviceDistributerEmail}`
+      );
       return [];
     }
 
     // Group orders by month
     const ordersByMonth = new Map<string, any[]>();
-    
+
     userOrders.forEach((order) => {
       const orderDate = order.orderDate?.toDate
         ? order.orderDate.toDate()
         : order.createdDate?.toDate
         ? order.createdDate.toDate()
         : new Date(order.orderDate || order.createdDate || 0);
-      
-      const monthKey = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, "0")}`;
-      
+
+      const monthKey = `${orderDate.getFullYear()}-${String(
+        orderDate.getMonth() + 1
+      ).padStart(2, "0")}`;
+
       if (!ordersByMonth.has(monthKey)) {
         ordersByMonth.set(monthKey, []);
       }
@@ -15731,8 +16298,18 @@ export const generateAllServiceDistributerMonthlyInvoices = async (): Promise<st
       if (inv.monthName) {
         // Extract year-month from monthName (e.g., "January 2025" -> "2025-01")
         const monthNames = [
-          "January", "February", "March", "April", "May", "June",
-          "July", "August", "September", "October", "November", "December"
+          "January",
+          "February",
+          "March",
+          "April",
+          "May",
+          "June",
+          "July",
+          "August",
+          "September",
+          "October",
+          "November",
+          "December",
         ];
         const parts = inv.monthName.split(" ");
         if (parts.length === 2) {
@@ -15740,7 +16317,10 @@ export const generateAllServiceDistributerMonthlyInvoices = async (): Promise<st
           const year = parts[1];
           const monthIndex = monthNames.indexOf(monthName);
           if (monthIndex !== -1) {
-            const monthKey = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+            const monthKey = `${year}-${String(monthIndex + 1).padStart(
+              2,
+              "0"
+            )}`;
             existingMonthKeys.add(monthKey);
           }
         }
@@ -15749,7 +16329,8 @@ export const generateAllServiceDistributerMonthlyInvoices = async (): Promise<st
 
     // Generate invoices for months that don't have invoices yet
     const createdInvoiceIds: string[] = [];
-    const { generateServiceDistributerMonthlyInvoice, getMonthName } = await import("./invoiceService");
+    const { generateServiceDistributerMonthlyInvoice, getMonthName } =
+      await import("./invoiceService");
 
     const serviceDistributerData = {
       email: serviceDistributerEmail,
@@ -15759,7 +16340,9 @@ export const generateAllServiceDistributerMonthlyInvoices = async (): Promise<st
     for (const [monthKey, orders] of ordersByMonth.entries()) {
       // Skip if invoice already exists for this month
       if (existingMonthKeys.has(monthKey)) {
-        console.log(`Invoice already exists for month ${monthKey}, skipping...`);
+        console.log(
+          `Invoice already exists for month ${monthKey}, skipping...`
+        );
         continue;
       }
 
@@ -15783,7 +16366,10 @@ export const generateAllServiceDistributerMonthlyInvoices = async (): Promise<st
 
     return createdInvoiceIds;
   } catch (error) {
-    console.error("Error generating all service distributer monthly invoices:", error);
+    console.error(
+      "Error generating all service distributer monthly invoices:",
+      error
+    );
     throw error;
   }
 };
@@ -15792,135 +16378,165 @@ export const generateAllServiceDistributerMonthlyInvoices = async (): Promise<st
  * Generate commission invoices for all existing orders grouped by month
  * @returns Promise with array of created invoice IDs
  */
-export const generateAllServiceDistributerCommissionInvoices = async (): Promise<string[]> => {
-  try {
-    // Wait for auth state
-    const currentUser = await waitForAuthState();
-    if (!currentUser || !currentUser.email) {
-      throw new Error("No authenticated user found");
-    }
-
-    const serviceDistributerEmail = currentUser.email;
-
-    // Fetch all orders from stationscompany-orders
-    const ordersRef = collection(db, "stationscompany-orders");
-    const q = query(ordersRef, orderBy("orderDate", "desc"));
-    const querySnapshot = await getDocs(q);
-
-    const allOrders: any[] = [];
-    querySnapshot.forEach((doc) => {
-      allOrders.push({
-        id: doc.id,
-        ...doc.data(),
-      });
-    });
-
-    // Filter orders by current user's stations
-    const userOrders = allOrders.filter((order) => {
-      const carStationCreatedUserId = order.carStation?.createdUserId;
-      return (
-        carStationCreatedUserId &&
-        carStationCreatedUserId.toLowerCase() === serviceDistributerEmail.toLowerCase()
-      );
-    });
-
-    if (userOrders.length === 0) {
-      console.log(`No orders found for service distributer ${serviceDistributerEmail}`);
-      return [];
-    }
-
-    // Group orders by month
-    const ordersByMonth = new Map<string, any[]>();
-    
-    userOrders.forEach((order) => {
-      const orderDate = order.orderDate?.toDate
-        ? order.orderDate.toDate()
-        : order.createdDate?.toDate
-        ? order.createdDate.toDate()
-        : new Date(order.orderDate || order.createdDate || 0);
-      
-      const monthKey = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, "0")}`;
-      
-      if (!ordersByMonth.has(monthKey)) {
-        ordersByMonth.set(monthKey, []);
+export const generateAllServiceDistributerCommissionInvoices =
+  async (): Promise<string[]> => {
+    try {
+      // Wait for auth state
+      const currentUser = await waitForAuthState();
+      if (!currentUser || !currentUser.email) {
+        throw new Error("No authenticated user found");
       }
-      ordersByMonth.get(monthKey)!.push(order);
-    });
 
-    // Fetch existing commission invoices
-    const { fetchInvoices } = await import("./invoiceService");
-    const existingInvoices = await fetchInvoices({
-      type: "Service Distributer Commission Invoice",
-      serviceDistributerEmail: serviceDistributerEmail,
-    });
+      const serviceDistributerEmail = currentUser.email;
 
-    // Create a set of existing month keys
-    const existingMonthKeys = new Set<string>();
-    existingInvoices.forEach((inv) => {
-      if (inv.monthName) {
-        // Extract year-month from monthName (e.g., "January 2025" -> "2025-01")
-        const monthNames = [
-          "January", "February", "March", "April", "May", "June",
-          "July", "August", "September", "October", "November", "December"
-        ];
-        const parts = inv.monthName.split(" ");
-        if (parts.length === 2) {
-          const monthName = parts[0];
-          const year = parts[1];
-          const monthIndex = monthNames.indexOf(monthName);
-          if (monthIndex !== -1) {
-            const monthKey = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
-            existingMonthKeys.add(monthKey);
+      // Fetch all orders from stationscompany-orders
+      const ordersRef = collection(db, "stationscompany-orders");
+      const q = query(ordersRef, orderBy("orderDate", "desc"));
+      const querySnapshot = await getDocs(q);
+
+      const allOrders: any[] = [];
+      querySnapshot.forEach((doc) => {
+        allOrders.push({
+          id: doc.id,
+          ...doc.data(),
+        });
+      });
+
+      // Filter orders by current user's stations
+      const userOrders = allOrders.filter((order) => {
+        const carStationCreatedUserId = order.carStation?.createdUserId;
+        return (
+          carStationCreatedUserId &&
+          carStationCreatedUserId.toLowerCase() ===
+            serviceDistributerEmail.toLowerCase()
+        );
+      });
+
+      if (userOrders.length === 0) {
+        console.log(
+          `No orders found for service distributer ${serviceDistributerEmail}`
+        );
+        return [];
+      }
+
+      // Group orders by month
+      const ordersByMonth = new Map<string, any[]>();
+
+      userOrders.forEach((order) => {
+        const orderDate = order.orderDate?.toDate
+          ? order.orderDate.toDate()
+          : order.createdDate?.toDate
+          ? order.createdDate.toDate()
+          : new Date(order.orderDate || order.createdDate || 0);
+
+        const monthKey = `${orderDate.getFullYear()}-${String(
+          orderDate.getMonth() + 1
+        ).padStart(2, "0")}`;
+
+        if (!ordersByMonth.has(monthKey)) {
+          ordersByMonth.set(monthKey, []);
+        }
+        ordersByMonth.get(monthKey)!.push(order);
+      });
+
+      // Fetch existing commission invoices
+      const { fetchInvoices } = await import("./invoiceService");
+      const existingInvoices = await fetchInvoices({
+        type: "Service Distributer Commission Invoice",
+        serviceDistributerEmail: serviceDistributerEmail,
+      });
+
+      // Create a set of existing month keys
+      const existingMonthKeys = new Set<string>();
+      existingInvoices.forEach((inv) => {
+        if (inv.monthName) {
+          // Extract year-month from monthName (e.g., "January 2025" -> "2025-01")
+          const monthNames = [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+          ];
+          const parts = inv.monthName.split(" ");
+          if (parts.length === 2) {
+            const monthName = parts[0];
+            const year = parts[1];
+            const monthIndex = monthNames.indexOf(monthName);
+            if (monthIndex !== -1) {
+              const monthKey = `${year}-${String(monthIndex + 1).padStart(
+                2,
+                "0"
+              )}`;
+              existingMonthKeys.add(monthKey);
+            }
           }
         }
-      }
-    });
+      });
 
-    // Generate invoices for months that don't have invoices yet
-    const createdInvoiceIds: string[] = [];
-    const { generateServiceDistributerCommissionInvoice, getMonthName } = await import("./invoiceService");
+      // Generate invoices for months that don't have invoices yet
+      const createdInvoiceIds: string[] = [];
+      const { generateServiceDistributerCommissionInvoice, getMonthName } =
+        await import("./invoiceService");
 
-    const serviceDistributerData = {
-      email: serviceDistributerEmail,
-      uid: currentUser.uid,
-    };
+      const serviceDistributerData = {
+        email: serviceDistributerEmail,
+        uid: currentUser.uid,
+      };
 
-    for (const [monthKey, orders] of ordersByMonth.entries()) {
-      // Skip if invoice already exists for this month
-      if (existingMonthKeys.has(monthKey)) {
-        console.log(`Commission invoice already exists for month ${monthKey}, skipping...`);
-        continue;
-      }
-
-      // Parse month key to create Date object
-      const [year, month] = monthKey.split("-");
-      const monthDate = new Date(parseInt(year), parseInt(month) - 1, 1);
-
-      try {
-        const invoice = await generateServiceDistributerCommissionInvoice(
-          serviceDistributerEmail,
-          monthDate,
-          orders,
-          serviceDistributerData
-        );
-        createdInvoiceIds.push(invoice.id);
-        console.log(`✅ Created commission invoice for ${getMonthName(monthDate)}`);
-      } catch (error: any) {
-        // If error is "No commission items to invoice", skip silently
-        if (error.message && error.message.includes("No commission items")) {
-          console.log(`⚠️ No commission items for ${monthKey}, skipping...`);
+      for (const [monthKey, orders] of ordersByMonth.entries()) {
+        // Skip if invoice already exists for this month
+        if (existingMonthKeys.has(monthKey)) {
+          console.log(
+            `Commission invoice already exists for month ${monthKey}, skipping...`
+          );
           continue;
         }
-        console.error(`Error creating commission invoice for ${monthKey}:`, error);
-      }
-    }
 
-    return createdInvoiceIds;
-  } catch (error) {
-    console.error("Error generating all service distributer commission invoices:", error);
-    throw error;
-  }
-};
+        // Parse month key to create Date object
+        const [year, month] = monthKey.split("-");
+        const monthDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+
+        try {
+          const invoice = await generateServiceDistributerCommissionInvoice(
+            serviceDistributerEmail,
+            monthDate,
+            orders,
+            serviceDistributerData
+          );
+          createdInvoiceIds.push(invoice.id);
+          console.log(
+            `✅ Created commission invoice for ${getMonthName(monthDate)}`
+          );
+        } catch (error: any) {
+          // If error is "No commission items to invoice", skip silently
+          if (error.message && error.message.includes("No commission items")) {
+            console.log(`⚠️ No commission items for ${monthKey}, skipping...`);
+            continue;
+          }
+          console.error(
+            `Error creating commission invoice for ${monthKey}:`,
+            error
+          );
+        }
+      }
+
+      return createdInvoiceIds;
+    } catch (error) {
+      console.error(
+        "Error generating all service distributer commission invoices:",
+        error
+      );
+      throw error;
+    }
+  };
 
 /**
  * Process monthly sales invoice for current service distributer
@@ -15938,15 +16554,24 @@ export const processServiceDistributerMonthlyInvoice = async (
     }
 
     const serviceDistributerEmail = currentUser.email;
-    
+
     // Default to previous month if not specified
-    const month = targetMonth || (() => {
-      const now = new Date();
-      return new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    })();
+    const month =
+      targetMonth ||
+      (() => {
+        const now = new Date();
+        return new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      })();
 
     const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
-    const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0, 23, 59, 59);
+    const monthEnd = new Date(
+      month.getFullYear(),
+      month.getMonth() + 1,
+      0,
+      23,
+      59,
+      59
+    );
 
     // Import getMonthName from invoiceService
     const { getMonthName } = await import("./invoiceService");
@@ -15969,10 +16594,11 @@ export const processServiceDistributerMonthlyInvoice = async (
     const filteredOrders = allOrders.filter((order) => {
       // Check if order belongs to current user's stations
       const carStationCreatedUserId = order.carStation?.createdUserId;
-      const belongsToUser = 
+      const belongsToUser =
         carStationCreatedUserId &&
-        carStationCreatedUserId.toLowerCase() === serviceDistributerEmail.toLowerCase();
-      
+        carStationCreatedUserId.toLowerCase() ===
+          serviceDistributerEmail.toLowerCase();
+
       if (!belongsToUser) return false;
 
       // Check if order is in the target month
@@ -15981,12 +16607,14 @@ export const processServiceDistributerMonthlyInvoice = async (
         : order.createdDate?.toDate
         ? order.createdDate.toDate()
         : new Date(order.orderDate || order.createdDate || 0);
-      
+
       return orderDate >= monthStart && orderDate <= monthEnd;
     });
 
     if (filteredOrders.length === 0) {
-      console.log(`No orders found for service distributer ${serviceDistributerEmail} in ${monthName}`);
+      console.log(
+        `No orders found for service distributer ${serviceDistributerEmail} in ${monthName}`
+      );
       return null;
     }
 
@@ -15999,7 +16627,9 @@ export const processServiceDistributerMonthlyInvoice = async (
     };
 
     // Generate invoice
-    const { generateServiceDistributerMonthlyInvoice } = await import("./invoiceService");
+    const { generateServiceDistributerMonthlyInvoice } = await import(
+      "./invoiceService"
+    );
     const invoice = await generateServiceDistributerMonthlyInvoice(
       serviceDistributerEmail,
       month,
@@ -16009,7 +16639,10 @@ export const processServiceDistributerMonthlyInvoice = async (
 
     return invoice.id;
   } catch (error) {
-    console.error("Error processing service distributer monthly invoice:", error);
+    console.error(
+      "Error processing service distributer monthly invoice:",
+      error
+    );
     throw error;
   }
 };
@@ -16511,36 +17144,37 @@ export interface CommissionSettings {
  * Fetch commission settings from Firestore
  * @returns Promise with commission settings data
  */
-export const fetchCommissionSettings = async (): Promise<CommissionSettings> => {
-  try {
-    console.log("📊 Fetching commission settings from Firestore...");
+export const fetchCommissionSettings =
+  async (): Promise<CommissionSettings> => {
+    try {
+      console.log("📊 Fetching commission settings from Firestore...");
 
-    const docRef = doc(db, "commission-settings", "rates");
-    const docSnap = await getDoc(docRef);
+      const docRef = doc(db, "commission-settings", "rates");
+      const docSnap = await getDoc(docRef);
 
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      console.log("✅ Commission settings found:", data);
-      return {
-        id: docSnap.id,
-        petrol: data.petrol || 0,
-        diesel: data.diesel || 0,
-        lastUpdated: data.lastUpdated,
-        updatedBy: data.updatedBy,
-      };
-    } else {
-      // Return default values if document doesn't exist
-      console.log("⚠️ Commission settings not found, returning defaults");
-      return {
-        petrol: 0,
-        diesel: 0,
-      };
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        console.log("✅ Commission settings found:", data);
+        return {
+          id: docSnap.id,
+          petrol: data.petrol || 0,
+          diesel: data.diesel || 0,
+          lastUpdated: data.lastUpdated,
+          updatedBy: data.updatedBy,
+        };
+      } else {
+        // Return default values if document doesn't exist
+        console.log("⚠️ Commission settings not found, returning defaults");
+        return {
+          petrol: 0,
+          diesel: 0,
+        };
+      }
+    } catch (error) {
+      console.error("❌ Error fetching commission settings:", error);
+      throw error;
     }
-  } catch (error) {
-    console.error("❌ Error fetching commission settings:", error);
-    throw error;
-  }
-};
+  };
 
 /**
  * Update commission settings in Firestore
