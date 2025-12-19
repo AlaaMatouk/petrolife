@@ -4,6 +4,8 @@ import { Table, Pagination, ExportButton } from "../../../../components/shared";
 import { fetchUserSubscriptions } from "../../../../services/firestore";
 import { LoadingSpinner } from "../../../../components/shared/Spinner/LoadingSpinner";
 import { useAuth } from "../../../../hooks/useGlobalState";
+import { useNavigation } from "../../../../hooks/useNavigation";
+import { ROUTES } from "../../../../constants/routes";
 
 const historyTableData = [
   {
@@ -112,6 +114,7 @@ const paginationData = [
 
 export const SubscriptionListSection = (): JSX.Element => {
   const { company } = useAuth();
+  const { goTo } = useNavigation();
   const [currentPage, setCurrentPage] = useState(1);
   const [subscriptions, setSubscriptions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -152,6 +155,30 @@ export const SubscriptionListSection = (): JSX.Element => {
       return 'N/A';
     }
   };
+
+  // Check if subscription is expired
+  const isSubscriptionExpired = (): boolean => {
+    if (!currentSubscription) return false;
+
+    const createdDate = currentSubscription?.createdDate;
+    const periodValueInDays = currentSubscription?.periodValueInDays;
+    
+    if (!createdDate || !periodValueInDays) return false;
+    
+    try {
+      const startDate = createdDate.toDate ? createdDate.toDate() : new Date(createdDate);
+      const expiryDate = new Date(startDate);
+      expiryDate.setDate(expiryDate.getDate() + periodValueInDays);
+      
+      const now = new Date();
+      return expiryDate.getTime() < now.getTime();
+    } catch (error) {
+      return false;
+    }
+  };
+
+  // Check if we should show current subscription (only if not expired)
+  const hasActiveSubscription = currentSubscription && !isSubscriptionExpired();
 
   const currentSubscriptionData = {
     packageName: currentSubscription?.title?.ar || currentSubscription?.title?.en || 'N/A',
@@ -244,15 +271,36 @@ export const SubscriptionListSection = (): JSX.Element => {
   };
 
   // Transform subscriptions for table display
-  const transformedTableData = subscriptions.map(sub => ({
+  let transformedTableData = subscriptions.map(sub => ({
     id: sub.id,
     packageCode: sub.id.substring(0, 6).toUpperCase(),
     packageName: sub.planName,
     subscriptionDate: sub.createdDate,
     expiryDate: sub.expiryDate,
-    operationType: 'نشط', // Active status
+    operationType: 'منتهي', // Expired status for history
     subscriptionCost: String(sub.price),
   }));
+
+  // If current subscription is expired, add it to history table (only if not already in the list)
+  if (currentSubscription && isSubscriptionExpired()) {
+    const currentSubscriptionId = currentSubscription.id || '';
+    // Check if current subscription is already in the subscriptions list
+    const alreadyInList = subscriptions.some(sub => sub.id === currentSubscriptionId);
+    
+    if (!alreadyInList) {
+      const expiredSubscriptionData = {
+        id: currentSubscriptionId || 'current-expired',
+        packageCode: (currentSubscriptionId || 'CURRENT').substring(0, 6).toUpperCase(),
+        packageName: currentSubscription?.title?.ar || currentSubscription?.title?.en || 'N/A',
+        subscriptionDate: formatDate(currentSubscription?.createdDate),
+        expiryDate: calculateExpiryDate(),
+        operationType: 'منتهي',
+        subscriptionCost: String(currentSubscription?.price || 0),
+      };
+      // Add expired current subscription to the beginning of the list
+      transformedTableData = [expiredSubscriptionData, ...transformedTableData];
+    }
+  }
 
   // Calculate pagination
   const totalPages = Math.ceil(transformedTableData.length / ITEMS_PER_PAGE);
@@ -262,6 +310,8 @@ export const SubscriptionListSection = (): JSX.Element => {
 
   return (
     <section className="flex flex-col w-full max-w-[1200px] mx-auto gap-5 px-4" role="main" aria-label="قسم قائمة الاشتراكات">
+      {/* Show current subscription section (even if expired) */}
+      {currentSubscription && (
 <article className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder">
 <div className="flex flex-col items-end gap-7 relative self-stretch w-full flex-[0_0_auto]">
 <header className="inline-flex items-center gap-1.5 relative flex-[0_0_auto]">
@@ -365,7 +415,10 @@ export const SubscriptionListSection = (): JSX.Element => {
 </div>
 </div>
 </div>
-<div className="flex flex-col w-[138px] items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] bg-orange-100 rounded-[var(--corner-radius-small)]">
+<button
+  onClick={() => goTo(ROUTES.SUBSCRIPTION_PLANS)}
+  className="flex flex-col w-[138px] items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative flex-[0_0_auto] bg-orange-100 rounded-[var(--corner-radius-small)] hover:bg-orange-200 transition-colors cursor-pointer"
+>
 <div className="items-center justify-center gap-[var(--corner-radius-small)] self-stretch w-full flex-[0_0_auto] flex relative">
 <div className="inline-flex items-center justify-center gap-2.5 pt-1 pb-0 px-0 relative flex-[0_0_auto]">
 <span className="w-fit mt-[-1.00px] font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-orange text-left tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] relative font-body-body-2 text-[length:var(--body-body-2-font-size)] whitespace-nowrap [font-style:var(--body-body-2-font-style)]">
@@ -374,8 +427,9 @@ export const SubscriptionListSection = (): JSX.Element => {
 </div>
             <Star className="relative w-[18px] h-[18px] text-orange-500" />
 </div>
-</div>
+</button>
 </article>
+      )}
 <article className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder">
 <div className="flex flex-col items-end gap-[var(--corner-radius-extra-large)] relative self-stretch w-full flex-[0_0_auto]">
 <div className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">

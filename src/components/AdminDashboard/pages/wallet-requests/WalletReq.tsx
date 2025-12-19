@@ -1,10 +1,16 @@
 import { DataTableSection } from "../../../sections/DataTableSection";
 import { Wallet } from "lucide-react";
-import { fetchAllAdminWalletRequests, addRefidToExistingWalletRequests, deleteWalletRequest } from "../../../../services/firestore";
+import {
+  fetchAllAdminWalletRequests,
+  addRefidToExistingWalletRequests,
+  deleteWalletRequest,
+  approveWalletChargeRequest,
+  rejectWalletChargeRequest,
+} from "../../../../services/firestore";
 import { useToast } from "../../../../context/ToastContext";
 import { useState, useCallback, useEffect } from "react";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
-import { db } from "../../../../config/firebase";
+import { db, auth } from "../../../../config/firebase";
 import { ConfirmDialog } from "../../../shared/ConfirmDialog/ConfirmDialog";
 
 type WalletRequest = {
@@ -41,7 +47,17 @@ export const WalletReq = () => {
   const [rawWalletRequestsData, setRawWalletRequestsData] = useState<any[]>([]);
   const [needsMigration, setNeedsMigration] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [processingId, setProcessingId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    requestId: string | null;
+    requestNumber: string;
+  }>({
+    isOpen: false,
+    requestId: null,
+    requestNumber: "",
+  });
+  const [rejectConfirm, setRejectConfirm] = useState<{
     isOpen: boolean;
     requestId: string | null;
     requestNumber: string;
@@ -54,22 +70,42 @@ export const WalletReq = () => {
   // Fetch raw data to check if migration is needed
   const fetchDataWithState = useCallback(async () => {
     const data = await fetchAllAdminWalletRequests();
-    
+
     // Fetch raw Firestore data to check for refid
     try {
       const requestsRef = collection(db, "companies-wallets-requests");
-      const q = query(requestsRef, orderBy("actionDate", "desc"));
-      const querySnapshot = await getDocs(q);
+      const querySnapshot = await getDocs(requestsRef);
       const rawData: any[] = [];
       querySnapshot.forEach((doc) => {
         rawData.push({ id: doc.id, ...doc.data() });
       });
+
+      // Sort manually by date (support both old and new structures)
+      rawData.sort((a, b) => {
+        const dateA = a.createdDate || a.actionDate || a.requestDate;
+        const dateB = b.createdDate || b.actionDate || b.requestDate;
+
+        if (!dateA && !dateB) return 0;
+        if (!dateA) return 1;
+        if (!dateB) return -1;
+
+        // Convert Firestore Timestamps to milliseconds for comparison
+        const timeA = dateA?.toMillis
+          ? dateA.toMillis()
+          : new Date(dateA).getTime();
+        const timeB = dateB?.toMillis
+          ? dateB.toMillis()
+          : new Date(dateB).getTime();
+
+        return timeB - timeA; // Most recent first
+      });
+
       setRawWalletRequestsData(rawData);
       setNeedsMigration(rawData.some((request) => !request.refid));
     } catch (error) {
       console.error("Error fetching raw wallet requests data:", error);
     }
-    
+
     return data;
   }, []);
 
@@ -82,7 +118,7 @@ export const WalletReq = () => {
     try {
       setIsMigrating(true);
       const updatedCount = await addRefidToExistingWalletRequests();
-      
+
       addToast({
         type: "success",
         message: `تم إضافة refid لـ ${updatedCount} طلب محفظة`,
@@ -109,7 +145,7 @@ export const WalletReq = () => {
     // Find the request to get its details
     const request = rawWalletRequestsData.find((r) => r.id === requestId);
     const requestNumber = request?.refid || requestId;
-    
+
     setDeleteConfirm({
       isOpen: true,
       requestId: requestId,
@@ -164,6 +200,170 @@ export const WalletReq = () => {
     });
   };
 
+  // Handle approve wallet request
+  const handleApprove = async (id: string | number) => {
+    const requestId = String(id);
+    const currentUser = auth.currentUser;
+
+    if (!currentUser) {
+      addToast({
+        type: "error",
+        message: "يجب تسجيل الدخول كمسؤول",
+        duration: 3000,
+      });
+      return;
+    }
+
+    // Find the request to check its status
+    const request = rawWalletRequestsData.find((r) => r.id === requestId);
+    if (!request) {
+      addToast({
+        type: "error",
+        message: "الطلب غير موجود",
+        duration: 3000,
+      });
+      return;
+    }
+
+    // Get status from correct location (support both old and new structures)
+    const currentStatus =
+      request.status || request.requestedUser?.status || "pending";
+    if (currentStatus !== "pending") {
+      addToast({
+        type: "error",
+        message: `لا يمكن الموافقة على طلب ${currentStatus}`,
+        duration: 3000,
+      });
+      return;
+    }
+
+    try {
+      setProcessingId(requestId);
+
+      await approveWalletChargeRequest(requestId, {
+        uid: currentUser.uid,
+        email: currentUser.email!,
+        name: currentUser.displayName || currentUser.email!,
+      });
+
+      addToast({
+        type: "success",
+        message: "تمت الموافقة على الطلب بنجاح وتم تحديث الرصيد",
+        duration: 4000,
+      });
+
+      // Refresh data
+      await fetchDataWithState();
+    } catch (error: any) {
+      console.error("Error approving request:", error);
+      addToast({
+        type: "error",
+        message: error.message || "فشل في الموافقة على الطلب",
+        duration: 3000,
+      });
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // Handle reject wallet request - open confirmation
+  const handleReject = (id: string | number) => {
+    const requestId = String(id);
+    const request = rawWalletRequestsData.find((r) => r.id === requestId);
+
+    if (!request) {
+      addToast({
+        type: "error",
+        message: "الطلب غير موجود",
+        duration: 3000,
+      });
+      return;
+    }
+
+    if (request.status !== "pending") {
+      addToast({
+        type: "error",
+        message: `لا يمكن رفض طلب ${request.status}`,
+        duration: 3000,
+      });
+      return;
+    }
+
+    const requestNumber = request?.refid || requestId;
+
+    setRejectConfirm({
+      isOpen: true,
+      requestId: requestId,
+      requestNumber: requestNumber,
+    });
+  };
+
+  // Confirm and reject wallet request
+  const handleRejectConfirm = async () => {
+    if (!rejectConfirm.requestId) return;
+
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      addToast({
+        type: "error",
+        message: "يجب تسجيل الدخول كمسؤول",
+        duration: 3000,
+      });
+      return;
+    }
+
+    try {
+      setProcessingId(rejectConfirm.requestId);
+
+      // Optional: Prompt for rejection reason
+      const reason = prompt("سبب الرفض (اختياري):");
+
+      await rejectWalletChargeRequest(
+        rejectConfirm.requestId,
+        {
+          uid: currentUser.uid,
+          email: currentUser.email!,
+          name: currentUser.displayName || currentUser.email!,
+        },
+        reason || undefined
+      );
+
+      addToast({
+        type: "success",
+        message: `تم رفض الطلب رقم ${rejectConfirm.requestNumber} بنجاح`,
+        duration: 3000,
+      });
+
+      // Close confirmation popup
+      setRejectConfirm({
+        isOpen: false,
+        requestId: null,
+        requestNumber: "",
+      });
+
+      // Refresh data
+      await fetchDataWithState();
+    } catch (error: any) {
+      console.error("Error rejecting request:", error);
+      addToast({
+        type: "error",
+        message: error.message || "فشل في رفض الطلب",
+        duration: 3000,
+      });
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // Cancel reject
+  const handleRejectCancel = () => {
+    setRejectConfirm({
+      isOpen: false,
+      requestId: null,
+      requestNumber: "",
+    });
+  };
+
   return (
     <>
       {needsMigration && (
@@ -185,6 +385,9 @@ export const WalletReq = () => {
         columns={columns}
         fetchData={fetchDataWithState}
         onDelete={handleDelete}
+        onApprove={handleApprove}
+        onReject={handleReject}
+        processingId={processingId}
         addNewRoute="/wallet-requests"
         viewDetailsRoute={(id) => `/wallet-requests/${id}`}
         loadingMessage="جاري تحميل طلبات المحافظ..."
@@ -201,6 +404,17 @@ export const WalletReq = () => {
         title="تأكيد الحذف"
         message={`هل أنت متأكد من حذف طلب المحفظة رقم ${deleteConfirm.requestNumber}؟`}
         confirmText="حذف"
+        cancelText="إلغاء"
+      />
+
+      {/* Reject Confirmation Dialog */}
+      <ConfirmDialog
+        open={rejectConfirm.isOpen}
+        onCancel={handleRejectCancel}
+        onConfirm={handleRejectConfirm}
+        title="تأكيد الرفض"
+        message={`هل أنت متأكد من رفض طلب المحفظة رقم ${rejectConfirm.requestNumber}؟`}
+        confirmText="رفض"
         cancelText="إلغاء"
       />
     </>

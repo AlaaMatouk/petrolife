@@ -30,6 +30,7 @@ export const ROUTES = {
   // Store and Subscriptions
   STORE: "/store",
   SUBSCRIPTIONS: "/subscriptions",
+  SUBSCRIPTION_PLANS: "/subscription-plans",
 
   // Invoices
   INVOICES: "/invoices",
@@ -39,6 +40,9 @@ export const ROUTES = {
   
   // Fuel Invoice
   FUEL_INVOICE_DETAIL: "/fuel-invoice/:id",
+  
+  // Commission Invoice
+  COMMISSION_INVOICE_DETAIL: "/commission-invoice/:id",
 
   // Settings
   SETTINGS: "/settings",
@@ -46,6 +50,7 @@ export const ROUTES = {
   // Test
   TEST: "/test",
   TEST_CHART: "/test-chart",
+  TEST_INSUFFICIENT_BALANCE: "/test-insufficient-balance",
 
   // Service Distributer Dashboard
   SERVICE_DISTRIBUTER_DASHBOARD: "/service-distributer",
@@ -113,6 +118,7 @@ export const ROUTES = {
   ADD_CITY: "/admin-countries/:countryId/add-city",
   ADD_REGION: "/admin-countries/:countryId/add-region",
   ADMIN_CARS: "/admin-cars",
+  UPLOAD_CAR_DATA: "/admin-cars/upload",
   ADMIN_CATEGORIES: "/admin-categories",
   ADD_CLASSIFICATION: "/admin-categories/add",
   CLASSIFICATION_DETAILS: "/admin-categories/:id",

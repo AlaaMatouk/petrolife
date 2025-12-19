@@ -5,6 +5,7 @@ import { fetchInvoiceById } from "../../services/invoiceService";
 import { Invoice } from "../../types/invoice";
 import { LoadingSpinner } from "../../components/shared";
 import { useToast } from "../../context/ToastContext";
+import { generateZatcaQrFromInvoice } from "../../utils/zatcaQr";
 
 export const InvoiceDetail = (): JSX.Element => {
   const { id } = useParams<{ id: string }>();
@@ -12,6 +13,7 @@ export const InvoiceDetail = (): JSX.Element => {
   const { addToast } = useToast();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [qrCodeBase64, setQrCodeBase64] = useState<string | null>(null);
 
   useEffect(() => {
     const loadInvoice = async () => {
@@ -49,6 +51,17 @@ export const InvoiceDetail = (): JSX.Element => {
     loadInvoice();
   }, [id, navigate, addToast]);
 
+  // Generate QR code when invoice is loaded
+  useEffect(() => {
+    const generateQrCode = async () => {
+      if (invoice) {
+        const qrCode = await generateZatcaQrFromInvoice(invoice, invoice.createdAt);
+        setQrCodeBase64(qrCode);
+      }
+    };
+    generateQrCode();
+  }, [invoice]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center w-full h-screen">
@@ -71,12 +84,61 @@ export const InvoiceDetail = (): JSX.Element => {
   const formattedDate = `${invoiceDate.getDate()} - ${invoiceDate.getMonth() + 1} - ${invoiceDate.getFullYear()}`;
 
   const customerData = invoice.clientData || invoice.companyData || {};
-  const subscriptionData = invoice.items[0] || {
-    description: "اشتراك نظام إدارة الأسطول",
-    packageName: "كلاسيك",
-    period: "سنة",
-    startDate: "01/01/2024",
-    endDate: "31/12/2024",
+  const subscriptionItem = invoice.items[0] || {};
+  
+  // Calculate dates from invoice createdAt if not available in item
+  let subscriptionStartDate = subscriptionItem.startDate;
+  let subscriptionEndDate = subscriptionItem.endDate;
+  
+  if (!subscriptionStartDate || !subscriptionEndDate) {
+    // If dates are not in item, calculate from invoice date and period
+    const invoiceDate = invoice.createdAt instanceof Date
+      ? invoice.createdAt
+      : invoice.createdAt?.toDate
+      ? invoice.createdAt.toDate()
+      : new Date();
+    
+    const periodValueInDays = subscriptionItem.periodValueInDays || 365;
+    subscriptionStartDate = `${String(invoiceDate.getDate()).padStart(2, '0')}/${String(invoiceDate.getMonth() + 1).padStart(2, '0')}/${invoiceDate.getFullYear()}`;
+    
+    const endDateCalc = new Date(invoiceDate);
+    endDateCalc.setDate(endDateCalc.getDate() + periodValueInDays);
+    subscriptionEndDate = `${String(endDateCalc.getDate()).padStart(2, '0')}/${String(endDateCalc.getMonth() + 1).padStart(2, '0')}/${endDateCalc.getFullYear()}`;
+  }
+
+  // Determine period display - use "شهري" or "سنوي"
+  // PRIORITIZE periodValueInDays first, as it's the most reliable indicator
+  let periodDisplay = subscriptionItem.period;
+  
+  // First check periodValueInDays (most reliable)
+  if (subscriptionItem.periodValueInDays === 30) {
+    periodDisplay = "شهري";
+  } else if (subscriptionItem.periodValueInDays === 365 || subscriptionItem.periodValueInDays === 360) {
+    periodDisplay = "سنوي";
+  } else if (!periodDisplay) {
+    // Fallback: determine from periodValueInDays (if not 30 or 365)
+    if (subscriptionItem.periodValueInDays && subscriptionItem.periodValueInDays <= 31) {
+      periodDisplay = "شهري";
+    } else {
+      periodDisplay = "سنوي";
+    }
+  } else {
+    // Normalize period display string
+    const periodStr = String(periodDisplay).toLowerCase();
+    if (periodStr.includes("شهري") || periodStr.includes("monthly")) {
+      periodDisplay = "شهري";
+    } else if (periodStr.includes("سنوي") || periodStr.includes("yearly") || periodStr.includes("annual")) {
+      periodDisplay = "سنوي";
+    }
+    // Otherwise keep the original value
+  }
+
+  const subscriptionData = {
+    description: subscriptionItem.description || subscriptionItem.product || "اشتراك نظام إدارة الأسطول",
+    packageName: subscriptionItem.packageName || subscriptionItem.product || "غير محدد",
+    period: periodDisplay, // "شهري" or "سنوي"
+    startDate: subscriptionStartDate,
+    endDate: subscriptionEndDate,
   };
 
   const invoiceData = {
@@ -90,13 +152,7 @@ export const InvoiceDetail = (): JSX.Element => {
       email: customerData.email || "غير محدد",
       taxNumber: customerData.taxNumber || customerData.vatNumber || "غير محدد",
     },
-    subscription: {
-      description: subscriptionData.product || subscriptionData.description || "اشتراك نظام إدارة الأسطول",
-      packageName: subscriptionData.packageName || "كلاسيك",
-      period: subscriptionData.period || "سنة",
-      startDate: subscriptionData.startDate || "01/01/2024",
-      endDate: subscriptionData.endDate || "31/12/2024",
-    },
+    subscription: subscriptionData,
     financial: {
       subtotal: invoice.subtotal,
       vat: 15,
@@ -157,13 +213,16 @@ export const InvoiceDetail = (): JSX.Element => {
             </div>
             <div className="flex flex-col items-end gap-1">
               <span className="font-[number:var(--subtitle-subtitle-2-font-weight)] text-[#2C346C] text-[length:var(--subtitle-subtitle-2-font-size)] tracking-[var(--subtitle-subtitle-2-letter-spacing)] leading-[var(--subtitle-subtitle-2-line-height)] [direction:rtl] font-subtitle-subtitle-2 [font-style:var(--subtitle-subtitle-2-font-style)]">
-                شركة انجازات الحلول لتقنية المعلومات
+                لجميع احتياجات سيارتك
               </span>
               <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                الرياض المملكة العربية السعودية
+                الرياض-طريق خريص-14221
               </span>
               <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
-                الرقم الضريبي 300012345600003
+                رقم السجل التجاري: 1009204448
+              </span>
+              <span className="font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+                الرقم الضريبي: 312894850300003
               </span>
             </div>
           </div>
@@ -242,8 +301,10 @@ export const InvoiceDetail = (): JSX.Element => {
                   <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
                     {invoiceData.subscription.packageName}
                   </td>
-                  <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 whitespace-nowrap [font-style:var(--body-body-2-font-style)]">
-                    {invoiceData.subscription.description}
+                  <td className="px-4 py-3 text-center border border-color-mode-text-icons-t-placeholder font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 [font-style:var(--body-body-2-font-style)]">
+                    <div className="max-w-md mx-auto text-right">
+                      {invoiceData.subscription.description}
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -259,7 +320,15 @@ export const InvoiceDetail = (): JSX.Element => {
               رمز الاستجابة السريعة
             </h3>
             <div className="w-32 h-32 bg-gray-100 border border-color-mode-text-icons-t-placeholder rounded-[var(--corner-radius-small)] flex items-center justify-center">
-              <div className="text-center text-xs text-gray-400">QR Code</div>
+              {qrCodeBase64 ? (
+                <img 
+                  src={qrCodeBase64} 
+                  alt="ZATCA QR Code" 
+                  className="w-full h-full object-contain p-2"
+                />
+              ) : (
+                <div className="text-center text-xs text-gray-400">QR Code</div>
+              )}
             </div>
             <span className="font-[number:var(--caption-caption-1-font-weight)] text-color-mode-text-icons-t-primary-gray text-[length:var(--caption-caption-1-font-size)] tracking-[var(--caption-caption-1-letter-spacing)] leading-[var(--caption-caption-1-line-height)] [direction:rtl] font-caption-caption-1 text-center [font-style:var(--caption-caption-1-font-style)]">
               متوافق مع الزكاة والضريبية

@@ -1,9 +1,16 @@
 import React, { useState } from "react";
 import { CirclePlus, ArrowLeft, ChevronDown } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { submitWalletWithdrawalRequest } from "../../../../services/firestore";
+import { useToast } from "../../../../hooks/useToast";
+import { useGlobalState } from "../../../../hooks/useGlobalState";
 
 export const RequestFormSection = (): JSX.Element => {
   const navigate = useNavigate();
+  const { addToast } = useToast();
+  const { state } = useGlobalState();
+  const companyBalance = state.company?.balance || 0;
+
   const [formData, setFormData] = useState({
     accountNumber: "",
     companyIban: "",
@@ -11,8 +18,10 @@ export const RequestFormSection = (): JSX.Element => {
     withdrawalAmount: "0",
     withdrawalType: "custom", // "all" or "custom"
     refundReason: "",
-    ibanImage: null,
+    ibanImage: null as File | null,
   });
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({
@@ -25,12 +34,95 @@ export const RequestFormSection = (): JSX.Element => {
     setFormData((prev) => ({
       ...prev,
       withdrawalType: type,
-      withdrawalAmount: type === "all" ? "7250" : "0",
+      withdrawalAmount: type === "all" ? String(companyBalance) : "0",
     }));
   };
 
-  const handleSubmit = () => {
-    console.log("Form submitted:", formData);
+  const handleSubmit = async () => {
+    try {
+      setIsSubmitting(true);
+
+      // Validation
+      const withdrawalAmount = parseFloat(formData.withdrawalAmount);
+
+      if (!formData.companyIban || formData.companyIban.trim() === "") {
+        addToast({
+          type: "error",
+          message: "يرجى إدخال Company IBAN",
+          duration: 3000,
+        });
+        return;
+      }
+
+      if (withdrawalAmount <= 0) {
+        addToast({
+          type: "error",
+          message: "يرجى إدخال مبلغ صحيح",
+          duration: 3000,
+        });
+        return;
+      }
+
+      if (withdrawalAmount > companyBalance) {
+        addToast({
+          type: "error",
+          message: `رصيد غير كافٍ. الرصيد الحالي: ${companyBalance} ر.س`,
+          duration: 3000,
+        });
+        return;
+      }
+
+      if (!formData.bankName || formData.bankName.trim() === "") {
+        addToast({
+          type: "error",
+          message: "يرجى اختيار البنك",
+          duration: 3000,
+        });
+        return;
+      }
+
+      // Submit withdrawal request
+      await submitWalletWithdrawalRequest({
+        accountNumber: formData.accountNumber,
+        companyIban: formData.companyIban,
+        bankName: formData.bankName,
+        withdrawalAmount: withdrawalAmount,
+        withdrawalType: formData.withdrawalType as "all" | "custom",
+        refundReason: formData.refundReason,
+        ibanImage: formData.ibanImage || undefined,
+      });
+
+      addToast({
+        type: "success",
+        message: "تم إرسال طلب السحب بنجاح. في انتظار موافقة الإدارة.",
+        duration: 5000,
+      });
+
+      // Reset form
+      setFormData({
+        accountNumber: "",
+        companyIban: "",
+        bankName: "بنك الإتحاد الدولي",
+        withdrawalAmount: "0",
+        withdrawalType: "custom",
+        refundReason: "",
+        ibanImage: null,
+      });
+
+      // Refresh page to show updated request history
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } catch (error: any) {
+      console.error("Submit error:", error);
+      addToast({
+        type: "error",
+        message: error.message || "فشل في إرسال طلب السحب",
+        duration: 3000,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -40,7 +132,7 @@ export const RequestFormSection = (): JSX.Element => {
           <header className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
             <div className="inline-flex h-10 items-center gap-[var(--corner-radius-medium)] relative flex-[0_0_auto]">
               <button
-                onClick={() => navigate('/wallet')}
+                onClick={() => navigate("/wallet")}
                 className="flex flex-col w-10 items-center justify-center gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 relative self-stretch bg-color-mode-surface-bg-icon-gray rounded-[var(--corner-radius-small)] hover:opacity-80 transition-opacity"
                 aria-label="العودة"
               >
@@ -181,7 +273,7 @@ export const RequestFormSection = (): JSX.Element => {
                             : "text-[var(--form-active-input-text-color)]"
                         }`}
                       >
-                        كل الأموال(7250 ر.س)
+                        كل الأموال({companyBalance} ر.س)
                       </div>
                     </div>
                     {formData.withdrawalType === "all" && (
@@ -225,7 +317,7 @@ export const RequestFormSection = (): JSX.Element => {
               </div>
 
               <div className="absolute top-0 left-0 font-[number:var(--body-body-2-font-weight)] text-color-mode-text-icons-t-placeholder text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] [direction:rtl] font-body-body-2 whitespace-nowrap [font-style:var(--body-body-2-font-style)]">
-                رصيد المحفظة (7250 ر.س)
+                رصيد المحفظة ({companyBalance} ر.س)
               </div>
             </div>
 
@@ -255,11 +347,14 @@ export const RequestFormSection = (): JSX.Element => {
               <button
                 type="button"
                 onClick={handleSubmit}
-                className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-medium)] pb-[var(--corner-radius-medium)] px-2.5 flex-[0_0_auto] bg-color-mode-surface-primary-blue relative rounded-[var(--corner-radius-small)] hover:opacity-90 transition-opacity"
+                disabled={isSubmitting}
+                className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-medium)] pb-[var(--corner-radius-medium)] px-2.5 flex-[0_0_auto] bg-color-mode-surface-primary-blue relative rounded-[var(--corner-radius-small)] hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="items-center gap-[var(--corner-radius-small)] self-stretch w-full flex-[0_0_auto] flex relative">
                   <div className="w-fit font-[number:var(--subtitle-subtitle-3-font-weight)] text-color-mode-text-icons-t-btn-negative text-left tracking-[var(--subtitle-subtitle-3-letter-spacing)] whitespace-nowrap [direction:rtl] relative mt-[-1.00px] font-subtitle-subtitle-3 text-[length:var(--subtitle-subtitle-3-font-size)] leading-[var(--subtitle-subtitle-3-line-height)] [font-style:var(--subtitle-subtitle-3-font-style)]">
-                    إضافة طلب استرداد جديد
+                    {isSubmitting
+                      ? "جاري الإرسال..."
+                      : "إضافة طلب استرداد جديد"}
                   </div>
                 </div>
               </button>
@@ -300,6 +395,14 @@ export const RequestFormSection = (): JSX.Element => {
           </div>
         </form>
       </div>
+
+      {/* Confirmation Modal */}
+      <RefundConfirmationModal
+        open={showConfirmationModal}
+        formData={formData}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 };

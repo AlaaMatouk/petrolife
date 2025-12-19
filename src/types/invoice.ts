@@ -12,7 +12,7 @@ export interface InvoiceItem {
 export interface Invoice {
   id: string;
   invoiceNumber: string;
-  type: "Client" | "Company Monthly Invoice" | "Subscription";
+  type: "Client" | "Company Monthly Invoice" | "Subscription" | "Service Distributer Monthly Invoice" | "Service Distributer Commission Invoice";
   createdAt: Date | Timestamp;
   // For clients
   clientData?: any;
@@ -22,6 +22,8 @@ export interface Invoice {
   companyData?: any;
   monthName?: string;
   orders?: any[];
+  // For service distributers
+  serviceDistributerData?: any;
   // Common
   items: InvoiceItem[];
   subtotal: number;

@@ -45,7 +45,7 @@ const PAGE_CONFIGS: Record<string, PageConfig> = {
     titleIcon: <img src="/img/side-icons-7.svg" alt="" className="w-5 h-5" />,
   },
   "/perolifestationlocations": {
-    title: "محطات البترول",
+    title: "محطات الوقود",
     titleIcon: <img src="/img/side-icons-8.svg" alt="" className="w-5 h-5" />,
   },
   "/moneyrefundrequests": {
@@ -66,6 +66,10 @@ const PAGE_CONFIGS: Record<string, PageConfig> = {
   },
   "/subscriptions": {
     title: "اشتراكاتي",
+    titleIcon: <img src="/img/side-icons-11.svg" alt="" className="w-5 h-5" />,
+  },
+  "/subscription-plans": {
+    title: "الباقات",
     titleIcon: <img src="/img/side-icons-11.svg" alt="" className="w-5 h-5" />,
   },
   "/invoices": {
@@ -100,6 +104,10 @@ const PAGE_CONFIGS: Record<string, PageConfig> = {
   "/test-transfer": {
     title: "بيانات النقل المفلترة",
     titleIcon: <img src="/img/side-icons-1.svg" alt="" className="w-5 h-5" />,
+  },
+  "/test-insufficient-balance": {
+    title: "اختبار الرصيد غير الكافي",
+    titleIcon: <img src="/img/side-icons-6.svg" alt="" className="w-5 h-5" />,
   },
 };
 

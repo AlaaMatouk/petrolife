@@ -1,44 +1,137 @@
-import React, { useState } from 'react';
-import { Wallet, Copy, ChevronUp, ChevronDown, Upload, CircleAlert, ArrowLeft } from 'lucide-react';
-import { Input, Select } from '../../../../components/shared/Form';
-import { useNavigate } from 'react-router-dom';
+import React, { useState } from "react";
+import {
+  Wallet,
+  Copy,
+  ChevronUp,
+  ChevronDown,
+  Upload,
+  CircleAlert,
+  ArrowLeft,
+} from "lucide-react";
+import { Input, Select } from "../../../../components/shared/Form";
+import { useNavigate } from "react-router-dom";
+import { submitWalletChargeRequest } from "../../../../services/firestore";
+import { useToast } from "../../../../hooks/useToast";
 
 interface ManualChargeSectionProps {
-  onTabChange: (tab: 'automatic' | 'manual') => void;
+  onTabChange: (tab: "automatic" | "manual") => void;
 }
 
-export const ManualChargeSection = ({ onTabChange }: ManualChargeSectionProps): JSX.Element => {
+export const ManualChargeSection = ({
+  onTabChange,
+}: ManualChargeSectionProps): JSX.Element => {
   const navigate = useNavigate();
-  
+  const { addToast } = useToast();
+
   const [formData, setFormData] = useState({
-    accountNumber: '2145 2586 2456 3594',
-    bankName: 'بنك الإتحاد الدولي',
+    accountNumber: "2145 2586 2456 3594",
+    bankName: "بنك الإتحاد الدولي",
     transferAmount: 0,
-    transferImage: null as File | null
+    transferImage: null as File | null,
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleCopyAccount = () => {
     navigator.clipboard.writeText(formData.accountNumber);
-    console.log('Account number copied:', formData.accountNumber);
+    addToast({
+      type: "success",
+      message: "تم نسخ رقم الحساب",
+      duration: 2000,
+    });
   };
 
   const handleAmountChange = (increment: boolean) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      transferAmount: Math.max(0, prev.transferAmount + (increment ? 1 : -1))
+      transferAmount: Math.max(0, prev.transferAmount + (increment ? 1 : -1)),
     }));
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      setFormData(prev => ({ ...prev, transferImage: file }));
+      // Validate file type
+      if (!file.type.startsWith("image/")) {
+        addToast({
+          type: "error",
+          message: "يرجى اختيار صورة فقط",
+          duration: 3000,
+        });
+        return;
+      }
+
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        addToast({
+          type: "error",
+          message: "حجم الصورة يجب أن يكون أقل من 5 ميجابايت",
+          duration: 3000,
+        });
+        return;
+      }
+
+      setFormData((prev) => ({ ...prev, transferImage: file }));
     }
   };
 
-  const handleSubmit = () => {
-    console.log('Submitting charge details:', formData);
-    // Handle form submission here
+  const handleSubmit = async () => {
+    // Validation
+    if (formData.transferAmount <= 0) {
+      addToast({
+        type: "error",
+        message: "يرجى إدخال قيمة تحويل صحيحة",
+        duration: 3000,
+      });
+      return;
+    }
+
+    if (!formData.bankName.trim()) {
+      addToast({
+        type: "error",
+        message: "يرجى إدخال اسم البنك",
+        duration: 3000,
+      });
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+
+      const requestId = await submitWalletChargeRequest({
+        transferAmount: formData.transferAmount,
+        bankName: formData.bankName,
+        accountNumber: formData.accountNumber,
+        transferImage: formData.transferImage || undefined,
+      });
+
+      addToast({
+        type: "success",
+        message: "تم إرسال طلب الشحن بنجاح. سيتم مراجعته من قبل الإدارة.",
+        duration: 5000,
+      });
+
+      // Reset form
+      setFormData({
+        accountNumber: "2145 2586 2456 3594",
+        bankName: "",
+        transferAmount: 0,
+        transferImage: null,
+      });
+
+      // Navigate to requests page after a short delay
+      setTimeout(() => {
+        navigate("/walletchargerequests");
+      }, 1500);
+    } catch (error: any) {
+      console.error("Submit error:", error);
+      addToast({
+        type: "error",
+        message: error.message || "فشل في إرسال طلب الشحن",
+        duration: 3000,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -56,18 +149,18 @@ export const ManualChargeSection = ({ onTabChange }: ManualChargeSectionProps): 
             </div>
           </button>
           <button
-            onClick={() => onTabChange('manual')}
+            onClick={() => onTabChange("manual")}
             className="px-4 py-2 rounded-lg font-medium transition-colors"
-            style={{ 
-              backgroundColor: '#F9F3FF', 
-              color: '#5A66C1',
-              border: '1px solid #5A66C1'
+            style={{
+              backgroundColor: "#F9F3FF",
+              color: "#5A66C1",
+              border: "1px solid #5A66C1",
             }}
           >
             الشحن يدويا
           </button>
         </div>
-        
+
         <div className="flex w-[134px] items-center justify-end gap-1.5 relative">
           <h1 className="relative w-[117px] h-5 mt-[-1.00px] ml-[-7.00px] font-[number:var(--subtitle-subtitle-2-font-weight)] text-[var(--form-section-title-color)] text-[length:var(--subtitle-subtitle-2-font-size)] tracking-[var(--subtitle-subtitle-2-letter-spacing)] leading-[var(--subtitle-subtitle-2-line-height)] [direction:rtl] font-subtitle-subtitle-2 whitespace-nowrap [font-style:var(--subtitle-subtitle-2-font-style)]">
             شحن المحفظة
@@ -77,14 +170,23 @@ export const ManualChargeSection = ({ onTabChange }: ManualChargeSectionProps): 
       </div>
 
       {/* Description */}
-      <div className="w-full p-4 rounded-lg" style={{ backgroundColor: '#F9F3FF' }}>
+      <div
+        className="w-full p-4 rounded-lg"
+        style={{ backgroundColor: "#F9F3FF" }}
+      >
         <div className="flex items-center justify-between gap-4">
-          <p className="text-right leading-relaxed flex-1" style={{ color: '#5A66C1' }}>
-            قم بتحويل الأموال على أحد حسابات الإدارة المرتبطة بالمنصة ، ما عليك سوى نسخ أحد أرقام الحسابات المتوفرة وتحويل الأموال وارفاق صورة التحويل ، وسيتم التحقق من خلال الإدارة وإيداع الأموال في محفظتك بأسرع وقت ممكن.
+          <p
+            className="text-right leading-relaxed flex-1"
+            style={{ color: "#5A66C1" }}
+          >
+            قم بتحويل الأموال على أحد حسابات الإدارة المرتبطة بالمنصة ، ما عليك
+            سوى نسخ أحد أرقام الحسابات المتوفرة وتحويل الأموال وارفاق صورة
+            التحويل ، وسيتم التحقق من خلال الإدارة وإيداع الأموال في محفظتك
+            بأسرع وقت ممكن.
           </p>
-          <div 
+          <div
             className="flex items-center justify-center w-12 h-12 rounded-full flex-shrink-0"
-            style={{ backgroundColor: '#5A66C1' }}
+            style={{ backgroundColor: "#5A66C1" }}
           >
             <CircleAlert className="w-6 h-6 text-white" />
           </div>
@@ -102,7 +204,9 @@ export const ManualChargeSection = ({ onTabChange }: ManualChargeSectionProps): 
                 type="text"
                 name="accountNumber"
                 value={formData.accountNumber}
-                onChange={(value) => setFormData(prev => ({ ...prev, accountNumber: value }))}
+                onChange={(value) =>
+                  setFormData((prev) => ({ ...prev, accountNumber: value }))
+                }
                 icon={
                   <button
                     type="button"
@@ -118,11 +222,13 @@ export const ManualChargeSection = ({ onTabChange }: ManualChargeSectionProps): 
                 type="text"
                 name="secondAccount"
                 value="2145 2586 2456 3595"
-                onChange={(value) => console.log('Second account:', value)}
+                onChange={(value) => console.log("Second account:", value)}
                 icon={
                   <button
                     type="button"
-                    onClick={() => navigator.clipboard.writeText("2145 2586 2456 3595")}
+                    onClick={() =>
+                      navigator.clipboard.writeText("2145 2586 2456 3595")
+                    }
                     className="p-1 hover:bg-gray-100 rounded transition-colors"
                   >
                     <Copy className="w-4 h-4 text-gray-600" />
@@ -138,15 +244,22 @@ export const ManualChargeSection = ({ onTabChange }: ManualChargeSectionProps): 
                 type="text"
                 name="bankName"
                 value={formData.bankName}
-                onChange={(value) => setFormData(prev => ({ ...prev, bankName: value }))}
+                onChange={(value) =>
+                  setFormData((prev) => ({ ...prev, bankName: value }))
+                }
               />
-              
+
               <Input
                 label="قيمة التحويل"
                 type="number"
                 name="transferAmount"
                 value={formData.transferAmount}
-                onChange={(value) => setFormData(prev => ({ ...prev, transferAmount: parseInt(value) || 0 }))}
+                onChange={(value) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    transferAmount: parseInt(value) || 0,
+                  }))
+                }
               />
 
               <div className="flex flex-col items-end gap-[var(--corner-radius-extra-small)] relative flex-1 grow">
@@ -189,8 +302,9 @@ export const ManualChargeSection = ({ onTabChange }: ManualChargeSectionProps): 
         <div className="flex justify-start gap-4 w-full mt-4">
           <button
             type="button"
-            onClick={() => navigate('/wallet')}
-            className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-medium)] pb-[var(--corner-radius-medium)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray transition-colors"
+            onClick={() => navigate("/wallet")}
+            disabled={isSubmitting}
+            className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-medium)] pb-[var(--corner-radius-medium)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
               <div className="w-fit font-[number:var(--subtitle-subtitle-3-font-weight)] text-color-mode-text-icons-t-sec text-left tracking-[var(--subtitle-subtitle-3-letter-spacing)] whitespace-nowrap [direction:rtl] relative mt-[-1.00px] font-subtitle-subtitle-3 text-[length:var(--subtitle-subtitle-3-font-size)] leading-[var(--subtitle-subtitle-3-line-height)] [font-style:var(--subtitle-subtitle-3-font-style)]">
@@ -198,16 +312,17 @@ export const ManualChargeSection = ({ onTabChange }: ManualChargeSectionProps): 
               </div>
             </div>
           </button>
-          
+
           <button
             type="button"
             onClick={handleSubmit}
-            className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-medium)] pb-[var(--corner-radius-medium)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] hover:opacity-90 transition-opacity"
-            style={{ backgroundColor: '#5A66C1' }}
+            disabled={isSubmitting}
+            className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-medium)] pb-[var(--corner-radius-medium)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: "#5A66C1" }}
           >
             <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
               <div className="w-fit font-[number:var(--subtitle-subtitle-3-font-weight)] text-white text-left tracking-[var(--subtitle-subtitle-3-letter-spacing)] whitespace-nowrap [direction:rtl] relative mt-[-1.00px] font-subtitle-subtitle-3 text-[length:var(--subtitle-subtitle-3-font-size)] leading-[var(--subtitle-subtitle-3-line-height)] [font-style:var(--subtitle-subtitle-3-font-style)]">
-                ارسال تفاصيل الشحن
+                {isSubmitting ? "جاري الإرسال..." : "ارسال تفاصيل الشحن"}
               </div>
             </div>
           </button>
