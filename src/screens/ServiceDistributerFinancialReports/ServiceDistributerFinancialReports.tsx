@@ -6,6 +6,7 @@ import {
   ChevronUp,
   RotateCcw,
   TrendingUp,
+  TrendingDown,
   Clock,
   Wallet,
   Percent,
@@ -24,7 +25,7 @@ import { RTLSelect } from "../../components/shared/Form/RTLSelect";
 import { FuelTypeIcon } from "../../components/shared/FuelTypeIcon/FuelTypeIcon";
 import { Table } from "../../components/shared/Table/Table";
 import { Pagination } from "../../components/shared/Pagination/Pagination";
-import { fetchOperationsData, processServiceDistributerMonthlyInvoice, generateAllServiceDistributerMonthlyInvoices, generateAllServiceDistributerCommissionInvoices, waitForAuthState } from "../../services/firestore";
+import { fetchOperationsData, processServiceDistributerMonthlyInvoice, generateAllServiceDistributerMonthlyInvoices, generateAllServiceDistributerCommissionInvoices, waitForAuthState, fetchCurrentStationsCompany, updateStationsCompanyBalance, calculateStationsCompanyTotalCommissions, calculateStationsCompanyBalanceChange, fetchServiceDistributerTransfers, ServiceDistributerTransferRequest } from "../../services/firestore";
 import { LoadingSpinner } from "../../components/shared/Spinner/LoadingSpinner";
 import { OrderDetailsModal } from "./components/OrderDetailsModal";
 import { fetchInvoices, convertMonthNameToArabic } from "../../services/invoiceService";
@@ -71,14 +72,14 @@ interface PurchaseInvoice {
   status: "paid" | "under_review";
 }
 
-// Payment interface
+// Payment interface (matching ServiceDistributerTransferRequest)
 interface Payment {
   id: string;
   transferNumber: string;
   transferDate: string;
   transferValue: number;
-  status: "in_progress" | "completed" | "failed";
-  hasReceipt: boolean;
+  status: "pending" | "transferred";
+  hasReceipt?: boolean;
 }
 
 // Mock data
@@ -181,16 +182,7 @@ const mockPurchaseInvoices: PurchaseInvoice[] = [
 ];
 
 // Mock payments data
-const mockPayments: Payment[] = [
-  { id: "1", transferNumber: "#TRF-20240315", transferDate: "2024/03/15", transferValue: 35800.00, status: "in_progress", hasReceipt: false },
-  { id: "2", transferNumber: "#TRF-20240305", transferDate: "2024/03/05", transferValue: 42350.75, status: "completed", hasReceipt: true },
-  { id: "3", transferNumber: "#TRF-20240228", transferDate: "2024/02/28", transferValue: 38920.20, status: "failed", hasReceipt: false },
-  { id: "4", transferNumber: "#TRF-20240215", transferDate: "2024/02/15", transferValue: 45675.50, status: "completed", hasReceipt: true },
-  { id: "5", transferNumber: "#TRF-20240205", transferDate: "2024/02/05", transferValue: 41230.00, status: "completed", hasReceipt: true },
-  { id: "6", transferNumber: "#TRF-20240125", transferDate: "2024/01/25", transferValue: 39545.85, status: "completed", hasReceipt: true },
-  { id: "7", transferNumber: "#TRF-20240115", transferDate: "2024/01/15", transferValue: 43890.30, status: "failed", hasReceipt: false },
-  { id: "8", transferNumber: "#TRF-20240105", transferDate: "2024/01/05", transferValue: 47220.65, status: "completed", hasReceipt: true },
-];
+// mockPayments removed - using real data from Firestore
 
 function ServiceDistributerFinancialReports() {
   const navigate = useNavigate();
@@ -221,11 +213,159 @@ function ServiceDistributerFinancialReports() {
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [uploadingInvoiceId, setUploadingInvoiceId] = useState<string | null>(null);
+  const [currentBalance, setCurrentBalance] = useState<number | null>(null);
+  const [isLoadingBalance, setIsLoadingBalance] = useState(true);
+  const [totalCommissions, setTotalCommissions] = useState<number | null>(null);
+  const [isLoadingCommissions, setIsLoadingCommissions] = useState(true);
+  const [balanceChange, setBalanceChange] = useState<{
+    currentBalance: number;
+    lastMonthBalance: number;
+    percentageChange: number;
+    absoluteDifference: number;
+    isIncrease: boolean;
+  } | null>(null);
+  const [isLoadingBalanceChange, setIsLoadingBalanceChange] = useState(true);
 
   const itemsPerPage = 8;
   const totalSalesInvoices = salesInvoices.length;
   const totalPurchaseInvoices = purchaseInvoices.length;
-  const totalPayments = mockPayments.length;
+  const [transfers, setTransfers] = useState<ServiceDistributerTransferRequest[]>([]);
+  const [isLoadingTransfers, setIsLoadingTransfers] = useState(true);
+  const totalPayments = transfers.length;
+
+  // Fetch current balance on component mount and sync it
+  useEffect(() => {
+    const loadBalance = async () => {
+      try {
+        setIsLoadingBalance(true);
+        const currentUser = await waitForAuthState();
+        if (!currentUser || !currentUser.email) {
+          setCurrentBalance(0);
+          return;
+        }
+
+        // Sync balance in background (non-blocking)
+        updateStationsCompanyBalance(currentUser.email).catch((error) => {
+          console.error("Error syncing balance:", error);
+          // Don't show error to user, just log it
+        });
+
+        // Fetch current balance from document
+        const company = await fetchCurrentStationsCompany();
+        if (company) {
+          const balance = company.balance ?? 0;
+          setCurrentBalance(balance);
+        } else {
+          setCurrentBalance(0);
+        }
+      } catch (error) {
+        console.error("Error loading balance:", error);
+        setCurrentBalance(0);
+      } finally {
+        setIsLoadingBalance(false);
+      }
+    };
+
+    loadBalance();
+  }, []);
+
+  // Fetch total commissions on component mount
+  useEffect(() => {
+    const loadTotalCommissions = async () => {
+      try {
+        setIsLoadingCommissions(true);
+        const currentUser = await waitForAuthState();
+        if (!currentUser || !currentUser.email) {
+          setTotalCommissions(0);
+          return;
+        }
+
+        const total = await calculateStationsCompanyTotalCommissions(currentUser.email);
+        setTotalCommissions(total);
+      } catch (error) {
+        console.error("Error loading total commissions:", error);
+        setTotalCommissions(0);
+        addToast({
+          title: "خطأ",
+          message: "فشل في تحميل إجمالي العمولات المخصومة",
+          type: "error",
+        });
+      } finally {
+        setIsLoadingCommissions(false);
+      }
+    };
+
+    loadTotalCommissions();
+  }, [addToast]);
+
+  // Fetch balance change data on component mount
+  useEffect(() => {
+    const loadBalanceChange = async () => {
+      try {
+        setIsLoadingBalanceChange(true);
+        const currentUser = await waitForAuthState();
+        if (!currentUser || !currentUser.email) {
+          setBalanceChange({
+            currentBalance: 0,
+            lastMonthBalance: 0,
+            percentageChange: 0,
+            absoluteDifference: 0,
+            isIncrease: false,
+          });
+          return;
+        }
+
+        const changeData = await calculateStationsCompanyBalanceChange(currentUser.email);
+        setBalanceChange(changeData);
+      } catch (error) {
+        console.error("Error loading balance change:", error);
+        setBalanceChange({
+          currentBalance: 0,
+          lastMonthBalance: 0,
+          percentageChange: 0,
+          isIncrease: false,
+        });
+        addToast({
+          title: "خطأ",
+          message: "فشل في تحميل بيانات تغيير الرصيد",
+          type: "error",
+        });
+      } finally {
+        setIsLoadingBalanceChange(false);
+      }
+    };
+
+    loadBalanceChange();
+  }, [addToast]);
+
+  // Fetch transfers data on component mount
+  useEffect(() => {
+    const loadTransfers = async () => {
+      try {
+        setIsLoadingTransfers(true);
+        const currentUser = await waitForAuthState();
+        if (!currentUser || !currentUser.email) {
+          setTransfers([]);
+          return;
+        }
+
+        const fetchedTransfers = await fetchServiceDistributerTransfers(currentUser.email);
+        setTransfers(fetchedTransfers);
+      } catch (error) {
+        console.error("Error loading transfers:", error);
+        setTransfers([]);
+        addToast({
+          title: "خطأ",
+          message: "فشل في تحميل بيانات التحويلات",
+          type: "error",
+        });
+      } finally {
+        setIsLoadingTransfers(false);
+      }
+    };
+
+    loadTransfers();
+  }, [addToast]);
 
   // Fetch operations data on component mount
   useEffect(() => {
@@ -482,13 +622,47 @@ function ServiceDistributerFinancialReports() {
 
   const totalPurchaseInvoicePages = Math.ceil(totalPurchaseInvoices / itemsPerPage);
 
-  // Paginate payments
+  // Paginate payments (convert transfers to Payment format)
   const paginatedPayments = useMemo(() => {
     const startIndex = (paymentPage - 1) * itemsPerPage;
-    return mockPayments.slice(startIndex, startIndex + itemsPerPage);
-  }, [paymentPage]);
+    const payments: Payment[] = transfers.map((transfer) => {
+      // Format date
+      let transferDate = "غير محدد";
+      if (transfer.createdAt) {
+        try {
+          const dateObj = transfer.createdAt.toDate
+            ? transfer.createdAt.toDate()
+            : new Date(transfer.createdAt);
+          const year = dateObj.getFullYear();
+          const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+          const day = String(dateObj.getDate()).padStart(2, "0");
+          transferDate = `${year}/${month}/${day}`;
+        } catch (error) {
+          console.error("Error formatting date:", error);
+        }
+      }
+
+      return {
+        id: transfer.id,
+        transferNumber: transfer.transferNumber,
+        transferDate: transferDate,
+        transferValue: transfer.transferAmount,
+        status: transfer.status,
+      };
+    });
+
+    return payments.slice(startIndex, startIndex + itemsPerPage);
+  }, [transfers, paymentPage]);
 
   const totalPaymentPages = Math.ceil(totalPayments / itemsPerPage);
+
+  // Calculate pending transfers data
+  const pendingTransfersData = useMemo(() => {
+    const pending = transfers.filter((t) => t.status === "pending");
+    const totalAmount = pending.reduce((sum, t) => sum + (t.transferAmount || 0), 0);
+    const count = pending.length;
+    return { totalAmount, count };
+  }, [transfers]);
 
   const handleReset = () => {
     setSearchQuery("");
@@ -653,6 +827,11 @@ function ServiceDistributerFinancialReports() {
       maximumFractionDigits: 2,
     }).format(value);
     return `ر.س ${formatted}`;
+  };
+
+  // Helper function to format balance for display
+  const formatBalance = (value: number): string => {
+    return new Intl.NumberFormat("en-US").format(value);
   };
 
   // Sales Invoice table columns
@@ -835,53 +1014,25 @@ function ServiceDistributerFinancialReports() {
   // Payment table columns
   const paymentColumns = [
     {
-      key: "receipt",
-      label: "إيصال التحويل",
-      width: "w-48 min-w-[180px]",
-      render: (_: any, row: Payment) => (
-        <div className="flex items-center justify-center">
-          {row.hasReceipt ? (
-            <button
-              onClick={() => handleDownloadReceipt(row.id)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-900 hover:bg-blue-950 text-white text-sm font-medium transition-colors"
-              aria-label="تحميل الإيصال"
-            >
-              <Download className="w-4 h-4" />
-              <span>تحميل الإيصال</span>
-            </button>
-          ) : (
-            <button
-              disabled
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-200 text-gray-500 text-sm font-medium cursor-not-allowed"
-              aria-label="غير متاح"
-            >
-              <Download className="w-4 h-4" />
-              <span>غير متاح</span>
-            </button>
-          )}
-        </div>
-      ),
-    },
-    {
       key: "status",
       label: "حالة التحويل",
       width: "w-40 min-w-[160px]",
       render: (_: any, row: Payment) => (
         <div className="flex items-center justify-center">
-          {row.status === "completed" ? (
+          {row.status === "transferred" ? (
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-50 border border-green-200">
               <CheckCircle className="w-4 h-4 text-green-600" />
               <span className="text-green-700 text-sm font-medium">تم التحويل</span>
             </div>
-          ) : row.status === "in_progress" ? (
+          ) : row.status === "pending" ? (
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200">
               <Clock className="w-4 h-4 text-blue-600" />
-              <span className="text-blue-700 text-sm font-medium">جاري التحويل</span>
+              <span className="text-blue-700 text-sm font-medium">قيد المعالجة</span>
             </div>
           ) : (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-50 border border-red-200">
-              <XCircle className="w-4 h-4 text-red-600" />
-              <span className="text-red-700 text-sm font-medium">فشل التحويل</span>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-50 border border-gray-200">
+              <Clock className="w-4 h-4 text-gray-600" />
+              <span className="text-gray-700 text-sm font-medium">غير محدد</span>
             </div>
           )}
         </div>
@@ -1027,7 +1178,13 @@ function ServiceDistributerFinancialReports() {
         <div className="p-2 rounded-xl border border-solid border-gray-200 bg-gray-50">
           <SummaryCard
             title="رصيد المحفظة الحالي"
-            value="125,450"
+            value={
+              isLoadingBalance
+                ? "..."
+                : currentBalance !== null
+                ? formatBalance(currentBalance)
+                : "0"
+            }
             currency="ر.س"
             icon={
               <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
@@ -1039,36 +1196,74 @@ function ServiceDistributerFinancialReports() {
         <div className="p-2 rounded-xl border border-solid border-gray-200 bg-gray-50">
           <SummaryCard
             title="الدفعات الجاري تحويلها"
-            value="35,800"
+            value={
+              isLoadingTransfers
+                ? "..."
+                : formatBalance(pendingTransfersData.totalAmount)
+            }
             currency="ر.س"
             icon={
               <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
                 <Clock className="w-5 h-5 text-blue-600" />
               </div>
             }
-            additionalInfo="٥ دفعات قيد المعالجة"
+            additionalInfo={
+              isLoadingTransfers
+                ? "..."
+                : pendingTransfersData.count > 0
+                ? `${pendingTransfersData.count} ${pendingTransfersData.count === 1 ? "دفعة" : "دفعات"} قيد المعالجة`
+                : "لا توجد دفعات قيد المعالجة"
+            }
           />
         </div>
         <div className="p-2 rounded-xl border border-solid border-gray-200 bg-gray-50">
           <SummaryCard
             title="إجمالي رصيد المحفظة"
-            value="854,230"
+            value={
+              isLoadingBalanceChange
+                ? "..."
+                : balanceChange !== null
+                ? formatBalance(balanceChange.currentBalance)
+                : "0"
+            }
             currency="ر.س"
             icon={
               <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
                 <TrendingUp className="w-5 h-5 text-purple-600" />
               </div>
             }
-            additionalInfo="+ ١٢ % عن الشهر الماضي"
+            additionalInfo={
+              isLoadingBalanceChange
+                ? "..."
+                : balanceChange !== null
+                ? balanceChange.lastMonthBalance === 0 && balanceChange.currentBalance === 0
+                  ? "بدون بيانات"
+                  : balanceChange.lastMonthBalance === 0 && balanceChange.currentBalance > 0
+                  ? "بدون بيانات سابقة"
+                  : `${balanceChange.isIncrease ? "+" : ""}${formatBalance(Math.abs(balanceChange.absoluteDifference))} ر.س (${balanceChange.isIncrease ? "+" : ""}${balanceChange.percentageChange.toFixed(1)} %) عن الشهر الماضي`
+                : "0 ر.س (0 %) عن الشهر الماضي"
+            }
             additionalInfoIcon={
-              <TrendingUp className="w-4 h-4 text-green-500" />
+              isLoadingBalanceChange ? undefined : balanceChange !== null && balanceChange.lastMonthBalance > 0 ? (
+                balanceChange.isIncrease ? (
+                  <TrendingUp className="w-4 h-4 text-green-500" />
+                ) : balanceChange.percentageChange < 0 ? (
+                  <TrendingDown className="w-4 h-4 text-red-500" />
+                ) : undefined
+              ) : undefined
             }
           />
         </div>
         <div className="p-2 rounded-xl border border-solid border-gray-200 bg-gray-50">
           <SummaryCard
             title="إجمالي العمولات المخصومة"
-            value="18,565"
+            value={
+              isLoadingCommissions
+                ? "..."
+                : totalCommissions !== null
+                ? formatBalance(totalCommissions)
+                : "0"
+            }
             currency="ر.س"
             icon={
               <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
@@ -1203,7 +1398,7 @@ function ServiceDistributerFinancialReports() {
             <Table
               columns={paymentColumns}
               data={paginatedPayments}
-              loading={false}
+              loading={isLoadingTransfers}
               emptyMessage="لا توجد دفعات"
             />
           ) : activeTab === "operations" ? (

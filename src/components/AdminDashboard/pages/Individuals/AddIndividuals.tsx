@@ -74,6 +74,19 @@ export const AddIndividuals = () => {
     }
   };
 
+  // Check if phone number already exists
+  const checkPhoneNumberExists = async (phoneNumber: string): Promise<boolean> => {
+    try {
+      const clientsRef = collection(db, "clients");
+      const q = query(clientsRef, where("phoneNumber", "==", phoneNumber.trim()));
+      const querySnapshot = await getDocs(q);
+      return !querySnapshot.empty;
+    } catch (error) {
+      console.error("Error checking phone number:", error);
+      return false;
+    }
+  };
+
   // Upload image to Firebase Storage
   const uploadImage = async (file: File): Promise<string> => {
     const fileName = `clients/profile-photos/${Date.now()}_${file.name}`;
@@ -102,6 +115,17 @@ export const AddIndividuals = () => {
       addToast({
         title: "خطأ في البيانات",
         message: "البريد الإلكتروني مستخدم بالفعل",
+        type: "error",
+      });
+      return;
+    }
+
+    // Check if phone number already exists
+    const phoneNumberExists = await checkPhoneNumberExists(formData.phoneNumber);
+    if (phoneNumberExists) {
+      addToast({
+        title: "خطأ في البيانات",
+        message: "رقم الهاتف مستخدم بالفعل",
         type: "error",
       });
       return;
@@ -166,7 +190,7 @@ export const AddIndividuals = () => {
 
         // Default values
         isActive: true,
-        type: "Customer",
+        type: "individual",
 
         // Timestamps and user info
         createdDate: serverTimestamp(),
