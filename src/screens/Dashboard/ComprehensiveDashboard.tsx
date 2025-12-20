@@ -32,6 +32,8 @@ import {
   EssentialCategorySalesTrends,
   EssentialCategoryTimeseries,
   EssentialCategoryKey,
+  fetchAdvertisements,
+  Advertisement,
 } from "../../services/firestore";
 import { exportDataTable } from "../../services/exportService";
 import { useToast } from "../../context/ToastContext";
@@ -39,34 +41,222 @@ import { useNavigation } from "../../hooks/useNavigation";
 import { ROUTES } from "../../constants/routes";
 import { Map } from "../PerolifeStationLocations/sections/map/Map";
 
-// Banner Section Component
+// Banner Section Component with Advertisements Slider
 const BannerSection = () => {
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [advertisements, setAdvertisements] = useState<Advertisement[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isPaused, setIsPaused] = useState(false);
+
+  // Different background colors for each slide
+  const slideColors = [
+    "#311159", // Static banner - original purple
+    "#1e3a5f", // Dark blue
+    "#2d4a3e", // Dark green
+    "#5a2d3e", // Dark burgundy
+    "#3d2d4a", // Dark purple-blue
+    "#2d4a4a", // Dark teal
+    "#4a2d3a", // Dark maroon
+    "#2d3a4a", // Dark blue-gray
+    "#3a4a2d", // Dark olive
+    "#4a3a2d", // Dark brown
+  ];
+
+  // Fetch advertisements on component mount
+  useEffect(() => {
+    const loadAdvertisements = async () => {
+      try {
+        setIsLoading(true);
+        const ads = await fetchAdvertisements();
+        // Filter only active advertisements
+        const activeAds = ads.filter(
+          (ad) => ad.status === true || ad.status === "معروض"
+        );
+        setAdvertisements(activeAds);
+      } catch (error) {
+        console.error("Error loading advertisements:", error);
+        setAdvertisements([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadAdvertisements();
+  }, []);
+
+  // Auto-advance slider every 5 seconds
+  useEffect(() => {
+    if (isLoading || isPaused) return;
+
+    const totalSlides = 1 + advertisements.length; // 1 static banner + ads
+    if (totalSlides <= 1) return; // No need to auto-advance if only one slide
+
+    const interval = setInterval(() => {
+      setCurrentSlide((prev) => (prev + 1) % totalSlides);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [advertisements.length, isLoading, isPaused]);
+
+  // Render static banner content (slide 0)
+  const renderStaticBannerContent = () => (
+    <>
+      {/* Content */}
+      <div className="relative z-10 flex items-center h-full pl-0 pr-8">
+        {/* Left Side - Image with margin */}
+        <div className="flex-shrink-0 mr-8 h-full flex items-center">
+          <div className="p-4">
+            <img
+              src="/img/123.png"
+              alt="Dashboard illustration"
+              className="h-40 w-auto object-contain"
+            />
+          </div>
+        </div>
+
+        {/* Right Side - Text Content */}
+        <div className="flex-1 text-white flex flex-col justify-center items-end">
+          <p className="text-xl font-normal leading-relaxed text-right [direction:rtl] max-w-2xl">
+            كل ما تحتاجه في مكان واحد. قم بإدارة كافة أعمال الوقود الخاص
+            بنشاطك التجاري من مكان واحد. ما عليك إلا شحن المحفظة وتسجيل
+            السائقين والسيارات واستمتع بإحصائيات كاملة حول وقودك المستهلك.
+          </p>
+        </div>
+      </div>
+    </>
+  );
+
+  // Render advertisement slide content
+  const renderAdSlideContent = (ad: Advertisement, index: number) => {
+    // Get title and description (handle both string and object formats)
+    const title =
+      typeof ad.title === "string"
+        ? ad.title
+        : ad.title && typeof ad.title === "object"
+        ? ad.title.ar || ""
+        : "";
+    const description =
+      typeof ad.description === "string"
+        ? ad.description
+        : ad.description && typeof ad.description === "object"
+        ? ad.description.ar || ""
+        : "";
+
+    return (
+      <>
+        {/* Content - Same layout as static banner: image left, text right */}
+        <div className="relative z-10 flex items-center h-full pl-0 pr-8">
+          {/* Left Side - Advertisement Image with margin */}
+          <div className="flex-shrink-0 mr-8 h-full flex items-center">
+            <div className="p-4">
+              {ad.adImageUrl ? (
+                <img
+                  src={ad.adImageUrl}
+                  alt={title || "Advertisement"}
+                  className="h-40 w-auto object-contain rounded-lg"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              ) : (
+                <div className="h-40 w-56 bg-gradient-to-br from-purple-600 to-purple-800 rounded-lg flex items-center justify-center">
+                  <span className="text-white text-2xl">إعلان</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right Side - Text Content (matching static banner style) */}
+          <div className="flex-1 text-white flex flex-col justify-center items-end">
+            {title && description ? (
+              <>
+                <h3 className="text-2xl font-semibold mb-2 text-right [direction:rtl] w-full max-w-2xl">
+                  {title}
+                </h3>
+                <p className="text-xl font-normal leading-relaxed text-right [direction:rtl] max-w-2xl w-full">
+                  {description}
+                </p>
+              </>
+            ) : title ? (
+              <p className="text-xl font-normal leading-relaxed text-right [direction:rtl] max-w-2xl w-full">
+                {title}
+              </p>
+            ) : description ? (
+              <p className="text-xl font-normal leading-relaxed text-right [direction:rtl] max-w-2xl w-full">
+                {description}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </>
+    );
+  };
+
+  const totalSlides = 1 + advertisements.length;
+
+  if (isLoading) {
+    return (
+      <section className="w-full mb-8">
+        <div className="relative w-full h-48 rounded-2xl overflow-hidden bg-gray-200 flex items-center justify-center">
+          <div className="text-gray-500">جاري التحميل...</div>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="w-full mb-8">
       <div
         className="relative w-full h-48 rounded-2xl overflow-hidden"
-        style={{ backgroundColor: "#311159" }}
+        onMouseEnter={() => setIsPaused(true)}
+        onMouseLeave={() => setIsPaused(false)}
       >
-        {/* Content */}
-        <div className="relative z-10 flex items-center h-full pl-0 pr-8">
-          {/* Left Side - Image */}
-          <div className="flex-shrink-0 mr-8 h-full flex items-center">
-            <img
-              src="/img/123.png"
-              alt="Dashboard illustration"
-              className="h-48 w-auto object-contain"
-            />
-          </div>
+        {/* Slider Container */}
+        <div className="relative w-full h-full">
+          <div
+            className="flex transition-transform duration-500 ease-in-out h-full"
+            style={{
+              transform: `translateX(-${currentSlide * 100}%)`,
+            }}
+          >
+            {/* Static Banner Slide (index 0) */}
+            <div
+              className="relative w-full h-full flex-shrink-0"
+              style={{ backgroundColor: slideColors[0] }}
+            >
+              {renderStaticBannerContent()}
+            </div>
 
-          {/* Right Side - Text Content */}
-          <div className="flex-1 text-white">
-            <p className="text-xl font-normal leading-relaxed text-right [direction:rtl] max-w-2xl">
-              كل ما تحتاجه في مكان واحد. قم بإدارة كافة أعمال الوقود الخاص
-              بنشاطك التجاري من مكان واحد. ما عليك إلا شحن المحفظة وتسجيل
-              السائقين والسيارات واستمتع بإحصائيات كاملة حول وقودك المستهلك.
-            </p>
+            {/* Advertisement Slides */}
+            {advertisements.map((ad, index) => (
+              <div
+                key={ad.id}
+                className="relative w-full h-full flex-shrink-0"
+                style={{ backgroundColor: slideColors[(index + 1) % slideColors.length] }}
+              >
+                {renderAdSlideContent(ad, index + 1)}
+              </div>
+            ))}
           </div>
         </div>
+
+        {/* Navigation Dots */}
+        {totalSlides > 1 && (
+          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2 z-20">
+            {Array.from({ length: totalSlides }).map((_, index) => (
+              <button
+                key={index}
+                onClick={() => setCurrentSlide(index)}
+                className={`w-2 h-2 rounded-full transition-all ${
+                  index === currentSlide
+                    ? "bg-white w-6"
+                    : "bg-white bg-opacity-50 hover:bg-opacity-75"
+                }`}
+                aria-label={`Go to slide ${index + 1}`}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
