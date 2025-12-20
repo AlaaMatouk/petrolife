@@ -18477,3 +18477,119 @@ export const fetchUserWithdrawalRequests = async () => {
     throw error;
   }
 };
+
+/**
+ * Upload banks data to Firestore
+ * @param banks - Array of bank objects with Arabic and English names
+ * @returns Promise with upload result
+ */
+export const uploadBanksToFirestore = async (
+  banks: Array<{ arabic: string; english: string }>
+): Promise<{ created: number; skipped: number }> => {
+  try {
+    console.log("\n🏦 ========================================");
+    console.log("📝 UPLOADING BANKS TO FIRESTORE");
+    console.log("========================================");
+
+    const banksRef = collection(db, "banks");
+    let created = 0;
+    let skipped = 0;
+
+    // Fetch all existing banks to check for duplicates
+    const existingBanksSnapshot = await getDocs(banksRef);
+    const existingArabicNames = new Set<string>();
+    existingBanksSnapshot.forEach((doc) => {
+      const data = doc.data();
+      if (data.arabic) {
+        existingArabicNames.add(data.arabic.trim().toLowerCase());
+      }
+    });
+
+    // Filter out duplicates and empty banks
+    const newBanks = banks.filter((bank) => {
+      const arabic = bank.arabic.trim();
+      const english = bank.english.trim();
+      
+      if (!arabic && !english) {
+        skipped++;
+        return false;
+      }
+
+      if (existingArabicNames.has(arabic.toLowerCase())) {
+        skipped++;
+        return false;
+      }
+
+      existingArabicNames.add(arabic.toLowerCase());
+      return true;
+    });
+
+    // Use batch write for better performance
+    const batchSize = 500; // Firestore batch limit
+    let currentBatch = writeBatch(db);
+    let batchCount = 0;
+
+    for (const bank of newBanks) {
+      // Create new bank document
+      const bankDocRef = doc(banksRef);
+      currentBatch.set(bankDocRef, {
+        arabic: bank.arabic.trim(),
+        english: bank.english.trim(),
+        createdAt: serverTimestamp(),
+      });
+
+      created++;
+      batchCount++;
+
+      // Commit batch if it reaches the limit and create a new batch
+      if (batchCount >= batchSize) {
+        await currentBatch.commit();
+        currentBatch = writeBatch(db);
+        batchCount = 0;
+      }
+    }
+
+    // Commit remaining documents
+    if (batchCount > 0) {
+      await currentBatch.commit();
+    }
+
+    console.log(`✅ Uploaded ${created} banks, skipped ${skipped} duplicates`);
+    console.log("========================================\n");
+
+    return { created, skipped };
+  } catch (error: any) {
+    console.error("❌ Error uploading banks:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all banks from Firestore
+ * @returns Promise with array of banks
+ */
+export const fetchBanksFromFirestore = async (): Promise<
+  Array<{ id: string; arabic: string; english: string }>
+> => {
+  try {
+    const banksRef = collection(db, "banks");
+    const q = query(banksRef, orderBy("arabic", "asc"));
+    const querySnapshot = await getDocs(q);
+
+    const banks: Array<{ id: string; arabic: string; english: string }> = [];
+
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      banks.push({
+        id: doc.id,
+        arabic: data.arabic || "",
+        english: data.english || "",
+      });
+    });
+
+    return banks;
+  } catch (error: any) {
+    console.error("❌ Error fetching banks:", error);
+    throw error;
+  }
+};
