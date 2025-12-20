@@ -1,5 +1,9 @@
 import { DataTableSection } from "../../../sections/DataTableSection/DataTableSection";
 import { UserRound } from "lucide-react";
+import { getAllPetrolifeAgents, deletePetrolifeAgent } from "../../../../services/firestore";
+import { useToast } from "../../../../context/ToastContext";
+import { useState } from "react";
+import { ConfirmDialog } from "../../../shared/ConfirmDialog/ConfirmDialog";
 
 const columns = [
   { key: "actions", label: "الإجراءات", width: "w-16", priority: "high" },
@@ -39,7 +43,7 @@ const columns = [
               className="w-full h-full rounded-full object-cover"
             />
           ) : (
-            value.name.charAt(0)
+            value.name?.charAt(0) || "?"
           )}
         </div>
         <span className="font-medium text-gray-900">{value.name}</span>
@@ -54,124 +58,148 @@ const columns = [
   },
 ];
 
-const fetchData = async () => [
-  {
-    id: 1,
-    agentCode: "21A254",
-    referenceNumber: "REF001",
-    agentName: { name: "أحمد محمد" },
-    phone: "00965284358",
-    email: "ahmedmohamed@gmail.com",
-    city: "الرياض",
-    commission: "2",
-    successfulReferrals: "42",
-    accountStatus: { active: true, text: "مفعل" },
-  },
-  {
-    id: 2,
-    agentCode: "21A255",
-    referenceNumber: "REF002",
-    agentName: { name: "محمد أحمد" },
-    phone: "00965284359",
-    email: "mohamedahmed@gmail.com",
-    city: "الرياض",
-    commission: "6",
-    successfulReferrals: "38",
-    accountStatus: { active: true, text: "مفعل" },
-  },
-  {
-    id: 3,
-    agentCode: "21A256",
-    referenceNumber: "REF003",
-    agentName: { name: "علي حسن" },
-    phone: "00965284360",
-    email: "alihassan@gmail.com",
-    city: "الرياض",
-    commission: "10",
-    successfulReferrals: "52",
-    accountStatus: { active: true, text: "مفعل" },
-  },
-  {
-    id: 4,
-    agentCode: "21A257",
-    referenceNumber: "REF004",
-    agentName: { name: "حسن علي" },
-    phone: "00965284361",
-    email: "hassanali@gmail.com",
-    city: "الرياض",
-    commission: "4",
-    successfulReferrals: "28",
-    accountStatus: { active: true, text: "مفعل" },
-  },
-  {
-    id: 5,
-    agentCode: "21A258",
-    referenceNumber: "REF005",
-    agentName: { name: "محمود سعد" },
-    phone: "00965284362",
-    email: "mahmoudsaad@gmail.com",
-    city: "الرياض",
-    commission: "8",
-    successfulReferrals: "45",
-    accountStatus: { active: true, text: "مفعل" },
-  },
-  {
-    id: 6,
-    agentCode: "21A259",
-    referenceNumber: "REF006",
-    agentName: { name: "سعد محمود" },
-    phone: "00965284363",
-    email: "saadmahmoud@gmail.com",
-    city: "الرياض",
-    commission: "2",
-    successfulReferrals: "12",
-    accountStatus: { active: false, text: "معطل" },
-  },
-  {
-    id: 7,
-    agentCode: "21A260",
-    referenceNumber: "REF007",
-    agentName: { name: "يوسف إبراهيم" },
-    phone: "00965284364",
-    email: "yousefibrahim@gmail.com",
-    city: "الرياض",
-    commission: "6",
-    successfulReferrals: "0",
-    accountStatus: { active: false, text: "معطل" },
-  },
-  {
-    id: 8,
-    agentCode: "21A261",
-    referenceNumber: "REF008",
-    agentName: { name: "إبراهيم يوسف" },
-    phone: "00965284365",
-    email: "ibrahimyousef@gmail.com",
-    city: "الرياض",
-    commission: "10",
-    successfulReferrals: "22",
-    accountStatus: { active: false, text: "معطل" },
-  },
-];
+const fetchData = async () => {
+  try {
+    const agents = await getAllPetrolifeAgents();
+    
+    // Transform agents data to match table format
+    return agents.map((agent) => ({
+      id: agent.id,
+      agentCode: agent.agentCode || "-",
+      referenceNumber: agent.agentCode || "-", // Using agentCode as reference number
+      agentName: {
+        name: agent.name || "-",
+        avatar: agent.imageUrl || undefined,
+      },
+      phone: agent.phone || "-",
+      email: agent.email || "-",
+      city: agent.city || "-",
+      commission: agent.commissionValue?.toString() || "0",
+      successfulReferrals: (agent.companies?.length || 0).toString(),
+      accountStatus: {
+        active: agent.isActive !== false,
+        text: agent.isActive !== false ? "مفعل" : "معطل",
+      },
+    }));
+  } catch (error) {
+    console.error("Error fetching agents:", error);
+    return [];
+  }
+};
 
 const PetrolifeAgents = () => {
+  const { addToast } = useToast();
+  const [agentsData, setAgentsData] = useState<any[]>([]);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    agentId: string | null;
+    agentName: string;
+  }>({
+    isOpen: false,
+    agentId: null,
+    agentName: "",
+  });
+
+  // Fetch agents and store in state
+  const fetchAgentsWithState = async () => {
+    const data = await fetchData();
+    setAgentsData(data);
+    return data;
+  };
+
   const handleToggleStatus = (id: number | string) => {
     console.log("Toggle status for agent:", id);
     // TODO: Implement actual status toggle logic
   };
 
+  // Handle delete agent - open confirmation popup
+  const handleDelete = (id: string | number) => {
+    const agentId = String(id);
+
+    // Find agent name for confirmation message
+    const agent = agentsData.find((a) => a.id === agentId);
+    const agentName = agent?.agentName?.name || "المندوب";
+
+    // Open confirmation dialog
+    setDeleteConfirm({
+      isOpen: true,
+      agentId,
+      agentName,
+    });
+  };
+
+  // Confirm and delete agent
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirm.agentId) return;
+
+    try {
+      // Delete from Firestore
+      await deletePetrolifeAgent(deleteConfirm.agentId);
+
+      // Show success message
+      addToast({
+        title: "نجح",
+        message: `تم حذف ${deleteConfirm.agentName} بنجاح`,
+        type: "success",
+      });
+
+      // Refresh the agents list by triggering refresh
+      setRefreshTrigger((prev) => prev + 1);
+
+      // Close confirmation popup
+      setDeleteConfirm({
+        isOpen: false,
+        agentId: null,
+        agentName: "",
+      });
+    } catch (error: any) {
+      console.error("Error deleting agent:", error);
+      addToast({
+        title: "خطأ",
+        message: error.message || "فشل في حذف المندوب",
+        type: "error",
+      });
+    }
+  };
+
+  // Cancel delete
+  const handleDeleteCancel = () => {
+    setDeleteConfirm({
+      isOpen: false,
+      agentId: null,
+      agentName: "",
+    });
+  };
+
   return (
-    <DataTableSection
-      title="مندوبو بترولايف (24)"
-      entityName="مندوب"
-      entityNamePlural="مندوبين"
-      icon={UserRound}
-      columns={columns}
-      fetchData={fetchData}
-      onToggleStatus={handleToggleStatus}
-      addNewRoute="/petrolife-agents/add"
-      viewDetailsRoute={(id) => `/petrolife-agents/${id}`}
-      itemsPerPage={10}
-    />
+    <>
+      <DataTableSection
+        title="مندوبو بترولايف"
+        entityName="مندوب"
+        entityNamePlural="مندوبين"
+        icon={UserRound}
+        columns={columns}
+        fetchData={fetchAgentsWithState}
+        onToggleStatus={handleToggleStatus}
+        onDelete={handleDelete}
+        addNewRoute="/petrolife-agents/add"
+        viewDetailsRoute={(id) => `/petrolife-agents/${id}`}
+        itemsPerPage={10}
+        refreshTrigger={refreshTrigger}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={deleteConfirm.isOpen}
+        title="حذف المندوب"
+        message={`هل أنت متأكد من حذف المندوب "${deleteConfirm.agentName}"؟ لا يمكن التراجع عن هذا الإجراء.`}
+        confirmText="حذف"
+        cancelText="إلغاء"
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+      />
+    </>
   );
 };
 
