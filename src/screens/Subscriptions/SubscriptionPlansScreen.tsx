@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { Car, Check, FileText, Tag, Receipt, Percent, Wallet, ArrowRight, AlertCircle, Plus } from "lucide-react";
-import { fetchSubscriptions, processSubscriptionPayment, fetchCurrentCompany } from "../../services/firestore";
+import { Car, Check, FileText, Tag, Receipt, Percent, Wallet, ArrowRight, AlertCircle, Plus, Gift, Star, Settings, X } from "lucide-react";
+import { fetchSubscriptions, processSubscriptionPayment, fetchCurrentCompany, checkIsFirstTimeSubscription, fetchCouponByCode } from "../../services/firestore";
 import { LoadingSpinner } from "../../components/shared";
 import { useAuth } from "../../hooks/useGlobalState";
 import { useNavigation } from "../../hooks/useNavigation";
@@ -19,13 +19,35 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
   const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [showInsufficientBalanceModal, setShowInsufficientBalanceModal] = useState(false);
   const [showAlreadySubscribedModal, setShowAlreadySubscribedModal] = useState(false);
+  const [showCouponConfirmationModal, setShowCouponConfirmationModal] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [couponCode, setCouponCode] = useState<string>("");
+  const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
+  const [isFirstTime, setIsFirstTime] = useState<boolean>(false);
+  const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
   const { company, setCompany } = useAuth();
   const { goTo } = useNavigation();
   const { addToast } = useToast();
 
   // Get current subscription
   const currentSubscription = company?.selectedSubscription;
+
+  // Check first-time subscription status on mount
+  useEffect(() => {
+    const checkFirstTime = async () => {
+      try {
+        const isFirst = await checkIsFirstTimeSubscription();
+        setIsFirstTime(isFirst);
+        if (isFirst) {
+          setCouponCode("LIFE1");
+        }
+      } catch (err) {
+        console.error("Error checking first-time subscription:", err);
+      }
+    };
+
+    checkFirstTime();
+  }, []);
 
   // Fetch subscriptions on mount
   useEffect(() => {
@@ -134,25 +156,74 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
       return {
         vehicleCount: vehicleCount,
         subscriptionPrice: 0,
+        monthlyPrice: 0,
         totalWithoutVAT: 0,
         vat: 0,
         totalWithVAT: 0,
+        couponDiscount: 0,
+        couponPercentage: 0,
+        isAnnual: false,
       };
     }
 
-    const subscriptionPrice = selectedSubscription.price || 0;
+    // Determine if subscription is annual or monthly
+    let periodNameStr = "";
+    if (selectedSubscription.periodName) {
+      if (typeof selectedSubscription.periodName === "object") {
+        periodNameStr = (selectedSubscription.periodName.ar || selectedSubscription.periodName.en || "")
+          .toLowerCase()
+          .trim();
+      } else {
+        periodNameStr = String(selectedSubscription.periodName).toLowerCase().trim();
+      }
+    }
+    
+    const isAnnual = 
+      periodNameStr === "annual" ||
+      periodNameStr === "yearly" ||
+      periodNameStr === "سنوي" ||
+      periodNameStr === "سنوية" ||
+      periodNameStr.includes("سنوي") ||
+      periodNameStr.includes("annual") ||
+      periodNameStr.includes("yearly") ||
+      selectedSubscription.periodValueInDays === 365 ||
+      selectedSubscription.periodValueInDays === 360;
+
+    const monthlyPrice = selectedSubscription.price || 0;
+    // For annual subscriptions, calculate full year price (12 months)
+    // For monthly subscriptions, if coupon is applied and it's LIFE1 (100% discount), treat as 1 year
+    const subscriptionPrice = isAnnual || (appliedCoupon && (couponCode.trim().toUpperCase() === "LIFE1" || (appliedCoupon.percentage === 100 || appliedCoupon.precentage === 100)))
+      ? monthlyPrice * 12
+      : monthlyPrice;
+    
     const vatRate = 0.15; // 15% VAT
     const vat = subscriptionPrice * vatRate;
-    const totalWithVAT = subscriptionPrice + vat;
+    let totalWithoutVAT = subscriptionPrice;
+    let totalWithVAT = subscriptionPrice + vat;
+    let couponDiscount = 0;
+    let couponPercentage = 0;
+
+    // Apply coupon discount if coupon is applied
+    if (appliedCoupon) {
+      couponPercentage = appliedCoupon.percentage || appliedCoupon.precentage || 0;
+      // Calculate discount on total (price + VAT)
+      couponDiscount = totalWithVAT * (couponPercentage / 100);
+      totalWithVAT = Math.max(0, totalWithVAT - couponDiscount);
+      totalWithoutVAT = totalWithVAT / (1 + vatRate);
+    }
 
     return {
       vehicleCount: vehicleCount,
       subscriptionPrice: subscriptionPrice,
-      totalWithoutVAT: subscriptionPrice,
+      monthlyPrice: monthlyPrice,
+      totalWithoutVAT: totalWithoutVAT,
       vat: vat,
       totalWithVAT: totalWithVAT,
+      couponDiscount: couponDiscount,
+      couponPercentage: couponPercentage,
+      isAnnual: isAnnual,
     };
-  }, [selectedSubscription, vehicleCount]);
+  }, [selectedSubscription, vehicleCount, appliedCoupon, couponCode]);
 
   // Format dates for current subscription
   const formatDate = (date: any): string => {
@@ -246,8 +317,8 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
 
   // Handle confirm subscription
   const handleConfirmSubscription = async () => {
-    // Check if wallet has sufficient balance
-    if (walletBalance < subscriptionSummary.totalWithVAT) {
+    // Check if wallet has sufficient balance (skip if total is 0 due to 100% discount)
+    if (subscriptionSummary.totalWithVAT > 0 && walletBalance < subscriptionSummary.totalWithVAT) {
       // Show insufficient balance modal
       setShowSummaryModal(false);
       setShowInsufficientBalanceModal(true);
@@ -278,16 +349,32 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
         return;
       }
 
+      // If coupon is applied (LIFE1), override subscription to 1 year
+      let subscriptionToUse = selectedSubscription;
+      
+      if (appliedCoupon && (couponCode.trim().toUpperCase() === "LIFE1" || (appliedCoupon.percentage === 100 || appliedCoupon.precentage === 100))) {
+        // Override to 1 year (365 days) for free year coupon
+        subscriptionToUse = {
+          ...selectedSubscription,
+          periodValueInDays: 365,
+          periodName: typeof selectedSubscription.periodName === 'object' 
+            ? { ...selectedSubscription.periodName, ar: 'سنوي', en: 'Annual' }
+            : 'سنوي'
+        };
+      }
+
       // Process subscription payment
       const result = await processSubscriptionPayment({
         subscriptionId: selectedPlanId,
-        subscription: selectedSubscription,
+        subscription: subscriptionToUse,
         vehicleCount: vehicleCount,
         totalWithVAT: subscriptionSummary.totalWithVAT,
         totalWithoutVAT: subscriptionSummary.totalWithoutVAT,
         vat: subscriptionSummary.vat,
         companyId: companyIdToUse,
         company: company,
+        couponCode: appliedCoupon ? couponCode.trim().toUpperCase() : undefined,
+        couponData: appliedCoupon || undefined,
       });
 
       // Refresh company data
@@ -341,6 +428,129 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
     setShowSummaryModal(false);
   };
 
+  // Handle apply coupon
+  const handleApplyCoupon = async () => {
+    console.log("🔵 handleApplyCoupon called with couponCode:", couponCode);
+    
+    if (!couponCode.trim()) {
+      addToast({
+        title: 'خطأ',
+        message: 'يرجى إدخال كود الكوبون',
+        type: 'error'
+      });
+      return;
+    }
+
+    setIsValidatingCoupon(true);
+    try {
+      console.log("🔵 Fetching coupon with code:", couponCode.trim().toUpperCase());
+      const coupon = await fetchCouponByCode(couponCode.trim().toUpperCase());
+      console.log("🔵 Coupon fetched:", coupon);
+      
+      if (!coupon) {
+        console.log("🔴 Coupon not found in database");
+        // For LIFE1, if it doesn't exist, create a temporary coupon object for first-time users
+        if (couponCode.trim().toUpperCase() === "LIFE1" && isFirstTime) {
+          console.log("🟡 Creating temporary LIFE1 coupon for first-time user");
+          const tempCoupon = {
+            id: 'temp-life1',
+            code: 'LIFE1',
+            percentage: 100,
+            precentage: 100,
+            isCompany: true,
+          };
+          setAppliedCoupon(tempCoupon);
+          setShowCouponConfirmationModal(true);
+          console.log("✅ Temporary coupon applied, modal shown");
+          setIsValidatingCoupon(false);
+          return;
+        }
+        
+        addToast({
+          title: 'خطأ',
+          message: 'كود الكوبون غير صحيح',
+          type: 'error'
+        });
+        setIsValidatingCoupon(false);
+        return;
+      }
+
+      // Check if coupon is expired
+      const expireDate = coupon.expireDate || coupon.expiryDate || coupon.expireAt || coupon.expirationDate;
+      if (expireDate) {
+        let expiryDate: Date;
+        if (expireDate.toDate) {
+          expiryDate = expireDate.toDate();
+        } else if (expireDate.seconds) {
+          expiryDate = new Date(expireDate.seconds * 1000);
+        } else {
+          expiryDate = new Date(expireDate);
+        }
+        
+        if (expiryDate < new Date()) {
+          console.log("🔴 Coupon expired");
+          addToast({
+            title: 'خطأ',
+            message: 'كود الكوبون منتهي الصلاحية',
+            type: 'error'
+          });
+          setIsValidatingCoupon(false);
+          return;
+        }
+      }
+
+      // For LIFE1 specifically, verify it's 100% discount
+      if (couponCode.trim().toUpperCase() === "LIFE1") {
+        const percentage = coupon.percentage || coupon.precentage || 0;
+        console.log("🔵 LIFE1 coupon percentage:", percentage);
+        if (percentage !== 100) {
+          addToast({
+            title: 'تنبيه',
+            message: 'كود LIFE1 يجب أن يكون خصم 100%',
+            type: 'warning'
+          });
+        }
+      }
+
+      // Check if coupon is for companies (if specified)
+      if (coupon.isCompany !== undefined && coupon.isCompany !== true) {
+        console.log("🔴 Coupon not for companies");
+        addToast({
+          title: 'خطأ',
+          message: 'هذا الكوبون غير صالح للشركات',
+          type: 'error'
+        });
+        setIsValidatingCoupon(false);
+        return;
+      }
+
+      console.log("✅ Coupon validated successfully, setting appliedCoupon and showing modal");
+      setAppliedCoupon(coupon);
+      // Show confirmation popup
+      setShowCouponConfirmationModal(true);
+      console.log("✅ Modal state set to true");
+    } catch (error: any) {
+      console.error("🔴 Error validating coupon:", error);
+      addToast({
+        title: 'خطأ',
+        message: error.message || 'حدث خطأ أثناء التحقق من الكوبون',
+        type: 'error'
+      });
+    } finally {
+      setIsValidatingCoupon(false);
+    }
+  };
+
+  // Handle remove coupon
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    if (isFirstTime) {
+      setCouponCode("LIFE1");
+    } else {
+      setCouponCode("");
+    }
+  };
+
   const getBadgeColorClass = (status: string) => {
     const statusLower = status.toLowerCase().trim();
     if (statusLower.includes("أنسب") || statusLower.includes("best")) {
@@ -357,10 +567,34 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
         <p className="text-base text-gray-600">قم بإدارة وتجديد اشتراكاتك بكل سهولة</p>
       </div>
 
+      {/* Special Offer Banner */}
+      {isFirstTime && (
+        <div className="w-full bg-[#1e3a8a] rounded-xl shadow-lg p-6 lg:p-8 relative overflow-hidden">
+          {/* Decorative Icons */}
+          <Star className="absolute top-4 right-4 w-8 h-8 text-yellow-400 opacity-60" />
+          <Gift className="absolute top-4 left-4 w-8 h-8 text-yellow-400 opacity-60" />
+          <AlertCircle className="absolute bottom-4 right-4 w-8 h-8 text-yellow-400 opacity-60" />
+          <Settings className="absolute bottom-4 left-4 w-8 h-8 text-yellow-400 opacity-60" />
+          
+          {/* Content */}
+          <div className="relative z-10 flex flex-col items-center gap-3 text-center">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">🎉</span>
+              <h2 className="text-2xl lg:text-3xl font-bold text-white">
+                عرض خاص - اشتراك لمدة سنة مجاناً!
+              </h2>
+            </div>
+            <p className="text-lg text-white/90">
+              استخدم كود الكوبون <span className="bg-white text-[#1e3a8a] px-2 py-1 rounded font-bold">LIFE1</span> واحصل على سنة كاملة مجاناً
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Vehicle Count Input and Subscription Type Toggle Section - Framed */}
       <div className="w-full bg-white rounded-xl shadow-sm border-2 border-gray-300 p-6 lg:p-8 mb-8">
-        <div className="w-full flex items-start justify-between gap-8">
-          {/* Vehicle Count Input - Left Side */}
+        <div className="w-full flex items-end justify-between gap-8">
+          {/* Vehicle Count Input */}
           <div className="flex flex-col gap-3 flex-1">
             <label className="text-sm font-medium text-gray-700">أدخل عدد المركبات</label>
             <div className="relative w-full">
@@ -376,25 +610,14 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
             </div>
           </div>
 
-          {/* Subscription Type Toggle - Right Side */}
+          {/* Subscription Type Toggle */}
           <div className="flex flex-col gap-3 flex-1">
-            <label className="text-sm font-medium text-gray-700">نوع الاشتراك</label>
-            <div className="flex items-center gap-0 bg-gray-100 rounded-lg p-1 w-full">
-              <button
-                type="button"
-                onClick={() => setSubscriptionType("monthly")}
-                className={`px-6 py-3 rounded-lg font-medium transition-all flex-1 ${
-                  subscriptionType === "monthly"
-                    ? "bg-green-500 text-white shadow-md"
-                    : "bg-transparent text-gray-700 hover:bg-gray-200"
-                }`}
-              >
-                الاشتراكات الشهرية
-              </button>
+            <label className="text-sm font-medium text-gray-700 text-center">نوع الاشتراك</label>
+            <div className="flex items-center gap-0 bg-gray-100 rounded-xl p-1 w-full">
               <button
                 type="button"
                 onClick={() => setSubscriptionType("annual")}
-                className={`px-6 py-3 rounded-lg font-medium transition-all flex-1 ${
+                className={`px-6 py-3 rounded-xl font-medium transition-all flex-1 ${
                   subscriptionType === "annual"
                     ? "bg-green-500 text-white shadow-md"
                     : "bg-transparent text-gray-700 hover:bg-gray-200"
@@ -402,8 +625,69 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
               >
                 الاشتراكات السنوية
               </button>
+              <button
+                type="button"
+                onClick={() => setSubscriptionType("monthly")}
+                className={`px-6 py-3 rounded-xl font-medium transition-all flex-1 ${
+                  subscriptionType === "monthly"
+                    ? "bg-green-500 text-white shadow-md"
+                    : "bg-transparent text-gray-700 hover:bg-gray-200"
+                }`}
+              >
+                الاشتراكات الشهرية
+              </button>
             </div>
           </div>
+
+          {/* Coupon Code Input - Only show if company has never subscribed */}
+          {isFirstTime && (
+            <div className="flex flex-col gap-3 flex-1">
+              <label className="text-sm font-medium text-gray-700">كود الكوبون (اختياري)</label>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Gift className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                    className="w-full pr-12 pl-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#5A66C1] focus:border-transparent text-gray-700"
+                    placeholder="أدخل كود الكوبون"
+                    disabled={isValidatingCoupon}
+                  />
+                </div>
+                {appliedCoupon ? (
+                  <button
+                    type="button"
+                    onClick={handleRemoveCoupon}
+                    className="px-6 py-3 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 transition-colors shadow-md flex items-center gap-2"
+                  >
+                    <X className="w-5 h-5" />
+                    <span>إلغاء</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleApplyCoupon}
+                    disabled={isValidatingCoupon || !couponCode.trim()}
+                    className={`px-6 py-3 rounded-lg font-medium transition-all shadow-md flex items-center gap-2 ${
+                      isValidatingCoupon || !couponCode.trim()
+                        ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                        : "bg-[#1e3a8a] text-white hover:bg-[#1e40af]"
+                    }`}
+                  >
+                    {isValidatingCoupon ? (
+                      <>
+                        <LoadingSpinner size="sm" />
+                        <span>جاري التحقق...</span>
+                      </>
+                    ) : (
+                      <span>تطبيق</span>
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -566,6 +850,24 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
                 </p>
               </div>
 
+              {/* Coupon Success Message */}
+              {appliedCoupon && (
+                <div className="flex items-center gap-3 p-4 bg-green-50 rounded-lg mb-6 border border-green-200">
+                  <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
+                  <div className="flex flex-col gap-1">
+                    <p className="text-sm font-medium text-green-700">
+                      تم تطبيق كود الكوبون بنجاح!
+                    </p>
+                    {appliedCoupon.percentage === 100 || appliedCoupon.precentage === 100 ? (
+                      <p className="text-xs text-green-600 flex items-center gap-1">
+                        <span>⭐</span>
+                        <span>اشتراك مجاني لمدة سنة كاملة</span>
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+
               {/* Information Display Section */}
               <div className="flex flex-col gap-4 mb-6">
                 {/* Number of Vehicles */}
@@ -583,10 +885,19 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
                 <div className="flex items-center justify-between py-3 border-b border-gray-200">
                   <div className="flex items-center gap-2">
                     <Tag className="w-5 h-5 text-gray-500" />
-                    <span className="text-sm text-gray-700">سعر الإشتراك</span>
+                    <span className="text-sm text-gray-700">
+                      {subscriptionSummary.isAnnual || (appliedCoupon && (appliedCoupon.percentage === 100 || appliedCoupon.precentage === 100))
+                        ? "سعر الإشتراك (سنة كاملة)"
+                        : "سعر الإشتراك"}
+                    </span>
                   </div>
                   <span className="text-sm font-medium text-gray-900">
                     {subscriptionSummary.subscriptionPrice.toFixed(2)} ر.س
+                    {subscriptionSummary.isAnnual && subscriptionSummary.monthlyPrice > 0 && (
+                      <span className="text-xs text-gray-500 mr-2">
+                        ({subscriptionSummary.monthlyPrice.toFixed(2)} × 12 شهر)
+                      </span>
+                    )}
                   </span>
                 </div>
 
@@ -612,25 +923,54 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
                   </span>
                 </div>
 
-                {/* Total including VAT - Highlighted */}
-                <div className="flex items-center justify-between py-4 px-4 bg-white rounded-lg border-2 border-solid border-gray-500">
-                  <div className="flex items-center gap-2">
-                    <Receipt className="w-5 h-5 text-gray-700" />
-                    <span className="text-sm font-medium text-gray-700">إجمالي شامل الضريبة</span>
+                {/* Coupon Discount */}
+                {appliedCoupon && subscriptionSummary.couponDiscount > 0 && (
+                  <div className="flex items-center justify-between py-3 border-b border-gray-200">
+                    <div className="flex items-center gap-2">
+                      <Gift className="w-5 h-5 text-green-600" />
+                      <span className="text-sm text-gray-700">
+                        خصم الكوبون ( {subscriptionSummary.couponPercentage.toFixed(0)} %)
+                      </span>
+                    </div>
+                    <span className="text-sm font-medium text-green-600">
+                      - {subscriptionSummary.couponDiscount.toFixed(2)} ر.س
+                    </span>
                   </div>
-                  <span className="text-xl font-bold text-gray-900">
+                )}
+
+                {/* Total including VAT - Highlighted */}
+                <div className={`flex items-center justify-between py-4 px-4 rounded-lg border-2 border-solid ${
+                  subscriptionSummary.totalWithVAT === 0 
+                    ? "bg-green-50 border-green-200" 
+                    : "bg-white border-gray-500"
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <Receipt className={`w-5 h-5 ${
+                      subscriptionSummary.totalWithVAT === 0 ? "text-green-700" : "text-gray-700"
+                    }`} />
+                    <span className={`text-sm font-medium ${
+                      subscriptionSummary.totalWithVAT === 0 ? "text-green-700" : "text-gray-700"
+                    }`}>
+                      إجمالي شامل الضريبة
+                    </span>
+                  </div>
+                  <span className={`text-xl font-bold ${
+                    subscriptionSummary.totalWithVAT === 0 ? "text-green-700" : "text-gray-900"
+                  }`}>
                     {subscriptionSummary.totalWithVAT.toFixed(2)} ر.س
                   </span>
                 </div>
               </div>
 
-              {/* Wallet Deduction Message */}
-              <div className="flex items-center gap-3 p-4 bg-blue-50 rounded-lg mb-6 shadow-[0_0_20px_rgba(90,102,193,0.3)]">
-                <Wallet className="w-5 h-5 text-[#5A66C1] flex-shrink-0" />
-                <p className="text-sm font-medium text-[#5A66C1]">
-                  سيتم خصم مبلغ الإشتراك من رصيد المحفظة
-                </p>
-              </div>
+              {/* Wallet Deduction Message - Only show if total > 0 */}
+              {subscriptionSummary.totalWithVAT > 0 && (
+                <div className="flex items-center gap-3 p-4 bg-blue-50 rounded-lg mb-6 shadow-[0_0_20px_rgba(90,102,193,0.3)]">
+                  <Wallet className="w-5 h-5 text-[#5A66C1] flex-shrink-0" />
+                  <p className="text-sm font-medium text-[#5A66C1]">
+                    سيتم خصم مبلغ الإشتراك من رصيد المحفظة
+                  </p>
+                </div>
+              )}
 
               {/* Action Buttons */}
               <div className="flex items-center justify-between gap-4">
@@ -762,6 +1102,77 @@ export const SubscriptionPlansScreen = (): JSX.Element => {
                 >
                   <ArrowRight className="w-5 h-5" />
                   <span>العودة للخلف</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
+
+      {/* Coupon Confirmation Modal */}
+      {showCouponConfirmationModal && createPortal(
+        <>
+          {/* Overlay */}
+          <div
+            className="fixed inset-0 bg-black/50 z-50"
+            onClick={() => setShowCouponConfirmationModal(false)}
+          />
+          
+          {/* Modal */}
+          <div
+            className="fixed top-1/2 left-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white shadow-xl"
+            dir="rtl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 lg:p-8">
+              {/* Header Section */}
+              <div className="flex flex-col items-center gap-4 mb-6">
+                {/* Success Icon */}
+                <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
+                  <Check className="w-8 h-8 text-green-600" />
+                </div>
+                
+                {/* Title */}
+                <h2 className="text-2xl font-bold text-gray-900">
+                  تم تطبيق الكوبون بنجاح!
+                </h2>
+                
+                {/* Subtitle */}
+                <p className="text-sm text-gray-600 text-center">
+                  الكوبون جاهز للاستخدام. يرجى اختيار الباقة المطلوبة للمتابعة.
+                </p>
+              </div>
+
+              {/* Coupon Details */}
+              {appliedCoupon && (
+                <div className="flex items-center justify-center gap-3 p-4 bg-green-50 rounded-lg mb-6 border border-green-200">
+                  <Gift className="w-5 h-5 text-green-600 flex-shrink-0" />
+                  <div className="flex flex-col gap-1">
+                    <p className="text-sm font-medium text-green-700">
+                      كود الكوبون: <span className="font-bold">{couponCode}</span>
+                    </p>
+                    {appliedCoupon.percentage === 100 || appliedCoupon.precentage === 100 ? (
+                      <p className="text-xs text-green-600">
+                        خصم 100% - اشتراك مجاني لمدة سنة كاملة
+                      </p>
+                    ) : (
+                      <p className="text-xs text-green-600">
+                        خصم {appliedCoupon.percentage || appliedCoupon.precentage}%
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Action Button */}
+              <div className="flex items-center justify-center">
+                <button
+                  onClick={() => setShowCouponConfirmationModal(false)}
+                  className="flex items-center justify-center gap-2 px-8 py-3 bg-[#1e3a8a] text-white rounded-lg font-medium hover:bg-[#1e40af] transition-colors shadow-md"
+                >
+                  <Check className="w-5 h-5" />
+                  <span>حسناً، سأختار الباقة الآن</span>
                 </button>
               </div>
             </div>

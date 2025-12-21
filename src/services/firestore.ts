@@ -3052,13 +3052,19 @@ export const updateLastTransferToFullBalance = async (
     }
 
     // Update the transfer amount to full balance
-    const transferRef = doc(db, "service-distributer-transfers", lastTransfer.id);
+    const transferRef = doc(
+      db,
+      "service-distributer-transfers",
+      lastTransfer.id
+    );
     await updateDoc(transferRef, {
       transferAmount: currentBalance,
     });
 
     console.log(
-      `✅ Updated transfer ${lastTransfer.transferNumber} (ID: ${lastTransfer.id}) to full balance: ${currentBalance.toFixed(2)}`
+      `✅ Updated transfer ${lastTransfer.transferNumber} (ID: ${
+        lastTransfer.id
+      }) to full balance: ${currentBalance.toFixed(2)}`
     );
 
     return lastTransfer.id;
@@ -3560,6 +3566,35 @@ export const fetchCoupons = async (): Promise<any[]> => {
   } catch (error) {
     console.error("Error fetching coupons:", error);
     return [];
+  }
+};
+
+/**
+ * Fetch coupon by code from Firestore
+ * @param code - The coupon code to search for
+ * @returns Promise with coupon data or null if not found
+ */
+export const fetchCouponByCode = async (code: string): Promise<any | null> => {
+  try {
+    const couponsCollection = collection(db, "coupons");
+    const q = query(
+      couponsCollection,
+      where("code", "==", code.toUpperCase().trim())
+    );
+    const querySnapshot = await getDocs(q);
+
+    if (querySnapshot.empty) {
+      return null;
+    }
+
+    const couponDoc = querySnapshot.docs[0];
+    return {
+      id: couponDoc.id,
+      ...couponDoc.data(),
+    };
+  } catch (error) {
+    console.error("Error fetching coupon by code:", error);
+    return null;
   }
 };
 export const calculateBatteryChangeStatistics = (
@@ -4709,6 +4744,48 @@ export const calculateFuelConsumptionByCities = async (
  * Fetch subscriptions for current user and calculate expiry dates
  * @returns Promise with subscription data including expiry dates
  */
+/**
+ * Check if this is the company's first time subscribing
+ * @returns Promise<boolean> - true if no subscription history exists, false otherwise
+ */
+export const checkIsFirstTimeSubscription = async (): Promise<boolean> => {
+  try {
+    const user = auth.currentUser;
+    if (!user) {
+      console.error("No authenticated user");
+      return false;
+    }
+
+    // Get the current company
+    const company = await fetchCurrentCompany();
+    if (!company) {
+      console.error("No company found for current user");
+      return false;
+    }
+
+    const companyEmail = company.email;
+    if (!companyEmail) {
+      console.error("No company email found");
+      return false;
+    }
+
+    // Query subscriptions-payment collection by company email
+    const subscriptionsCollection = collection(db, "subscriptions-payment");
+    const q = query(
+      subscriptionsCollection,
+      where("company.email", "==", companyEmail),
+      limit(1)
+    );
+    const subscriptionsSnapshot = await getDocs(q);
+
+    // Return true if no subscriptions found (first time)
+    return subscriptionsSnapshot.docs.length === 0;
+  } catch (error) {
+    console.error("Error checking first-time subscription status:", error);
+    return false;
+  }
+};
+
 export const fetchUserSubscriptions = async (): Promise<any[]> => {
   try {
     const user = auth.currentUser;
@@ -5305,6 +5382,8 @@ export const processSubscriptionPayment = async (subscriptionData: {
   vat: number;
   companyId: string;
   company: any;
+  couponCode?: string;
+  couponData?: any;
 }): Promise<{
   invoiceId: string;
   subscriptionPaymentId: string;
@@ -5362,6 +5441,19 @@ export const processSubscriptionPayment = async (subscriptionData: {
 
     // Safely determine periodValueInDays
     let periodValueInDays = subscription.periodValueInDays;
+
+    // If coupon is applied (especially LIFE1 with 100% discount), set to 1 year
+    const couponCode = subscriptionData.couponCode;
+    const couponData = subscriptionData.couponData;
+    if (couponCode && couponData) {
+      const couponPercentage =
+        couponData.percentage || couponData.precentage || 0;
+      // If it's LIFE1 or 100% discount coupon, set to 1 year (365 days)
+      if (couponCode.toUpperCase() === "LIFE1" || couponPercentage === 100) {
+        periodValueInDays = 365;
+      }
+    }
+
     if (!periodValueInDays) {
       // Try to determine from periodName
       let periodNameStr = "";
@@ -5413,19 +5505,20 @@ export const processSubscriptionPayment = async (subscriptionData: {
       const currentBalance =
         companyData.balance || companyData.walletBalance || 0;
 
-      // Verify sufficient balance
-      if (currentBalance < totalWithVAT) {
+      // Verify sufficient balance (skip if total is 0 due to 100% discount)
+      if (totalWithVAT > 0 && currentBalance < totalWithVAT) {
         throw new Error("Insufficient balance");
       }
 
-      // Calculate new balance
-      const newBalance = currentBalance - totalWithVAT;
+      // Calculate new balance (only deduct if total > 0)
+      const newBalance =
+        totalWithVAT > 0 ? currentBalance - totalWithVAT : currentBalance;
 
       // 2. Create subscription payment document
       const subscriptionPaymentRef = doc(
         collection(db, "subscriptions-payment")
       );
-      const subscriptionPaymentData = {
+      const subscriptionPaymentData: any = {
         company: {
           id: company.id || finalCompanyId,
           email: companyEmail || companyData.email || "",
@@ -5457,11 +5550,20 @@ export const processSubscriptionPayment = async (subscriptionData: {
         createdDate: serverTimestamp(),
         createdUserId: currentUser.uid,
       };
+
+      // Add coupon information if provided
+      if (couponCode) {
+        subscriptionPaymentData.couponCode = couponCode;
+      }
+      if (couponData) {
+        subscriptionPaymentData.couponData = couponData;
+      }
+
       transaction.set(subscriptionPaymentRef, subscriptionPaymentData);
 
       // 3. Create order document
       const orderRef = doc(collection(db, "orders"));
-      const orderData = {
+      const orderData: any = {
         companyUid: currentUser.uid,
         createdUserId: currentUser.uid,
         orderDate: serverTimestamp(),
@@ -5491,6 +5593,12 @@ export const processSubscriptionPayment = async (subscriptionData: {
         status: "completed",
         subscriptionPaymentId: subscriptionPaymentRef.id,
       };
+
+      // Add coupon information to order if provided
+      if (couponCode) {
+        orderData.couponCode = couponCode;
+      }
+
       transaction.set(orderRef, orderData);
 
       // 4. Update company's balance, selectedSubscription, and maxCarNumber in one update
@@ -18538,7 +18646,7 @@ export const uploadBanksToFirestore = async (
     const newBanks = banks.filter((bank) => {
       const arabic = bank.arabic.trim();
       const english = bank.english.trim();
-      
+
       if (!arabic && !english) {
         skipped++;
         return false;
@@ -18632,7 +18740,9 @@ export const fetchBanksFromFirestore = async (): Promise<
  * @param phone - Phone number to check
  * @returns Promise with boolean indicating if phone exists
  */
-export const checkAgentPhoneExists = async (phone: string): Promise<boolean> => {
+export const checkAgentPhoneExists = async (
+  phone: string
+): Promise<boolean> => {
   try {
     const agentsRef = collection(db, "petrolife-agents");
     const q = query(agentsRef, where("phone", "==", phone));
@@ -18670,7 +18780,9 @@ export const addPetrolifeAgent = async (agentData: AddPetrolifeAgentData) => {
     // 3. Upload profile image if provided
     let imageUrl = "";
     if (agentData.imageFile) {
-      const fileName = `petrolife-agents/profiles/${Date.now()}_${agentData.imageFile.name}`;
+      const fileName = `petrolife-agents/profiles/${Date.now()}_${
+        agentData.imageFile.name
+      }`;
       const storageRef = ref(storage, fileName);
       await uploadBytes(storageRef, agentData.imageFile);
       imageUrl = await getDownloadURL(storageRef);
@@ -18781,7 +18893,9 @@ export const getAllPetrolifeAgents = async (): Promise<PetrolifeAgent[]> => {
  * @param agentId - Agent document ID
  * @returns Promise with agent data including associated companies
  */
-export const getPetrolifeAgentById = async (agentId: string): Promise<PetrolifeAgent | null> => {
+export const getPetrolifeAgentById = async (
+  agentId: string
+): Promise<PetrolifeAgent | null> => {
   try {
     const agentRef = doc(db, "petrolife-agents", agentId);
     const agentSnap = await getDoc(agentRef);
@@ -18806,10 +18920,13 @@ export const getPetrolifeAgentById = async (agentId: string): Promise<PetrolifeA
  * @param companyId - Company document ID
  * @returns Promise<void>
  */
-export const addCompanyToAgent = async (agentId: string, companyId: string): Promise<void> => {
+export const addCompanyToAgent = async (
+  agentId: string,
+  companyId: string
+): Promise<void> => {
   try {
     const agentRef = doc(db, "petrolife-agents", agentId);
-    
+
     // Check if company already exists in agent's companies array
     const agentSnap = await getDoc(agentRef);
     if (!agentSnap.exists()) {
@@ -18840,7 +18957,10 @@ export const addCompanyToAgent = async (agentId: string, companyId: string): Pro
  * @param companyId - Company document ID
  * @returns Promise<void>
  */
-export const removeCompanyFromAgent = async (agentId: string, companyId: string): Promise<void> => {
+export const removeCompanyFromAgent = async (
+  agentId: string,
+  companyId: string
+): Promise<void> => {
   try {
     const agentRef = doc(db, "petrolife-agents", agentId);
     await updateDoc(agentRef, {
