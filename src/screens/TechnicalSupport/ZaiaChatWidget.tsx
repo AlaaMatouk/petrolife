@@ -243,7 +243,8 @@ const ZaiaChatWidget = () => {
               مرحباً بك في الدعم الفني
             </h3>
             <p className="text-gray-600 mb-4 leading-relaxed">
-              نحن هنا لمساعدتك! للبدء في المحادثة، اضغط على الزر في الزاوية السفلية اليمنى
+              نحن هنا لمساعدتك! للبدء في المحادثة، اضغط على الزر في الزاوية
+              السفلية اليمنى
             </p>
             <div className="flex items-center justify-center gap-2 text-purple-600">
               <span className="text-2xl animate-bounce">↘</span>
