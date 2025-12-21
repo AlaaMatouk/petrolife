@@ -11,6 +11,7 @@ import {
   updateDoc,
   deleteDoc,
   arrayUnion,
+  arrayRemove,
   where,
   orderBy,
   setDoc,
@@ -11305,6 +11306,34 @@ export interface AddServiceProviderData {
   commercialRegistrationFile?: File | null;
 }
 
+export interface AddPetrolifeAgentData {
+  name: string;
+  email: string;
+  phone: string;
+  city: string;
+  address: string;
+  agentCode?: string;
+  commissionValue: string;
+  imageFile?: File | null;
+}
+
+export interface PetrolifeAgent {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  city: string;
+  address: string;
+  agentCode: string;
+  commissionValue: number;
+  imageUrl?: string;
+  joinDate: Timestamp;
+  isActive: boolean;
+  companies: string[]; // Array of company document IDs
+  createdDate: Timestamp;
+  createdUserId: string;
+}
+
 /**
  * Add a new car to Firestore companies-cars collection
  * @param carData - Car form data
@@ -18474,6 +18503,369 @@ export const fetchUserWithdrawalRequests = async () => {
     return userRequests;
   } catch (error) {
     console.error("❌ Error fetching user withdrawal requests:", error);
+    throw error;
+  }
+};
+
+/**
+ * Upload banks data to Firestore
+ * @param banks - Array of bank objects with Arabic and English names
+ * @returns Promise with upload result
+ */
+export const uploadBanksToFirestore = async (
+  banks: Array<{ arabic: string; english: string }>
+): Promise<{ created: number; skipped: number }> => {
+  try {
+    console.log("\n🏦 ========================================");
+    console.log("📝 UPLOADING BANKS TO FIRESTORE");
+    console.log("========================================");
+
+    const banksRef = collection(db, "banks");
+    let created = 0;
+    let skipped = 0;
+
+    // Fetch all existing banks to check for duplicates
+    const existingBanksSnapshot = await getDocs(banksRef);
+    const existingArabicNames = new Set<string>();
+    existingBanksSnapshot.forEach((doc) => {
+      const data = doc.data();
+      if (data.arabic) {
+        existingArabicNames.add(data.arabic.trim().toLowerCase());
+      }
+    });
+
+    // Filter out duplicates and empty banks
+    const newBanks = banks.filter((bank) => {
+      const arabic = bank.arabic.trim();
+      const english = bank.english.trim();
+      
+      if (!arabic && !english) {
+        skipped++;
+        return false;
+      }
+
+      if (existingArabicNames.has(arabic.toLowerCase())) {
+        skipped++;
+        return false;
+      }
+
+      existingArabicNames.add(arabic.toLowerCase());
+      return true;
+    });
+
+    // Use batch write for better performance
+    const batchSize = 500; // Firestore batch limit
+    let currentBatch = writeBatch(db);
+    let batchCount = 0;
+
+    for (const bank of newBanks) {
+      // Create new bank document
+      const bankDocRef = doc(banksRef);
+      currentBatch.set(bankDocRef, {
+        arabic: bank.arabic.trim(),
+        english: bank.english.trim(),
+        createdAt: serverTimestamp(),
+      });
+
+      created++;
+      batchCount++;
+
+      // Commit batch if it reaches the limit and create a new batch
+      if (batchCount >= batchSize) {
+        await currentBatch.commit();
+        currentBatch = writeBatch(db);
+        batchCount = 0;
+      }
+    }
+
+    // Commit remaining documents
+    if (batchCount > 0) {
+      await currentBatch.commit();
+    }
+
+    console.log(`✅ Uploaded ${created} banks, skipped ${skipped} duplicates`);
+    console.log("========================================\n");
+
+    return { created, skipped };
+  } catch (error: any) {
+    console.error("❌ Error uploading banks:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all banks from Firestore
+ * @returns Promise with array of banks
+ */
+export const fetchBanksFromFirestore = async (): Promise<
+  Array<{ id: string; arabic: string; english: string }>
+> => {
+  try {
+    const banksRef = collection(db, "banks");
+    const q = query(banksRef, orderBy("arabic", "asc"));
+    const querySnapshot = await getDocs(q);
+
+    const banks: Array<{ id: string; arabic: string; english: string }> = [];
+
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      banks.push({
+        id: doc.id,
+        arabic: data.arabic || "",
+        english: data.english || "",
+      });
+    });
+
+    return banks;
+  } catch (error: any) {
+    console.error("❌ Error fetching banks:", error);
+    throw error;
+  }
+};
+
+// ============================================================================
+// PETROLIFE AGENTS MANAGEMENT
+// ============================================================================
+
+/**
+ * Check if a phone number already exists in petrolife-agents collection
+ * @param phone - Phone number to check
+ * @returns Promise with boolean indicating if phone exists
+ */
+export const checkAgentPhoneExists = async (phone: string): Promise<boolean> => {
+  try {
+    const agentsRef = collection(db, "petrolife-agents");
+    const q = query(agentsRef, where("phone", "==", phone));
+    const querySnapshot = await getDocs(q);
+    return !querySnapshot.empty;
+  } catch (error) {
+    console.error("❌ Error checking agent phone:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add a new petrolife agent to Firestore
+ * @param agentData - Agent form data
+ * @returns Promise with the created agent document
+ */
+export const addPetrolifeAgent = async (agentData: AddPetrolifeAgentData) => {
+  try {
+    console.log("👤 Adding new petrolife agent...");
+    console.log("Agent data:", agentData);
+
+    // 1. Get current user (admin)
+    const currentUser = auth.currentUser;
+    if (!currentUser || !currentUser.email) {
+      throw new Error("No authenticated user found");
+    }
+    const adminEmail = currentUser.email;
+
+    // 2. Check phone uniqueness
+    const phoneExists = await checkAgentPhoneExists(agentData.phone);
+    if (phoneExists) {
+      throw new Error("رقم الهاتف مستخدم بالفعل. يرجى استخدام رقم آخر.");
+    }
+
+    // 3. Upload profile image if provided
+    let imageUrl = "";
+    if (agentData.imageFile) {
+      const fileName = `petrolife-agents/profiles/${Date.now()}_${agentData.imageFile.name}`;
+      const storageRef = ref(storage, fileName);
+      await uploadBytes(storageRef, agentData.imageFile);
+      imageUrl = await getDownloadURL(storageRef);
+      console.log("✅ Profile image uploaded:", imageUrl);
+    }
+
+    // 4. Generate unique agent code if not provided
+    let agentCode = agentData.agentCode?.trim() || "";
+    if (!agentCode) {
+      // Generate 8-digit code
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 10;
+
+      while (!isUnique && attempts < maxAttempts) {
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        agentCode = randomCode.toString();
+
+        const agentsRef = collection(db, "petrolife-agents");
+        const q = query(agentsRef, where("agentCode", "==", agentCode));
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !agentCode) {
+        throw new Error("فشل في إنشاء كود المندوب. يرجى المحاولة مرة أخرى.");
+      }
+    } else {
+      // Check if provided agent code is unique
+      const agentsRef = collection(db, "petrolife-agents");
+      const q = query(agentsRef, where("agentCode", "==", agentCode));
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        throw new Error("كود المندوب مستخدم بالفعل. يرجى استخدام كود آخر.");
+      }
+    }
+
+    console.log("✅ Generated unique agent code:", agentCode);
+
+    // 5. Prepare agent document
+    const agentDocument = {
+      name: agentData.name.trim(),
+      email: agentData.email.trim(),
+      phone: agentData.phone.trim(),
+      city: agentData.city,
+      address: agentData.address?.trim() || "",
+      agentCode: agentCode,
+      commissionValue: parseFloat(agentData.commissionValue) || 0,
+      imageUrl: imageUrl,
+      joinDate: serverTimestamp(),
+      isActive: true,
+      companies: [] as string[],
+      createdDate: serverTimestamp(),
+      createdUserId: adminEmail,
+    };
+
+    console.log("📄 Agent document prepared:", agentDocument);
+
+    // 6. Add document to Firestore
+    console.log("💾 Adding agent document to petrolife-agents collection...");
+    const agentsRef = collection(db, "petrolife-agents");
+    const docRef = await addDoc(agentsRef, agentDocument);
+    console.log("✅ Agent document added with ID:", docRef.id);
+
+    return {
+      id: docRef.id,
+      ...agentDocument,
+    };
+  } catch (error) {
+    console.error("❌ Error creating agent:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get all petrolife agents from Firestore
+ * @returns Promise with array of agents
+ */
+export const getAllPetrolifeAgents = async (): Promise<PetrolifeAgent[]> => {
+  try {
+    const agentsRef = collection(db, "petrolife-agents");
+    const q = query(agentsRef, orderBy("createdDate", "desc"));
+    const querySnapshot = await getDocs(q);
+
+    const agents: PetrolifeAgent[] = [];
+
+    querySnapshot.forEach((doc) => {
+      agents.push({
+        id: doc.id,
+        ...doc.data(),
+      } as PetrolifeAgent);
+    });
+
+    return agents;
+  } catch (error) {
+    console.error("❌ Error fetching petrolife agents:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get a single petrolife agent by ID
+ * @param agentId - Agent document ID
+ * @returns Promise with agent data including associated companies
+ */
+export const getPetrolifeAgentById = async (agentId: string): Promise<PetrolifeAgent | null> => {
+  try {
+    const agentRef = doc(db, "petrolife-agents", agentId);
+    const agentSnap = await getDoc(agentRef);
+
+    if (!agentSnap.exists()) {
+      return null;
+    }
+
+    return {
+      id: agentSnap.id,
+      ...agentSnap.data(),
+    } as PetrolifeAgent;
+  } catch (error) {
+    console.error("❌ Error fetching agent by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add a company to an agent's companies array
+ * @param agentId - Agent document ID
+ * @param companyId - Company document ID
+ * @returns Promise<void>
+ */
+export const addCompanyToAgent = async (agentId: string, companyId: string): Promise<void> => {
+  try {
+    const agentRef = doc(db, "petrolife-agents", agentId);
+    
+    // Check if company already exists in agent's companies array
+    const agentSnap = await getDoc(agentRef);
+    if (!agentSnap.exists()) {
+      throw new Error("Agent not found");
+    }
+
+    const agentData = agentSnap.data();
+    const companies = agentData.companies || [];
+
+    if (companies.includes(companyId)) {
+      throw new Error("الشركة مضافة بالفعل لهذا المندوب");
+    }
+
+    await updateDoc(agentRef, {
+      companies: arrayUnion(companyId),
+    });
+
+    console.log("✅ Company added to agent:", companyId);
+  } catch (error) {
+    console.error("❌ Error adding company to agent:", error);
+    throw error;
+  }
+};
+
+/**
+ * Remove a company from an agent's companies array
+ * @param agentId - Agent document ID
+ * @param companyId - Company document ID
+ * @returns Promise<void>
+ */
+export const removeCompanyFromAgent = async (agentId: string, companyId: string): Promise<void> => {
+  try {
+    const agentRef = doc(db, "petrolife-agents", agentId);
+    await updateDoc(agentRef, {
+      companies: arrayRemove(companyId),
+    });
+
+    console.log("✅ Company removed from agent:", companyId);
+  } catch (error) {
+    console.error("❌ Error removing company from agent:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a petrolife agent from Firestore
+ * @param agentId - Agent document ID
+ * @returns Promise<void>
+ */
+export const deletePetrolifeAgent = async (agentId: string): Promise<void> => {
+  try {
+    const agentRef = doc(db, "petrolife-agents", agentId);
+    await deleteDoc(agentRef);
+    console.log("✅ Agent deleted:", agentId);
+  } catch (error) {
+    console.error("❌ Error deleting agent:", error);
     throw error;
   }
 };

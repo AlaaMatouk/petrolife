@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Input, Select } from "../../../shared/Form";
-import { Calendar, ArrowLeft, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Loader2, CirclePlus, Edit, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { useToast } from "../../../../context/ToastContext";
 import { createCouponWithSchema, fetchCouponById } from "../../../../services/firestore";
 import { doc, updateDoc } from "firebase/firestore";
@@ -13,7 +13,6 @@ const AddPetrolifeCoupon = () => {
   const [searchParams] = useSearchParams();
   const editId = searchParams.get("edit");
   const isEditMode = !!editId;
-  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [form, setForm] = useState({
     discountCode: "",
     discountPercentage: "0",
@@ -24,24 +23,9 @@ const AddPetrolifeCoupon = () => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const calendarRef = useRef<HTMLDivElement | null>(null);
-  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
-
-  useEffect(() => {
-    if (!isCalendarOpen) return;
-
-    const handleClickOutside = (event: MouseEvent) => {
-      if (calendarRef.current && !calendarRef.current.contains(event.target as Node)) {
-        setIsCalendarOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [isCalendarOpen]);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(new Date());
+  const calendarRef = useRef<HTMLDivElement>(null);
 
   // Load coupon data when in edit mode
   useEffect(() => {
@@ -106,27 +90,40 @@ const AddPetrolifeCoupon = () => {
     }
   }, [form.expirationDate]);
 
-  const getDisplayDate = () => {
-    if (!form.expirationDate) return "عين تاريخ الانتهاء";
-    const [year, month, day] = form.expirationDate.split("-").map((p) => Number(p));
-    if ([year, month, day].some((part) => Number.isNaN(part))) return "عين تاريخ الانتهاء";
+  useEffect(() => {
+    if (!isCalendarOpen) return;
 
-    const date = new Date(year, month - 1, day);
-    return new Intl.DateTimeFormat("ar-SA", { year: "numeric", month: "long", day: "numeric" }).format(date);
-  };
+    const handleClickOutside = (event: MouseEvent) => {
+      if (calendarRef.current && !calendarRef.current.contains(event.target as Node)) {
+        setIsCalendarOpen(false);
+      }
+    };
 
-  const renderCalendar = () => {
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isCalendarOpen]);
+
+  const renderArabicCalendar = () => {
     const year = calendarMonth.getFullYear();
     const month = calendarMonth.getMonth();
     const firstDayOfMonth = new Date(year, month, 1);
-    const startDayOfWeek = firstDayOfMonth.getDay(); // 0 (Sunday) - 6 (Saturday)
+    const startDayOfWeek = firstDayOfMonth.getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
+    const monthNames = [
+      "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
+      "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"
+    ];
+
+    const weekDays = ["أحد", "اثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"];
+
     const days: Array<number | null> = [];
-    for (let i = 0; i < startDayOfWeek; i += 1) {
+    for (let i = 0; i < startDayOfWeek; i++) {
       days.push(null);
     }
-    for (let day = 1; day <= daysInMonth; day += 1) {
+    for (let day = 1; day <= daysInMonth; day++) {
       days.push(day);
     }
     while (days.length % 7 !== 0) {
@@ -137,8 +134,6 @@ const AddPetrolifeCoupon = () => {
     for (let i = 0; i < days.length; i += 7) {
       weeks.push(days.slice(i, i + 7));
     }
-
-    const weekdays = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
     const handleDaySelect = (day: number) => {
       const isoDate = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -158,66 +153,69 @@ const AddPetrolifeCoupon = () => {
       return null;
     })();
 
+    const today = new Date();
+    const isToday = (day: number) => {
+      return (
+        today.getFullYear() === year &&
+        today.getMonth() === month &&
+        today.getDate() === day
+      );
+    };
+
     return (
       <div
         ref={calendarRef}
-        className="absolute top-full mt-2 w-full rounded-[var(--corner-radius-large)] border border-color-mode-text-icons-t-placeholder bg-white shadow-lg z-20 p-4"
+        className="absolute top-full mt-1 w-1/2 rounded border border-color-mode-text-icons-t-placeholder bg-white shadow-lg z-50 p-1.5"
+        dir="rtl"
       >
-        <div className="flex items-center justify-between mb-4">
-          <button
-            type="button"
-            onClick={() => setCalendarMonth(new Date(year, month - 1, 1))}
-            className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-            aria-label="الشهر السابق"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-          <div className="font-medium text-gray-800">
-            {new Intl.DateTimeFormat("ar-SA", { year: "numeric", month: "long" }).format(calendarMonth)}
-          </div>
+        <div className="flex items-center justify-between mb-1">
           <button
             type="button"
             onClick={() => setCalendarMonth(new Date(year, month + 1, 1))}
-            className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+            className="p-0 hover:bg-gray-100 rounded transition-colors"
             aria-label="الشهر التالي"
           >
-            <ChevronLeft className="w-4 h-4" />
+            <ChevronLeft className="w-3 h-3" />
+          </button>
+          <div className="font-medium text-gray-800 text-xs">
+            {monthNames[month]} {year}
+          </div>
+          <button
+            type="button"
+            onClick={() => setCalendarMonth(new Date(year, month - 1, 1))}
+            className="p-0 hover:bg-gray-100 rounded transition-colors"
+            aria-label="الشهر السابق"
+          >
+            <ChevronRight className="w-3 h-3" />
           </button>
         </div>
-        <div className="grid grid-cols-7 gap-1 text-center text-sm text-gray-600">
-          {weekdays.map((day) => (
-            <div key={day} className="font-medium py-1">
+        <div className="grid grid-cols-7 gap-0 text-center text-[10px] text-gray-600 mb-0.5">
+          {weekDays.map((day) => (
+            <div key={day} className="font-medium py-0.5">
               {day}
             </div>
           ))}
-          {weeks.map((week, index) =>
+        </div>
+        <div className="grid grid-cols-7 gap-0">
+          {weeks.map((week, weekIndex) =>
             week.map((day, dayIndex) => {
               if (day === null) {
-                return (
-                  <div key={`empty-${index}-${dayIndex}`} className="py-2" />
-                );
+                return <div key={`empty-${weekIndex}-${dayIndex}`} className="aspect-square min-h-[24px]" />;
               }
 
               const isSelected = day === selectedDay;
-              const isToday = (() => {
-                const today = new Date();
-                return (
-                  today.getFullYear() === year &&
-                  today.getMonth() === month &&
-                  today.getDate() === day
-                );
-              })();
+              const isTodayDate = isToday(day);
 
               return (
                 <button
-                  key={`day-${index}-${day}`}
+                  key={`day-${weekIndex}-${day}`}
                   type="button"
                   onClick={() => handleDaySelect(day)}
-                  className={`py-2 rounded-lg transition-colors ${
+                  className={`min-h-[24px] rounded transition-colors text-[10px] flex items-center justify-center ${
                     isSelected
-                      ? "bg-[#5A66C1] text-white"
-                      : isToday
-                      ? "bg-gray-100 text-gray-900"
+                      ? "bg-[#5A66C1] text-white font-semibold"
+                      : isTodayDate
+                      ? "bg-gray-100 text-gray-900 font-semibold"
                       : "hover:bg-gray-100 text-gray-700"
                   }`}
                 >
@@ -231,21 +229,6 @@ const AddPetrolifeCoupon = () => {
     );
   };
 
-  const toggleCalendar = () => {
-    if (!isCalendarOpen) {
-      if (form.expirationDate) {
-        const [year, month] = form.expirationDate.split("-").map((p) => Number(p));
-        if (!Number.isNaN(year) && !Number.isNaN(month)) {
-          setCalendarMonth(new Date(year, month - 1, 1));
-        } else {
-          setCalendarMonth(new Date());
-        }
-      } else {
-        setCalendarMonth(new Date());
-      }
-    }
-    setIsCalendarOpen((prev) => !prev);
-  };
 
   const resetForm = () => {
     setForm({
@@ -401,7 +384,11 @@ const AddPetrolifeCoupon = () => {
         <div className="flex items-center justify-between w-full">
           {/* Title on the right */}
           <div className="flex items-center gap-2">
-            <span className="text-2xl">{isEditMode ? "✏️" : "➕"}</span>
+            {isEditMode ? (
+              <Edit className="w-5 h-5 text-gray-500" />
+            ) : (
+              <CirclePlus className="w-5 h-5 text-gray-500" />
+            )}
             <h1 className="text-[length:var(--subtitle-subtitle-2-font-size)] font-[number:var(--subtitle-subtitle-2-font-weight)] text-color-mode-text-icons-t-sec">
               {isEditMode ? "تعديل بيانات الكوبون" : "إضافة كوبون جديد"}
             </h1>
@@ -436,6 +423,11 @@ const AddPetrolifeCoupon = () => {
               type="number"
               value={form.discountPercentage}
               onChange={(e) => setForm((p) => ({ ...p, discountPercentage: e.target.value }))}
+              onFocus={(e) => {
+                if (form.discountPercentage === "0") {
+                  setForm((p) => ({ ...p, discountPercentage: "" }));
+                }
+              }}
               className="w-full py-2.5 pr-4 pl-4 border-[0.5px] border-solid border-color-mode-text-icons-t-placeholder rounded-[var(--corner-radius-small)] focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="0"
               dir="rtl"
@@ -451,6 +443,11 @@ const AddPetrolifeCoupon = () => {
                 type="number"
                 value={form.capacity}
                 onChange={(e) => setForm((p) => ({ ...p, capacity: e.target.value }))}
+                onFocus={(e) => {
+                  if (form.capacity === "0") {
+                    setForm((p) => ({ ...p, capacity: "" }));
+                  }
+                }}
                 className="w-full pr-12 py-2.5 pl-4 border-[0.5px] border-solid border-color-mode-text-icons-t-placeholder rounded-[var(--corner-radius-small)] focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="0"
                 dir="rtl"
@@ -466,18 +463,22 @@ const AddPetrolifeCoupon = () => {
               تاريخ الانتهاء
             </label>
             <div className="relative w-full">
-              <button
-                type="button"
-                onClick={toggleCalendar}
-                className="w-full pr-10 py-2.5 pl-4 border-[0.5px] border-solid border-color-mode-text-icons-t-placeholder rounded-[var(--corner-radius-small)] text-right focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors bg-white"
+              <div
+                className="w-full py-2.5 pr-4 pl-12 border-[0.5px] border-solid border-color-mode-text-icons-t-placeholder rounded-[var(--corner-radius-small)] bg-white hover:border-blue-500 transition-colors cursor-pointer"
+                onClick={() => setIsCalendarOpen(!isCalendarOpen)}
               >
-                <span className="text-[length:var(--body-body-2-font-size)] text-color-mode-text-icons-t-sec">
-                  {getDisplayDate()}
-                </span>
-              </button>
-              <Calendar className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-600">&lt;</span>
-              {isCalendarOpen && renderCalendar()}
+                {!form.expirationDate ? (
+                  <span className="text-[length:var(--body-body-2-font-size)] text-color-mode-text-icons-t-placeholder">
+                    عين تاريخ الانتهاء
+                  </span>
+                ) : (
+                  <span className="text-[length:var(--body-body-2-font-size)] text-color-mode-text-icons-t-sec">
+                    {new Date(form.expirationDate + 'T00:00:00').toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}
+                  </span>
+                )}
+              </div>
+              <Calendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+              {isCalendarOpen && renderArabicCalendar()}
             </div>
           </div>
 

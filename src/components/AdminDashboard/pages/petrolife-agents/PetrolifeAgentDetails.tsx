@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useMemo, useState, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { Table, Pagination } from "../../../shared";
 import {
   ArrowLeft,
@@ -10,34 +10,22 @@ import {
   FileText,
   Building2,
   MessageSquare,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { createPortal } from "react-dom";
-
-// Dummy agent info matching screenshot style
-const agentInfo = {
-  name: "محمد احمد علي",
-  email: "hesham@gmail.com",
-  phone: "رقم الهاتف هنا",
-  city: "الرياض",
-  address: "الصائن، 7453، حي قرطبة، Riyadh 13245, Saudi Arabia",
-  joinDate: "12 فبراير 2025 10:15 ص",
-  agentCode: "21452368452",
-  commissionValue: "10",
-  numberOfCompanies: "48",
-};
-
-// Dummy companies data
-const companies = Array.from({ length: 48 }).map((_, i) => ({
-  id: i + 1,
-  companyCode: "21A254",
-  companyName: { name: "شركة النصر الدولية", logo: "/img/company-logo.png" },
-  phone: "00965284358",
-  email: "ahmedmohamed@gmail.com",
-  city: "الرياض",
-  cars: i % 3 === 0 ? "14" : i % 3 === 1 ? "50" : i % 2 === 0 ? "24" : "26",
-  drivers: "14",
-  subscription: i % 10 === 0 ? "بريميوم" : "كلاسيك",
-}));
+import {
+  getPetrolifeAgentById,
+  addCompanyToAgent,
+  removeCompanyFromAgent,
+  fetchAllCompanies,
+} from "../../../../services/firestore";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "../../../../config/firebase";
+import { AddCompanyModal } from "./AddCompanyModal";
+import { useToast } from "../../../../context/ToastContext";
+import { Timestamp } from "firebase/firestore";
+import { ConfirmDialog } from "../../../shared/ConfirmDialog/ConfirmDialog";
 
 const ExportMenu = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -118,9 +106,375 @@ const ExportMenu = () => {
 
 const PetrolifeAgentDetails = (): JSX.Element => {
   const navigate = useNavigate();
-  const [currentPage, setCurrentPage] = useState(3);
+  const { id: agentId } = useParams<{ id: string }>();
+  const { addToast } = useToast();
+  const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [agent, setAgent] = useState<any>(null);
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isAddCompanyModalOpen, setIsAddCompanyModalOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    companyId: string | null;
+    companyName: string;
+  }>({
+    isOpen: false,
+    companyId: null,
+    companyName: "",
+  });
 
+  // Format date helper
+  const formatDate = (timestamp: Timestamp | null | undefined): string => {
+    if (!timestamp) return "-";
+    try {
+      const date = timestamp.toDate();
+      return new Intl.DateTimeFormat("ar-SA", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(date);
+    } catch (error) {
+      return "-";
+    }
+  };
+
+  // Fetch agent and companies data
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!agentId) {
+        addToast({
+          title: "خطأ",
+          message: "معرف المندوب غير موجود",
+          type: "error",
+        });
+        navigate("/petrolife-agents");
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const agentData = await getPetrolifeAgentById(agentId);
+        if (!agentData) {
+          addToast({
+            title: "خطأ",
+            message: "المندوب غير موجود",
+            type: "error",
+          });
+          navigate("/petrolife-agents");
+          return;
+        }
+
+        setAgent(agentData);
+
+        // Fetch companies if agent has companies
+        if (agentData.companies && agentData.companies.length > 0) {
+          const allCompanies = await fetchAllCompanies();
+          
+          // Fetch cars and drivers collections to count them
+          const [carsSnapshot, driversSnapshot] = await Promise.all([
+            getDocs(collection(db, "companies-cars")),
+            getDocs(collection(db, "companies-drivers")),
+          ]);
+          
+          // Normalize agent's company IDs for comparison (they are emails/document IDs)
+          const normalizedAgentCompanyIds = new Set(
+            agentData.companies.map((id: string) => String(id || "").toLowerCase().trim())
+          );
+          
+          const agentCompanies = allCompanies.filter((company: any) => {
+            // Check document ID (which is the email)
+            const companyId = String(company.id || "").toLowerCase().trim();
+            const idMatch = normalizedAgentCompanyIds.has(companyId);
+            
+            // Also check email field as fallback
+            const companyEmail = String(company.email || "").toLowerCase().trim();
+            const emailMatch = normalizedAgentCompanyIds.has(companyEmail);
+            
+            return idMatch || emailMatch;
+          });
+          
+          console.log("Agent companies filter:", {
+            agentCompanyIds: agentData.companies,
+            normalizedIds: Array.from(normalizedAgentCompanyIds),
+            foundCompanies: agentCompanies.map((c: any) => ({
+              id: c.id,
+              email: c.email,
+              name: c.name
+            }))
+          });
+
+          // Transform companies for table display with car and driver counts
+          const transformedCompanies = agentCompanies.map((company: any) => {
+            const city =
+              company.formattedLocation?.address?.city || company.city || "-";
+            const subscriptionTitle = company.selectedSubscription?.title;
+            let subscription = "-";
+            if (subscriptionTitle) {
+              if (typeof subscriptionTitle === "string") {
+                subscription = subscriptionTitle;
+              } else if (typeof subscriptionTitle === "object" && subscriptionTitle.ar) {
+                subscription = subscriptionTitle.ar;
+              } else if (typeof subscriptionTitle === "object" && subscriptionTitle.en) {
+                subscription = subscriptionTitle.en;
+              }
+            }
+
+            // Get company email for counting
+            const companyEmail = (company.email || company.id || "").toLowerCase().trim();
+            const companyUid = company.uId || "";
+
+            // Count cars for this company
+            let carsCount = 0;
+            carsSnapshot.forEach((carDoc) => {
+              const carData = carDoc.data();
+              const carEmail =
+                carData.email || carData.companyEmail || carData.createdUserId || "";
+              const carUid = carData.uId || carData.companyUid || "";
+
+              // Check by UID first, then by email
+              const uidMatch = carUid && companyUid && carUid === companyUid;
+              const emailMatch =
+                carEmail &&
+                companyEmail &&
+                carEmail.toLowerCase() === companyEmail.toLowerCase();
+
+              if (uidMatch || emailMatch) {
+                carsCount++;
+              }
+            });
+
+            // Count drivers for this company
+            let driversCount = 0;
+            driversSnapshot.forEach((driverDoc) => {
+              const driverData = driverDoc.data();
+              const driverEmail =
+                driverData.createdUserId ||
+                driverData.email ||
+                driverData.companyEmail ||
+                "";
+              const driverUid = driverData.uId || driverData.companyUid || "";
+
+              // Check by UID first, then by email
+              const uidMatch = driverUid && companyUid && driverUid === companyUid;
+              const emailMatch =
+                driverEmail &&
+                companyEmail &&
+                driverEmail.toLowerCase() === companyEmail.toLowerCase();
+
+              if (uidMatch || emailMatch) {
+                driversCount++;
+              }
+            });
+
+            return {
+              id: company.id,
+              companyCode: company.refid || "-",
+              companyName: {
+                name: company.name || "-",
+                logo: company.logo || undefined,
+              },
+              phone: company.phoneNumber || "-",
+              email: company.email || "-",
+              city: city,
+              cars: carsCount.toString(),
+              drivers: driversCount.toString(),
+              subscription: subscription,
+            };
+          });
+
+          setCompanies(transformedCompanies);
+        } else {
+          setCompanies([]);
+        }
+      } catch (error) {
+        console.error("Error fetching agent data:", error);
+        addToast({
+          title: "خطأ",
+          message: "حدث خطأ أثناء تحميل بيانات المندوب",
+          type: "error",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [agentId, navigate, addToast]);
+
+  // Helper function to refresh companies list
+  const refreshCompaniesList = async () => {
+    if (!agentId) return;
+
+    try {
+      const agentData = await getPetrolifeAgentById(agentId);
+      if (agentData) {
+        setAgent(agentData);
+        
+        if (agentData.companies && agentData.companies.length > 0) {
+          const allCompanies = await fetchAllCompanies();
+          
+          // Fetch cars and drivers collections to count them
+          const [carsSnapshot, driversSnapshot] = await Promise.all([
+            getDocs(collection(db, "companies-cars")),
+            getDocs(collection(db, "companies-drivers")),
+          ]);
+          
+          // Normalize agent's company IDs for comparison (they are emails/document IDs)
+          const normalizedAgentCompanyIds = new Set(
+            agentData.companies.map((id: string) => String(id || "").toLowerCase().trim())
+          );
+          
+          const agentCompanies = allCompanies.filter((company: any) => {
+            // Check document ID (which is the email)
+            const companyId = String(company.id || "").toLowerCase().trim();
+            const idMatch = normalizedAgentCompanyIds.has(companyId);
+            
+            // Also check email field as fallback
+            const companyEmail = String(company.email || "").toLowerCase().trim();
+            const emailMatch = normalizedAgentCompanyIds.has(companyEmail);
+            
+            return idMatch || emailMatch;
+          });
+
+          const transformedCompanies = agentCompanies.map((company: any) => {
+            const city =
+              company.formattedLocation?.address?.city || company.city || "-";
+            const subscriptionTitle = company.selectedSubscription?.title;
+            let subscription = "-";
+            if (subscriptionTitle) {
+              if (typeof subscriptionTitle === "string") {
+                subscription = subscriptionTitle;
+              } else if (typeof subscriptionTitle === "object" && subscriptionTitle.ar) {
+                subscription = subscriptionTitle.ar;
+              } else if (typeof subscriptionTitle === "object" && subscriptionTitle.en) {
+                subscription = subscriptionTitle.en;
+              }
+            }
+
+            // Get company email for counting
+            const companyEmail = (company.email || company.id || "").toLowerCase().trim();
+            const companyUid = company.uId || "";
+
+            // Count cars for this company
+            let carsCount = 0;
+            carsSnapshot.forEach((carDoc) => {
+              const carData = carDoc.data();
+              const carEmail =
+                carData.email || carData.companyEmail || carData.createdUserId || "";
+              const carUid = carData.uId || carData.companyUid || "";
+
+              // Check by UID first, then by email
+              const uidMatch = carUid && companyUid && carUid === companyUid;
+              const emailMatch =
+                carEmail &&
+                companyEmail &&
+                carEmail.toLowerCase() === companyEmail.toLowerCase();
+
+              if (uidMatch || emailMatch) {
+                carsCount++;
+              }
+            });
+
+            // Count drivers for this company
+            let driversCount = 0;
+            driversSnapshot.forEach((driverDoc) => {
+              const driverData = driverDoc.data();
+              const driverEmail =
+                driverData.createdUserId ||
+                driverData.email ||
+                driverData.companyEmail ||
+                "";
+              const driverUid = driverData.uId || driverData.companyUid || "";
+
+              // Check by UID first, then by email
+              const uidMatch = driverUid && companyUid && driverUid === companyUid;
+              const emailMatch =
+                driverEmail &&
+                companyEmail &&
+                driverEmail.toLowerCase() === companyEmail.toLowerCase();
+
+              if (uidMatch || emailMatch) {
+                driversCount++;
+              }
+            });
+
+            return {
+              id: company.id,
+              companyCode: company.refid || "-",
+              companyName: {
+                name: company.name || "-",
+                logo: company.logo || undefined,
+              },
+              phone: company.phoneNumber || "-",
+              email: company.email || "-",
+              city: city,
+              cars: carsCount.toString(),
+              drivers: driversCount.toString(),
+              subscription: subscription,
+            };
+          });
+
+          setCompanies(transformedCompanies);
+        } else {
+          setCompanies([]);
+        }
+      }
+    } catch (error) {
+      console.error("Error refreshing companies list:", error);
+    }
+  };
+
+  const handleDeleteCompany = (companyId: string, companyName: string) => {
+    setDeleteConfirm({
+      isOpen: true,
+      companyId,
+      companyName,
+    });
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!agentId || !deleteConfirm.companyId) return;
+
+    try {
+      await removeCompanyFromAgent(agentId, deleteConfirm.companyId);
+      
+      addToast({
+        title: "نجح",
+        message: `تم حذف الشركة "${deleteConfirm.companyName}" بنجاح`,
+        type: "success",
+      });
+
+      // Close confirmation dialog
+      setDeleteConfirm({
+        isOpen: false,
+        companyId: null,
+        companyName: "",
+      });
+
+      // Refresh companies list
+      await refreshCompaniesList();
+    } catch (error: any) {
+      console.error("Error deleting company:", error);
+      addToast({
+        title: "خطأ",
+        message: error.message || "حدث خطأ أثناء حذف الشركة",
+        type: "error",
+      });
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteConfirm({
+      isOpen: false,
+      companyId: null,
+      companyName: "",
+    });
+  };
+
+  // Define columns - must be before conditional returns (Rules of Hooks)
   const columns = useMemo(
     () => [
       {
@@ -197,9 +551,19 @@ const PetrolifeAgentDetails = (): JSX.Element => {
         label: "الإجراءات",
         width: "w-16",
         priority: "high",
-        render: () => (
-          <button className="p-2 hover:bg-gray-100 rounded-lg">
-            <MoreVertical className="w-4 h-4 text-gray-600" />
+        render: (value: any, row: any) => (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (row?.id) {
+                handleDeleteCompany(row.id, row.companyName?.name || "هذه الشركة");
+              }
+            }}
+            className="p-2 hover:bg-red-50 rounded-lg text-red-600 hover:text-red-700 transition-colors"
+            title="حذف الشركة"
+            aria-label="حذف الشركة"
+          >
+            <Trash2 className="w-4 h-4" />
           </button>
         ),
       },
@@ -218,8 +582,32 @@ const PetrolifeAgentDetails = (): JSX.Element => {
         (currentPage - 1) * itemsPerPage,
         currentPage * itemsPerPage
       ),
-    [currentPage]
+    [currentPage, companies]
   );
+
+  const handleAddCompany = async (companyId: string) => {
+    if (!agentId) return;
+
+    try {
+      await addCompanyToAgent(agentId, companyId);
+      await refreshCompaniesList();
+    } catch (error: any) {
+      throw error; // Let modal handle the error
+    }
+  };
+
+  // Conditional returns must come AFTER all hooks
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-gray-500">جاري التحميل...</div>
+      </div>
+    );
+  }
+
+  if (!agent) {
+    return null;
+  }
 
   return (
     <div className="flex flex-col w-full items-start gap-5">
@@ -253,9 +641,17 @@ const PetrolifeAgentDetails = (): JSX.Element => {
           <div className="flex items-start gap-5 w-full">
             {/* Avatar */}
             <div className="flex flex-col items-center justify-center gap-2">
+              {agent.imageUrl ? (
+                <img
+                  src={agent.imageUrl}
+                  alt={agent.name}
+                  className="w-16 h-16 rounded-lg object-cover"
+                />
+              ) : (
               <div className="w-16 h-16 rounded-lg bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center text-white text-2xl font-bold">
-                {agentInfo.name.charAt(0)}
+                  {agent.name?.charAt(0) || "?"}
               </div>
+              )}
             </div>
           </div>
 
@@ -265,7 +661,7 @@ const PetrolifeAgentDetails = (): JSX.Element => {
               اسم المندوب
             </label>
             <div className="text-lg font-semibold text-gray-900">
-              {agentInfo.name}
+              {agent.name || "-"}
             </div>
           </div>
 
@@ -273,14 +669,14 @@ const PetrolifeAgentDetails = (): JSX.Element => {
           <div className="w-full rounded-[var(--corner-radius-large)] border border-color-mode-text-icons-t-placeholder bg-white p-4 shadow-sm">
             {(() => {
               const fields = [
-                { label: "البريد الإلكتروني", value: agentInfo.email },
-                { label: "رقم الهاتف", value: agentInfo.phone },
-                { label: "المدينة", value: agentInfo.city },
-                { label: "العنوان", value: agentInfo.address },
-                { label: "تاريخ الانضمام", value: agentInfo.joinDate },
-                { label: "كود المندوب", value: agentInfo.agentCode },
-                { label: "قيمة العمولة (%)", value: agentInfo.commissionValue },
-                { label: "عدد الشركات المضافة", value: agentInfo.numberOfCompanies },
+                { label: "البريد الإلكتروني", value: agent.email || "-" },
+                { label: "رقم الهاتف", value: agent.phone || "-" },
+                { label: "المدينة", value: agent.city || "-" },
+                { label: "العنوان", value: agent.address || "-" },
+                { label: "تاريخ الانضمام", value: formatDate(agent.joinDate) },
+                { label: "كود المندوب", value: agent.agentCode || "-" },
+                { label: "قيمة العمولة (%)", value: agent.commissionValue?.toString() || "0" },
+                { label: "عدد الشركات المضافة", value: (agent.companies?.length || 0).toString() },
               ];
 
               const rows = [] as JSX.Element[];
@@ -331,10 +727,21 @@ const PetrolifeAgentDetails = (): JSX.Element => {
           <div className="flex items-center justify-end gap-1.5">
             <Building2 className="w-5 h-5 text-gray-500" />
             <h2 className="font-subtitle-subtitle-2 text-[length:var(--subtitle-subtitle-2-font-size)] text-color-mode-text-icons-t-sec">
-              الشركات المضافة (48)
+              الشركات المضافة ({companies.length})
             </h2>
           </div>
           <div className="inline-flex items-center gap-[var(--corner-radius-medium)]">
+            <button
+              onClick={() => setIsAddCompanyModalOpen(true)}
+              className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-small)] pb-[var(--corner-radius-small)] px-2.5 rounded-[var(--corner-radius-small)] border-[0.8px] border-solid border-color-mode-text-icons-t-placeholder hover:bg-color-mode-surface-bg-icon-gray"
+            >
+              <div className="flex items-center gap-[var(--corner-radius-small)]">
+                <span className="font-body-body-2 text-[length:var(--body-body-2-font-size)] text-color-mode-text-icons-t-sec [direction:rtl]">
+                  إضافة شركة
+                </span>
+                <Plus className="w-4 h-4 text-gray-500" />
+              </div>
+            </button>
             <ExportMenu />
           </div>
         </header>
@@ -355,11 +762,30 @@ const PetrolifeAgentDetails = (): JSX.Element => {
 
           <Pagination
             currentPage={currentPage}
-            totalPages={Math.ceil(companies.length / itemsPerPage)}
+            totalPages={Math.ceil(companies.length / itemsPerPage) || 1}
             onPageChange={setCurrentPage}
           />
         </div>
       </div>
+
+      {/* Add Company Modal */}
+      <AddCompanyModal
+        isOpen={isAddCompanyModalOpen}
+        onClose={() => setIsAddCompanyModalOpen(false)}
+        onAdd={handleAddCompany}
+        excludedCompanyIds={agent.companies || []}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={deleteConfirm.isOpen}
+        title="حذف الشركة"
+        message={`هل أنت متأكد من حذف الشركة "${deleteConfirm.companyName}" من هذا المندوب؟ لا يمكن التراجع عن هذا الإجراء.`}
+        confirmText="حذف"
+        cancelText="إلغاء"
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+      />
     </div>
   );
 };
