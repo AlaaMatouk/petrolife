@@ -18732,6 +18732,145 @@ export const fetchBanksFromFirestore = async (): Promise<
 };
 
 // ============================================================================
+// WALLET BANK ACCOUNTS MANAGEMENT
+// ============================================================================
+
+/**
+ * Fetch all bank accounts from Firestore wallet-bank-accounts collection
+ * @returns Promise with array of bank account objects
+ */
+export const fetchBankAccountsFromFirestore = async (): Promise<
+  Array<{
+    id: string;
+    bankName: { ar: string; en?: string };
+    accountNumber: string;
+    ibanNumber: string;
+    logoUrl: string;
+    order: number;
+    isActive: boolean;
+  }>
+> => {
+  try {
+    const bankAccountsRef = collection(db, "wallet-bank-accounts");
+    const q = query(bankAccountsRef, orderBy("order", "asc"));
+    const querySnapshot = await getDocs(q);
+
+    const bankAccounts: Array<{
+      id: string;
+      bankName: { ar: string; en?: string };
+      accountNumber: string;
+      ibanNumber: string;
+      logoUrl: string;
+      order: number;
+      isActive: boolean;
+    }> = [];
+
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      bankAccounts.push({
+        id: doc.id,
+        bankName: data.bankName || { ar: "", en: "" },
+        accountNumber: data.accountNumber || "",
+        ibanNumber: data.ibanNumber || "",
+        logoUrl: data.logoUrl || "",
+        order: data.order || 0,
+        isActive: data.isActive !== undefined ? data.isActive : true,
+      });
+    });
+
+    return bankAccounts;
+  } catch (error: any) {
+    console.error("❌ Error fetching bank accounts:", error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new bank account in Firestore wallet-bank-accounts collection
+ * @param bankAccountData - Bank account data to create
+ * @returns Promise with the created bank account document ID
+ */
+export const createBankAccount = async (bankAccountData: {
+  bankName: { ar: string; en?: string };
+  accountNumber: string;
+  ibanNumber: string;
+  logoUrl: string;
+  order: number;
+  isActive?: boolean;
+}): Promise<string> => {
+  try {
+    const currentUser = auth.currentUser;
+    const bankAccountsRef = collection(db, "wallet-bank-accounts");
+
+    const bankAccountDocument = {
+      bankName: bankAccountData.bankName,
+      accountNumber: bankAccountData.accountNumber,
+      ibanNumber: bankAccountData.ibanNumber,
+      logoUrl: bankAccountData.logoUrl,
+      order: bankAccountData.order,
+      isActive: bankAccountData.isActive !== undefined ? bankAccountData.isActive : true,
+      createdDate: serverTimestamp(),
+      createdUserId: currentUser?.email || currentUser?.uid || null,
+    };
+
+    const docRef = await addDoc(bankAccountsRef, bankAccountDocument);
+    console.log("✅ Bank account created successfully with ID:", docRef.id);
+    return docRef.id;
+  } catch (error: any) {
+    console.error("❌ Error creating bank account:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update an existing bank account in Firestore wallet-bank-accounts collection
+ * @param bankAccountId - Bank account document ID
+ * @param bankAccountData - Updated bank account data
+ * @returns Promise<void>
+ */
+export const updateBankAccount = async (
+  bankAccountId: string,
+  bankAccountData: {
+    bankName?: { ar: string; en?: string };
+    accountNumber?: string;
+    ibanNumber?: string;
+    logoUrl?: string;
+    order?: number;
+    isActive?: boolean;
+  }
+): Promise<void> => {
+  try {
+    const bankAccountRef = doc(db, "wallet-bank-accounts", bankAccountId);
+    const updateData: any = {};
+
+    if (bankAccountData.bankName !== undefined) {
+      updateData.bankName = bankAccountData.bankName;
+    }
+    if (bankAccountData.accountNumber !== undefined) {
+      updateData.accountNumber = bankAccountData.accountNumber;
+    }
+    if (bankAccountData.ibanNumber !== undefined) {
+      updateData.ibanNumber = bankAccountData.ibanNumber;
+    }
+    if (bankAccountData.logoUrl !== undefined) {
+      updateData.logoUrl = bankAccountData.logoUrl;
+    }
+    if (bankAccountData.order !== undefined) {
+      updateData.order = bankAccountData.order;
+    }
+    if (bankAccountData.isActive !== undefined) {
+      updateData.isActive = bankAccountData.isActive;
+    }
+
+    await updateDoc(bankAccountRef, updateData);
+    console.log("✅ Bank account updated successfully:", bankAccountId);
+  } catch (error: any) {
+    console.error("❌ Error updating bank account:", error);
+    throw error;
+  }
+};
+
+// ============================================================================
 // PETROLIFE AGENTS MANAGEMENT
 // ============================================================================
 

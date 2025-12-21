@@ -15,6 +15,7 @@ import {
   fetchBanksFromFirestore,
 } from "../../../../services/firestore";
 import { useToast } from "../../../../hooks/useToast";
+import { BankAccountsSection } from "../BankAccountsSection";
 
 interface ManualChargeSectionProps {
   onTabChange: (tab: "automatic" | "manual") => void;
@@ -236,6 +237,9 @@ export const ManualChargeSection = ({
           </div>
         </div>
       </div>
+
+      {/* Bank Accounts Section */}
+      <BankAccountsSection />
 
       {/* Form */}
       <form className="flex flex-col items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">

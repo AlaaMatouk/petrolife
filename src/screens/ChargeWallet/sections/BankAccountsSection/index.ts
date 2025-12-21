@@ -1,0 +1,2 @@
+export { BankAccountsSection } from "./BankAccountsSection";
+
