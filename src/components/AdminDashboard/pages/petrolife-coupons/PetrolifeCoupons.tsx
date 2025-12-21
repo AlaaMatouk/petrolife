@@ -36,43 +36,89 @@ const formatCategories = (value: any) => {
   return formatValue(value);
 };
 
-const formatDateValue = (value: any) => {
-  if (!value) return "-";
+const parseExpireDate = (value: any): Date | null => {
+  if (!value) return null;
 
   try {
     if (typeof value === "string") {
       const parsed = new Date(value);
       if (!Number.isNaN(parsed.getTime())) {
-        return parsed.toLocaleDateString("ar-SA", {
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        });
+        return parsed;
       }
-      return value;
+      return null;
     }
 
     if (value instanceof Date) {
-      return value.toLocaleDateString("ar-SA", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
+      return value;
     }
 
     if (value?.seconds) {
-      const date = new Date(value.seconds * 1000);
-      return date.toLocaleDateString("ar-SA", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
+      return new Date(value.seconds * 1000);
     }
   } catch (error) {
-    console.warn("Failed to format expire date", error);
+    console.warn("Failed to parse expire date", error);
   }
 
-  return formatValue(value);
+  return null;
+};
+
+const formatDateValue = (value: any) => {
+  if (!value) return "-";
+
+  const parsed = parseExpireDate(value);
+  if (!parsed) return formatValue(value);
+
+  try {
+    return parsed.toLocaleDateString("ar-SA", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  } catch (error) {
+    console.warn("Failed to format expire date", error);
+    return formatValue(value);
+  }
+};
+
+const calculateCouponStatus = (expireDateRaw: any): { active: boolean; text: string } | null => {
+  const expireDate = parseExpireDate(expireDateRaw);
+  
+  if (!expireDate) {
+    // No expire date - consider as pending
+    return {
+      active: false,
+      text: "معلق",
+    };
+  }
+
+  const now = new Date();
+  // Reset time to start of day for accurate comparison
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const expiry = new Date(expireDate.getFullYear(), expireDate.getMonth(), expireDate.getDate());
+  
+  // Calculate difference in days
+  const diffTime = expiry.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    // Expired
+    return {
+      active: false,
+      text: "منتهي",
+    };
+  } else if (diffDays <= 7) {
+    // Expiring within 7 days - Pending
+    return {
+      active: false,
+      text: "معلق",
+    };
+  } else {
+    // Active (more than 7 days remaining)
+    return {
+      active: true,
+      text: "جاري",
+    };
+  }
 };
 
 const mapCouponDocument = (coupon: Record<string, any>) => {
@@ -83,38 +129,9 @@ const mapCouponDocument = (coupon: Record<string, any>) => {
     coupon?.numberOfUsers ?? coupon?.usersCount ?? coupon?.userCount ?? coupon?.maxUsers ?? coupon?.usageLimit;
   const usageRaw = coupon?.usage ?? coupon?.usageCount ?? coupon?.usedCount ?? coupon?.usageTimes;
   const expireDateRaw = coupon?.expireDate ?? coupon?.expiryDate ?? coupon?.expireAt ?? coupon?.expirationDate;
-  const statusRaw = coupon?.couponStatus ?? coupon?.status ?? coupon?.isActive ?? null;
 
-  const accountStatus = (() => {
-    if (statusRaw === null || statusRaw === undefined) return null;
-
-    if (typeof statusRaw === "boolean") {
-      return {
-        active: statusRaw,
-        text: statusRaw ? "جاري" : "معطل",
-      };
-    }
-
-    const normalized = String(statusRaw).trim();
-    if (!normalized) return null;
-
-    const lower = normalized.toLowerCase();
-    const activeKeywords = ["active", "جاري", "نشط", "enabled"];
-    const inactiveKeywords = ["inactive", "معطل", "منتهي", "expired", "disabled"];
-
-    let active = false;
-
-    if (activeKeywords.some((keyword) => lower.includes(keyword))) {
-      active = true;
-    } else if (inactiveKeywords.some((keyword) => lower.includes(keyword))) {
-      active = false;
-    }
-
-    return {
-      active,
-      text: normalized,
-    };
-  })();
+  // Calculate status based on expireDate
+  const accountStatus = calculateCouponStatus(expireDateRaw);
 
   return {
     id: coupon?.id ?? coupon?.code ?? `temp-${Date.now()}-${Math.random()}`,
@@ -486,17 +503,49 @@ const PetrolifeCoupons = () => {
         if (col.key === "accountStatus") {
           return {
             ...col,
-            render: (value: any, row: any) => (
-              value ? (
-                <StatusToggle
-                  isActive={Boolean(value.active)}
-                  onToggle={() => handleToggleStatus(row.id)}
-                  statusText={value.text ?? "-"}
-                />
-              ) : (
-                <span className="text-gray-400">-</span>
-              )
-            ),
+            render: (value: any, row: any) => {
+              if (!value) {
+                return <span className="text-gray-400">-</span>;
+              }
+
+              const statusText = value.text ?? "-";
+              const statusLower = statusText.toLowerCase();
+
+              // Determine colors based on status
+              let bgColor = "bg-gray-100";
+              let textColor = "text-gray-700";
+              let indicatorColor = "bg-gray-400";
+
+              if (statusLower.includes("منتهي") || statusLower.includes("expired")) {
+                // Expired - grey
+                bgColor = "bg-gray-100";
+                textColor = "text-gray-700";
+                indicatorColor = "bg-gray-400";
+              } else if (statusLower.includes("معلق") || statusLower.includes("pending")) {
+                // Pending - orange/yellow
+                bgColor = "bg-yellow-100";
+                textColor = "text-orange-700";
+                indicatorColor = "bg-orange-400";
+              } else if (statusLower.includes("جاري") || statusLower.includes("active")) {
+                // Active - purple/blue
+                bgColor = "bg-blue-100";
+                textColor = "text-purple-700";
+                indicatorColor = "bg-purple-400";
+              }
+
+              return (
+                <div className="flex items-center justify-center gap-2">
+                  <div
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${bgColor}`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${indicatorColor}`}></span>
+                    <span className={`text-sm font-medium ${textColor}`}>
+                      {statusText}
+                    </span>
+                  </div>
+                </div>
+              );
+            },
           };
         }
         return col;

@@ -226,9 +226,9 @@ const Subscriptions = () => {
       <div className="w-full flex items-center justify-center gap-4" dir="rtl">
         <span className="text-gray-700 font-medium">الاشتراكات الشهرية</span>
         <ToggleButton
-          isOn={subscriptionType === "monthly"}
+          isOn={subscriptionType === "annual"}
           onToggle={(isOn) =>
-            handleSubscriptionTypeChange(isOn ? "monthly" : "annual")
+            handleSubscriptionTypeChange(isOn ? "annual" : "monthly")
           }
           color="green"
           size="md"
