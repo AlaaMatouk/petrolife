@@ -13086,6 +13086,117 @@ export const fetchUserFuelStations = async (): Promise<FuelStation[]> => {
 };
 
 /**
+ * Fetch fuel stations filtered by provider email/UID
+ * Stations can be linked to provider by:
+ * - Station's createdUserId matching provider's email or uId
+ * - Station's uId matching provider's uId or email
+ * @param providerEmail - The email of the provider
+ * @param providerUId - The UID of the provider (optional)
+ * @returns Promise with array of provider's fuel stations
+ */
+export const fetchFuelStationsByProvider = async (
+  providerEmail: string,
+  providerUId?: string
+): Promise<FuelStation[]> => {
+  try {
+    console.log(
+      `📍 Fetching fuel stations for provider: email=${providerEmail}, uId=${providerUId}`
+    );
+
+    if (!providerEmail && !providerUId) {
+      console.log("⚠️ No provider identifier provided");
+      return [];
+    }
+
+    // Fetch all carstations documents (same approach as fetchProviderStations)
+    // This is necessary because stations can have identifier in createdUserId, uId, or uid fields
+    const carStationsRef = collection(db, "carstations");
+    const querySnapshot = await getDocs(carStationsRef);
+    const fuelStations: FuelStation[] = [];
+
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+
+      // Get station identifiers
+      const stationCreatedUserId = data.createdUserId;
+      const stationUId = data.uId || data.uid;
+
+      // Match stations: station's createdUserId should match provider's email or uId
+      // OR station's uId should match provider's uId or email
+      const matchesByCreatedUserId =
+        stationCreatedUserId &&
+        (stationCreatedUserId === providerEmail ||
+          (providerUId && stationCreatedUserId === providerUId));
+      
+      const matchesByUId =
+        stationUId &&
+        ((providerUId && stationUId === providerUId) ||
+          stationUId === providerEmail);
+
+      // Only include stations that belong to this provider
+      if (!matchesByCreatedUserId && !matchesByUId) {
+        return; // Skip this station
+      }
+
+      // Extract location data from formattedLocation or direct fields
+      const formattedLocation = data.formattedLocation || {};
+      const stationName =
+        data.name || data.email || formattedLocation.name || "Unknown Station";
+      const cityName =
+        formattedLocation.address?.city ||
+        data.address?.city ||
+        data.city ||
+        "Unknown City";
+      const latitude = formattedLocation.lat || data.latitude || 0;
+      const longitude = formattedLocation.lng || data.longitude || 0;
+
+      console.log(`Station ${doc.id}:`, {
+        name: stationName,
+        city: cityName,
+        lat: latitude,
+        lng: longitude,
+        hasFormattedLocation: !!data.formattedLocation,
+        phoneNumber: data.phoneNumber,
+        isActive: data.isActive,
+        createdUserId: data.createdUserId,
+        uId: data.uId,
+      });
+
+      // Include stations regardless of coordinates (different from fetchUserFuelStations)
+      fuelStations.push({
+        id: doc.id,
+        stationName,
+        cityName,
+        latitude,
+        longitude,
+        formattedLocation: data.formattedLocation,
+        // Include all additional fields from the document
+        name: data.name,
+        email: data.email,
+        phoneNumber: data.phoneNumber,
+        address: data.address,
+        isActive: data.isActive,
+        type: data.type,
+        options: data.options,
+        balance: data.balance,
+        uId: data.uId,
+        createdDate: data.createdDate,
+        createdUserId: data.createdUserId,
+      });
+    });
+
+    console.log(
+      `✅ Fetched ${fuelStations.length} fuel stations for provider email=${providerEmail}, uId=${providerUId}`
+    );
+
+    return fuelStations;
+  } catch (error) {
+    console.error("❌ Error fetching provider fuel stations:", error);
+    throw error;
+  }
+};
+
+/**
  * Advertisement type as stored in Firestore "ads" collection
  */
 export interface Advertisement {

@@ -1,9 +1,10 @@
-import { Truck, ArrowLeft, MapPin } from "lucide-react";
-import React, { useState, useEffect } from "react";
+import { Truck, ArrowLeft, Fuel } from "lucide-react";
+import React from "react";
 import { useNavigate } from "react-router-dom";
 import { DataTableSection } from "../../../sections/DataTableSection";
 import {
-  fetchProviderStations,
+  fetchFuelStationsByProvider,
+  FuelStation,
   updateStationIsActive,
   fetchStationById,
 } from "../../../../services/firestore";
@@ -13,163 +14,186 @@ interface ServiceProvidersInfoProps {
   providerData: any;
 }
 
-// Mock data type for service provider station locations
-interface StationLocation {
-  id: number;
+// Station interface matching ServiceDistributerStationLocations
+interface Station {
+  id: string;
+  stationCode: string;
   stationName: string;
   address: string;
-  fuel91Consumed: number;
-  fuel95Consumed: number;
-  dieselConsumed: number;
+  fuelTypes: string[];
   stationStatus: { active: boolean; text: string };
 }
 
-// Mock data for service provider station locations
-const mockStationLocations: StationLocation[] = [
-  {
-    id: 1,
-    stationName: "محطة الصالح",
-    address: "الرياض، حي النخيل، شارع الملك فهد",
-    fuel91Consumed: 5200,
-    fuel95Consumed: 3800,
-    dieselConsumed: 4500,
-    stationStatus: { active: true, text: "نشط" },
-  },
-  {
-    id: 2,
-    stationName: "محطة النور",
-    address: "جدة، حي الصفا، طريق الكورنيش",
-    fuel91Consumed: 4800,
-    fuel95Consumed: 5200,
-    dieselConsumed: 3900,
-    stationStatus: { active: true, text: "نشط" },
-  },
-  {
-    id: 3,
-    stationName: "محطة السلام",
-    address: "الدمام، حي الشاطئ، شارع الخليج",
-    fuel91Consumed: 4200,
-    fuel95Consumed: 3500,
-    dieselConsumed: 5800,
-    stationStatus: { active: true, text: "نشط" },
-  },
-  {
-    id: 4,
-    stationName: "محطة الأمل",
-    address: "مكة المكرمة، حي العزيزية، طريق مكة جدة",
-    fuel91Consumed: 6100,
-    fuel95Consumed: 4200,
-    dieselConsumed: 3800,
-    stationStatus: { active: false, text: "متوقف" },
-  },
-  {
-    id: 5,
-    stationName: "محطة الرياض",
-    address: "الرياض، حي العليا، شارع التحلية",
-    fuel91Consumed: 7200,
-    fuel95Consumed: 6800,
-    dieselConsumed: 5200,
-    stationStatus: { active: true, text: "نشط" },
-  },
-];
-
-// Columns configuration for service provider station locations
+// Columns configuration matching ServiceDistributerStationLocations
 const stationColumns = [
   {
-    key: "stationStatus",
-    label: "حالة المحطة",
+    key: "actions",
+    label: "",
+    width: "w-16 min-w-[60px]",
     priority: "high" as const,
   },
   {
-    key: "dieselConsumed",
-    label: "الديزل المستهلك (لتر)",
-    priority: "low" as const,
+    key: "stationStatus",
+    label: "حالة المحطة",
+    width: "flex-1 grow min-w-[120px]",
+    priority: "high" as const,
   },
   {
-    key: "fuel95Consumed",
-    label: "وقود 95 المستهلك (لتر)",
-    priority: "medium" as const,
-  },
-  {
-    key: "fuel91Consumed",
-    label: "وقود 91 المستهلك (لتر)",
-    priority: "medium" as const,
+    key: "fuelTypes",
+    label: "نوع الوقود",
+    width: "flex-1 grow min-w-[150px]",
+    priority: "high" as const,
+    render: (value: string[]) => (
+      <div className="text-center">{value.join(" ")}</div>
+    ),
   },
   {
     key: "address",
     label: "العنوان",
-    priority: "high" as const,
+    width: "flex-1 grow min-w-[150px]",
+    priority: "medium" as const,
   },
   {
     key: "stationName",
     label: "اسم المحطة",
-    priority: "medium" as const,
+    width: "flex-1 grow min-w-[150px]",
+    priority: "high" as const,
+  },
+  {
+    key: "stationCode",
+    label: "كود المحطة",
+    width: "flex-1 grow min-w-[120px]",
+    priority: "high" as const,
   },
 ];
-
-// Fetch real station data for a provider
-const fetchStationLocations = async (
-  providerEmail: string
-): Promise<StationLocation[]> => {
-  const realStations = await fetchProviderStations(providerEmail);
-
-  // Map real stations to the interface, ensuring all fields are populated
-  return realStations.map((station, index) => ({
-    id: station.id || index + 1,
-    stationName: station.stationName || "-",
-    address: station.address || "-",
-    fuel91Consumed: station.fuel91Consumed || 0,
-    fuel95Consumed: station.fuel95Consumed || 0,
-    dieselConsumed: station.dieselConsumed || 0,
-    stationStatus: station.stationStatus || { active: true, text: "نشط" },
-  }));
-};
 
 export const ServiceProvidersInfo = ({
   providerData,
 }: ServiceProvidersInfoProps): JSX.Element => {
   const navigate = useNavigate();
   const { addToast } = useToast();
-  const [stationsFetchFunction, setStationsFetchFunction] = useState<
-    () => Promise<StationLocation[]>
-  >(() => async () => []);
-  const [stationsData, setStationsData] = useState<StationLocation[]>([]);
 
-  // Set up the fetch function when component mounts or providerData changes
-  useEffect(() => {
-    // Get provider email or UID to fetch stations
-    const providerEmail =
-      providerData.email || providerData.uId || providerData.uid || "";
+  // Fetch data function for stations - filtered by provider
+  // Same transformation logic as ServiceDistributerStationLocations
+  const fetchStationsData = async (): Promise<Station[]> => {
+    try {
+      // Get provider email and uId - stations are linked by createdUserId matching email
+      const providerEmail = providerData.email || "";
+      const providerUId = providerData.uId || providerData.uid;
 
-    if (providerEmail) {
-      // Create a fetch function that uses the provider's email
-      const fetchStations = async (): Promise<StationLocation[]> => {
-        const data = await fetchStationLocations(providerEmail);
-        setStationsData(data);
-        return data;
-      };
-      setStationsFetchFunction(() => fetchStations);
+      console.log("🔍 Fetching stations for provider:", {
+        providerEmail,
+        providerUId,
+        providerData: {
+          uId: providerData.uId,
+          uid: providerData.uid,
+          email: providerData.email,
+        },
+      });
+
+      if (!providerEmail && !providerUId) {
+        console.log("⚠️ No provider identifier found");
+        return [];
+      }
+
+      // Fetch provider's fuel stations from Firestore (same method as ServiceDistributerStationLocations)
+      const fuelStations = await fetchFuelStationsByProvider(providerEmail, providerUId);
+      
+      console.log(`📊 Fetched ${fuelStations.length} fuel stations`);
+
+      // Transform FuelStation data to Station interface format (same as ServiceDistributerStationLocations)
+      return fuelStations.map((station: FuelStation) => {
+        // Use Firestore document ID directly (same as Stations.tsx)
+        // Generate station code from document ID (first 8 characters, uppercase)
+        const stationCode = station.id.substring(0, 8).toUpperCase();
+
+        // Build address string from formattedLocation or address object
+        let address = "";
+        if (station.formattedLocation?.address) {
+          const addr = station.formattedLocation.address;
+          address =
+            [addr?.road, addr?.city, addr?.state, addr?.country]
+              .filter(Boolean)
+              .join("، ") || station.cityName || "-";
+        } else if (station.address) {
+          if (typeof station.address === "string") {
+            address = station.address;
+          } else if (
+            typeof station.address === "object" &&
+            station.address !== null
+          ) {
+            const addr = station.address as {
+              road?: string;
+              city?: string;
+              state?: string;
+              country?: string;
+            };
+            address =
+              [addr?.road, addr?.city, addr?.state, addr?.country]
+                .filter(Boolean)
+                .join("، ") || station.cityName || "-";
+          } else {
+            address = station.cityName || "-";
+          }
+        } else {
+          address = station.cityName || "-";
+        }
+
+        // Map fuel types - check if available in station data, otherwise use default
+        const options = station.options as { fuelTypes?: string[] } | undefined;
+        const fuelTypes =
+          options?.fuelTypes && Array.isArray(options.fuelTypes)
+            ? options.fuelTypes
+            : station.type
+            ? [station.type]
+            : ["ديزل", "بنزين 91"]; // Default fuel types
+
+        // Map isActive to stationStatus
+        const isActive = station.isActive !== false; // Default to true if not specified
+        const stationStatus = {
+          active: isActive,
+          text: isActive ? "مفعل" : "معطل",
+        };
+
+        return {
+          id: station.id, // Use Firestore document ID directly (string)
+          stationCode,
+          stationName: station.stationName || station.name || "محطة غير معروفة",
+          address,
+          fuelTypes: Array.isArray(fuelTypes)
+            ? fuelTypes
+            : [fuelTypes].filter(Boolean),
+          stationStatus,
+        };
+      });
+    } catch (error) {
+      console.error("Error fetching provider stations:", error);
+      // Return empty array on error
+      return [];
     }
-  }, [providerData]);
+  };
 
-  // Handler for toggling station status
+  // Handle status toggle (same as ServiceDistributerStationLocations)
   const handleToggleStatus = async (stationId: string | number) => {
     try {
       const stationIdStr = String(stationId);
-      
+
       // Fetch current station data from Firestore to get the current isActive status
       const currentStationData = await fetchStationById(stationIdStr);
-      
+
       // Get current isActive status
-      // Handle null, undefined, or missing values - treat as true/active (matching fetchProviderStations logic: isActive !== false)
+      // Handle null, undefined, or missing values - treat as true/active
       let currentIsActive: boolean;
-      if (currentStationData.isActive === null || currentStationData.isActive === undefined) {
-        // If isActive is null/undefined, treat as active (matching fetchProviderStations: isActive !== false means active)
+      if (
+        currentStationData.isActive === null ||
+        currentStationData.isActive === undefined
+      ) {
+        // If isActive is null/undefined, treat as active
         currentIsActive = true;
       } else {
         currentIsActive = currentStationData.isActive === true;
       }
-      
+
       const newIsActive = !currentIsActive;
       await updateStationIsActive(stationIdStr, newIsActive);
       addToast({
@@ -179,14 +203,6 @@ export const ServiceProvidersInfo = ({
           : "تم تعطيل المحطة بنجاح",
         duration: 3000,
       });
-      
-      // Refresh the stations list
-      const providerEmail =
-        providerData.email || providerData.uId || providerData.uid || "";
-      if (providerEmail) {
-        const updatedData = await fetchStationLocations(providerEmail);
-        setStationsData(updatedData);
-      }
     } catch (error) {
       console.error("Error toggling station status:", error);
       addToast({
@@ -425,18 +441,20 @@ export const ServiceProvidersInfo = ({
       </main>
 
       {/* Service Provider Station Locations Section - Using DataTableSection */}
+      {/* Same structure as ServiceDistributerStationLocations */}
       <div className="mt-[var(--corner-radius-large)]">
-        <DataTableSection<StationLocation>
-          title={`مواقع محطات ${providerInfo.name}`}
-          entityName="محطة"
-          entityNamePlural="محطات"
-          icon={MapPin}
+        <DataTableSection<Station>
+          title={`محطات ${providerInfo.name}`}
+          entityName="المحطة"
+          entityNamePlural="المحطات"
+          icon={Fuel}
           columns={stationColumns}
-          fetchData={stationsFetchFunction}
+          fetchData={fetchStationsData}
           onToggleStatus={handleToggleStatus}
           addNewRoute=""
           viewDetailsRoute={(id) => `/service-provider-station/${id}`}
-          loadingMessage={`جاري تحميل مواقع محطات ${providerInfo.name}...`}
+          loadingMessage={`جاري تحميل بيانات المحطات...`}
+          errorMessage="فشل في تحميل بيانات المحطات."
           itemsPerPage={5}
           showTimeFilter={false}
           showAddButton={false}
