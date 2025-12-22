@@ -7,6 +7,7 @@ import {
   FuelStation,
   updateStationIsActive,
   fetchStationById,
+  calculateStationFuelConsumption,
 } from "../../../../services/firestore";
 import { useToast } from "../../../../context/ToastContext";
 
@@ -20,11 +21,14 @@ interface Station {
   stationCode: string;
   stationName: string;
   address: string;
-  fuelTypes: string[];
+  refid?: string; // Station reference ID from Firestore
   stationStatus: { active: boolean; text: string };
+  dieselConsumed: number; // Diesel consumed in liters
+  fuel95Consumed: number; // Fuel 95 consumed in liters
+  fuel91Consumed: number; // Fuel 91 consumed in liters
 }
 
-// Columns configuration matching ServiceDistributerStationLocations
+// Columns configuration matching the image
 const stationColumns = [
   {
     key: "actions",
@@ -39,19 +43,46 @@ const stationColumns = [
     priority: "high" as const,
   },
   {
-    key: "fuelTypes",
-    label: "نوع الوقود",
+    key: "dieselConsumed",
+    label: "الديزل المستهلك (لتر)",
     width: "flex-1 grow min-w-[150px]",
     priority: "high" as const,
-    render: (value: string[]) => (
-      <div className="text-center">{value.join(" ")}</div>
+    render: (value: number) => (
+      <div className="text-center">{value || 0}</div>
+    ),
+  },
+  {
+    key: "fuel95Consumed",
+    label: "وقود 95 المستهلك (لتر)",
+    width: "flex-1 grow min-w-[150px]",
+    priority: "high" as const,
+    render: (value: number) => (
+      <div className="text-center">{value || 0}</div>
+    ),
+  },
+  {
+    key: "fuel91Consumed",
+    label: "وقود 91 المستهلك (لتر)",
+    width: "flex-1 grow min-w-[150px]",
+    priority: "high" as const,
+    render: (value: number) => (
+      <div className="text-center">{value || 0}</div>
     ),
   },
   {
     key: "address",
     label: "العنوان",
-    width: "flex-1 grow min-w-[150px]",
+    width: "flex-1 grow min-w-[250px]",
     priority: "medium" as const,
+    render: (value: string) => (
+      <div 
+        className="text-right line-clamp-2 max-w-[400px] cursor-help" 
+        title={value || "-"}
+        style={{ direction: "rtl" }}
+      >
+        {value || "-"}
+      </div>
+    ),
   },
   {
     key: "stationName",
@@ -64,6 +95,12 @@ const stationColumns = [
     label: "كود المحطة",
     width: "flex-1 grow min-w-[120px]",
     priority: "high" as const,
+  },
+  {
+    key: "refid",
+    label: "الرقم المرجعي",
+    width: "flex-1 grow min-w-[120px]",
+    priority: "medium" as const,
   },
 ];
 
@@ -101,8 +138,9 @@ export const ServiceProvidersInfo = ({
       
       console.log(`📊 Fetched ${fuelStations.length} fuel stations`);
 
-      // Transform FuelStation data to Station interface format (same as ServiceDistributerStationLocations)
-      return fuelStations.map((station: FuelStation) => {
+      // Transform FuelStation data to Station interface format with consumed fuel quantities
+      const stationsWithConsumption = await Promise.all(
+        fuelStations.map(async (station: FuelStation) => {
         // Use Firestore document ID directly (same as Stations.tsx)
         // Generate station code from document ID (first 8 characters, uppercase)
         const stationCode = station.id.substring(0, 8).toUpperCase();
@@ -139,33 +177,44 @@ export const ServiceProvidersInfo = ({
           address = station.cityName || "-";
         }
 
-        // Map fuel types - check if available in station data, otherwise use default
-        const options = station.options as { fuelTypes?: string[] } | undefined;
-        const fuelTypes =
-          options?.fuelTypes && Array.isArray(options.fuelTypes)
-            ? options.fuelTypes
-            : station.type
-            ? [station.type]
-            : ["ديزل", "بنزين 91"]; // Default fuel types
+          // Map isActive to stationStatus
+          const isActive = station.isActive !== false; // Default to true if not specified
+          const stationStatus = {
+            active: isActive,
+            text: isActive ? "متاحة للسائقين" : "غير متاحة",
+          };
 
-        // Map isActive to stationStatus
-        const isActive = station.isActive !== false; // Default to true if not specified
-        const stationStatus = {
-          active: isActive,
-          text: isActive ? "مفعل" : "معطل",
-        };
+          // Calculate consumed fuel quantities for this station
+          const stationEmail = station.email || station.id;
+          let dieselConsumed = 0;
+          let fuel95Consumed = 0;
+          let fuel91Consumed = 0;
 
-        return {
-          id: station.id, // Use Firestore document ID directly (string)
-          stationCode,
-          stationName: station.stationName || station.name || "محطة غير معروفة",
-          address,
-          fuelTypes: Array.isArray(fuelTypes)
-            ? fuelTypes
-            : [fuelTypes].filter(Boolean),
-          stationStatus,
-        };
-      });
+          try {
+            const consumption = await calculateStationFuelConsumption(stationEmail);
+            dieselConsumed = consumption.dieselConsumed || 0;
+            fuel95Consumed = consumption.fuel95Consumed || 0;
+            fuel91Consumed = consumption.fuel91Consumed || 0;
+          } catch (error) {
+            console.error(`Error calculating consumption for station ${stationEmail}:`, error);
+            // Keep default values of 0
+          }
+
+          return {
+            id: station.id, // Use Firestore document ID directly (string)
+            stationCode,
+            stationName: station.stationName || station.name || "محطة غير معروفة",
+            address,
+            refid: (station as any).refid || (station as any).refId || stationCode, // Station reference ID
+            stationStatus,
+            dieselConsumed,
+            fuel95Consumed,
+            fuel91Consumed,
+          };
+        })
+      );
+
+      return stationsWithConsumption;
     } catch (error) {
       console.error("Error fetching provider stations:", error);
       // Return empty array on error
@@ -451,13 +500,13 @@ export const ServiceProvidersInfo = ({
           columns={stationColumns}
           fetchData={fetchStationsData}
           onToggleStatus={handleToggleStatus}
-          addNewRoute=""
+          addNewRoute={`/service-distributer-stations/add${providerData.email ? `?providerEmail=${encodeURIComponent(providerData.email)}` : ''}`}
           viewDetailsRoute={(id) => `/service-provider-station/${id}`}
           loadingMessage={`جاري تحميل بيانات المحطات...`}
           errorMessage="فشل في تحميل بيانات المحطات."
           itemsPerPage={5}
           showTimeFilter={false}
-          showAddButton={false}
+          showAddButton={true}
         />
       </div>
     </div>

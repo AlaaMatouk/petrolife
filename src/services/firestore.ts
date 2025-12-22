@@ -9818,7 +9818,7 @@ const uploadFileToStorage = async (
  * @param googleMapsLink - Google Maps URL
  * @returns Object with lat and lng, or null if parsing fails
  */
-const parseGoogleMapsLink = (
+export const parseGoogleMapsLink = (
   googleMapsLink: string
 ): { lat: number; lng: number } | null => {
   try {
