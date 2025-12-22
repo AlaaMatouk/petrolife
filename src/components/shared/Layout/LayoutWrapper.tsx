@@ -60,6 +60,12 @@ const PAGE_CONFIGS: Record<string, PageConfig> = {
     title: "شحن المحفظة",
     titleIcon: <img src="/img/side-icons-6.svg" alt="" className="w-5 h-5" />,
   },
+  "/transfermoney": {
+    title: "تحويل الاموال",
+    titleIcon: <img src="/img/side-icons-6.svg" alt="" className="w-5 h-5" />,
+    showSearch: true,
+    searchPlaceholder: "بحث برقم العميل / العملية السجل التجاري / رقم الهاتف...",
+  },
   "/store": {
     title: "المتجر",
     titleIcon: <img src="/img/side-icons-10.svg" alt="" className="w-5 h-5" />,

@@ -19,6 +19,7 @@ import { MoneyReq } from "../components/AdminDashboard/pages/wallet-requests/Mon
 import { WalletChargeRequests } from "../screens/ChargeRequests/WalletChargeRequests";
 import { MoneyRefundRequests } from "../screens/MoneyRefundRequests/MoneyRefundRequests";
 import { ChargeWallet } from "../screens/ChargeWallet";
+import { TransferMoney } from "../screens/TransferMoney";
 import { PerolifeStationLocations } from "../screens/PerolifeStationLocations/perolifestationlocations";
 import { StoreScreen } from "../screens/Store";
 import { SubscriptionsScreen } from "../screens/Subscriptions";
@@ -368,6 +369,7 @@ export const AppRouter = () => {
         {/* Wallet and Financial */}
         <Route path={ROUTES.WALLET} element={<Wallet />} />
         <Route path={ROUTES.CHARGE_WALLET} element={<ChargeWallet />} />
+        <Route path={ROUTES.TRANSFER_MONEY} element={<TransferMoney />} />
         <Route path={ROUTES.FINANCIAL_REPORTS} element={<FinancialReports />} />
         <Route path={ROUTES.WALLET_REPORTS} element={<WalletReports />} />
 

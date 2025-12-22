@@ -12690,6 +12690,114 @@ export const fetchCompanyById = async (companyId: string) => {
 };
 
 /**
+ * Find a company by phone number
+ * @param phoneNumber - The phone number to search for (can include spaces, country codes like "+966 56 190 4021")
+ * @returns Promise with company data if found, null if not found
+ */
+export const findCompanyByPhoneNumber = async (
+  phoneNumber: string
+): Promise<{
+  id: string;
+  name: string;
+  email: string;
+  uid: string;
+  phoneNumber: string;
+} | null> => {
+  try {
+    if (!phoneNumber || phoneNumber.trim().length < 8) {
+      return null;
+    }
+
+    const companiesRef = collection(db, "companies");
+    let snapshot: any;
+
+    // First, try searching with the exact format as entered (with spaces and +)
+    // This matches Firestore format like "+966 56 190 4021"
+    const exactFormat = phoneNumber.trim();
+    console.log("🔍 Searching for company with exact format:", exactFormat);
+
+    let q = query(companiesRef, where("phoneNumber", "==", exactFormat));
+    snapshot = await getDocs(q);
+
+    // If not found, try searching by phone field
+    if (snapshot.empty) {
+      q = query(companiesRef, where("phone", "==", exactFormat));
+      snapshot = await getDocs(q);
+    }
+
+    // If user entered partial number like "56 190 402", try adding +966 prefix
+    if (snapshot.empty && !exactFormat.startsWith("+")) {
+      const withPrefix = `+966 ${exactFormat}`.trim();
+      console.log("🔍 Trying with +966 prefix:", withPrefix);
+      
+      q = query(companiesRef, where("phoneNumber", "==", withPrefix));
+      snapshot = await getDocs(q);
+      
+      if (snapshot.empty) {
+        q = query(companiesRef, where("phone", "==", withPrefix));
+        snapshot = await getDocs(q);
+      }
+    }
+
+    // If still not found, try with cleaned format (no spaces)
+    if (snapshot.empty) {
+      const cleanPhone = phoneNumber.replace(/[\s\+\-\(\)]/g, "");
+      console.log("🔍 Trying with cleaned format:", cleanPhone);
+      
+      q = query(companiesRef, where("phoneNumber", "==", cleanPhone));
+      snapshot = await getDocs(q);
+      
+      if (snapshot.empty) {
+        q = query(companiesRef, where("phone", "==", cleanPhone));
+        snapshot = await getDocs(q);
+      }
+    }
+
+    // For Saudi numbers, try without leading 0
+    if (snapshot.empty) {
+      const cleanPhone = phoneNumber.replace(/[\s\+\-\(\)]/g, "");
+      if (cleanPhone.startsWith("966")) {
+        const withoutCountryCode = cleanPhone.substring(3);
+        if (withoutCountryCode.startsWith("0")) {
+          const withoutZero = withoutCountryCode.substring(1);
+          console.log("🔍 Trying without leading 0:", withoutZero);
+          
+          q = query(companiesRef, where("phoneNumber", "==", withoutZero));
+          snapshot = await getDocs(q);
+          
+          if (snapshot.empty) {
+            q = query(companiesRef, where("phone", "==", withoutZero));
+            snapshot = await getDocs(q);
+          }
+        }
+      }
+    }
+
+    if (snapshot.empty) {
+      console.log("❌ Company not found with phone:", phoneNumber);
+      return null;
+    }
+
+    const companyDoc = snapshot.docs[0];
+    const companyData = companyDoc.data();
+
+    const company = {
+      id: companyDoc.id,
+      name: companyData.name || companyData.brandName || "",
+      email: companyData.email || "",
+      uid: companyData.uId || companyData.uid || companyDoc.id,
+      phoneNumber: companyData.phoneNumber || companyData.phone || phoneNumber,
+    };
+
+    console.log("✅ Company found:", company.name);
+    return company;
+  } catch (error) {
+    console.error("❌ Error searching for company by phone:", error);
+    return null;
+  }
+};
+
+/**
  * Interface for fuel station data
  */
 export interface FuelStation {
@@ -18047,6 +18155,575 @@ export const approveWalletChargeRequest = async (
     return result;
   } catch (error: any) {
     console.error("❌ Error approving wallet request:", error);
+    throw error;
+  }
+};
+
+// ============================================================================
+// COMPANY-TO-COMPANY TRANSFER MANAGEMENT
+// ============================================================================
+
+/**
+ * Submit a company-to-company transfer request
+ * Deducts money from sender's balance immediately and creates pending request
+ * @param transferData - Transfer data including recipient phone, amount
+ * @returns Promise with created transfer request ID
+ */
+export const submitCompanyTransferRequest = async (transferData: {
+  recipientPhoneNumber: string;
+  recipientName: string;
+  amount: number;
+}): Promise<string> => {
+  try {
+    console.log("\n💸 ========================================");
+    console.log("📝 SUBMITTING COMPANY TRANSFER REQUEST");
+    console.log("========================================");
+
+    // Validate user authentication
+    const currentUser = auth.currentUser;
+    if (!currentUser || !currentUser.email) {
+      throw new Error("User not authenticated");
+    }
+    console.log("👤 User:", currentUser.email);
+
+    // Validate amount
+    if (transferData.amount <= 0) {
+      throw new Error("Transfer amount must be greater than 0");
+    }
+    console.log("💵 Amount:", transferData.amount);
+
+    // Find recipient company by phone number
+    const recipientCompany = await findCompanyByPhoneNumber(
+      transferData.recipientPhoneNumber
+    );
+    if (!recipientCompany) {
+      throw new Error("الشركة المستقبلة غير موجودة. يرجى التحقق من رقم الجوال");
+    }
+    console.log("🏢 Recipient Company:", recipientCompany.name);
+
+    // Get sender company data
+    const senderCompany = await fetchCurrentCompany();
+    if (!senderCompany) {
+      throw new Error("Company not found");
+    }
+    console.log("🏢 Sender Company:", senderCompany.name);
+    console.log("💰 Current Balance:", senderCompany.balance || 0);
+
+    // Validate sufficient balance
+    if ((senderCompany.balance || 0) < transferData.amount) {
+      throw new Error(
+        `رصيد غير كافٍ. الرصيد الحالي: ${senderCompany.balance || 0} ر.س`
+      );
+    }
+
+    // Find sender company document ID
+    const companiesRef = collection(db, "companies");
+    let senderCompanyDocId: string;
+
+    // Try to find by email (document ID is usually email)
+    const senderCompanyDocRef = doc(db, "companies", senderCompany.email);
+    const senderCompanyDoc = await getDoc(senderCompanyDocRef);
+
+    if (senderCompanyDoc.exists()) {
+      senderCompanyDocId = senderCompanyDoc.id;
+    } else {
+      // Try by UID
+      const qByUid = query(companiesRef, where("uId", "==", currentUser.uid));
+      const snapshot = await getDocs(qByUid);
+      if (!snapshot.empty) {
+        senderCompanyDocId = snapshot.docs[0].id;
+      } else {
+        // Try by email field
+        const qByEmail = query(
+          companiesRef,
+          where("email", "==", currentUser.email)
+        );
+        const emailSnapshot = await getDocs(qByEmail);
+        if (!emailSnapshot.empty) {
+          senderCompanyDocId = emailSnapshot.docs[0].id;
+        } else {
+          throw new Error("Sender company document not found");
+        }
+      }
+    }
+
+    // Find recipient company document ID
+    const recipientCompanyDocRef = doc(db, "companies", recipientCompany.id);
+    const recipientCompanyDoc = await getDoc(recipientCompanyDocRef);
+    if (!recipientCompanyDoc.exists()) {
+      throw new Error("Recipient company document not found");
+    }
+    const recipientCompanyDocId = recipientCompanyDoc.id;
+
+    // Use atomic transaction to deduct from sender, add to recipient, and create transfer record
+    const result = await runTransaction(db, async (transaction) => {
+      // Re-read sender company to get latest balance
+      const senderDocRef = doc(db, "companies", senderCompanyDocId);
+      const senderDoc = await transaction.get(senderDocRef);
+
+      if (!senderDoc.exists()) {
+        throw new Error("Sender company not found");
+      }
+
+      const senderData = senderDoc.data();
+      const currentSenderBalance = senderData.balance || 0;
+
+      // Validate balance again inside transaction
+      if (currentSenderBalance < transferData.amount) {
+        throw new Error(
+          `رصيد غير كافٍ. الرصيد الحالي: ${currentSenderBalance} ر.س`
+        );
+      }
+
+      // Re-read recipient company to get latest balance
+      const recipientDocRef = doc(db, "companies", recipientCompanyDocId);
+      const recipientDoc = await transaction.get(recipientDocRef);
+
+      if (!recipientDoc.exists()) {
+        throw new Error("Recipient company not found");
+      }
+
+      const recipientData = recipientDoc.data();
+      const currentRecipientBalance = recipientData.balance || 0;
+
+      const newSenderBalance = currentSenderBalance - transferData.amount;
+      const newRecipientBalance = currentRecipientBalance + transferData.amount;
+
+      console.log("💰 Sender Current Balance:", currentSenderBalance);
+      console.log("➖ Deducting from sender:", transferData.amount);
+      console.log("💰 Sender New Balance:", newSenderBalance);
+      console.log("💰 Recipient Current Balance:", currentRecipientBalance);
+      console.log("➕ Adding to recipient:", transferData.amount);
+      console.log("💰 Recipient New Balance:", newRecipientBalance);
+
+      // Deduct from sender balance
+      transaction.update(senderDocRef, {
+        balance: newSenderBalance,
+      });
+
+      // Add to recipient balance
+      transaction.update(recipientDocRef, {
+        balance: newRecipientBalance,
+      });
+
+      // Create transfer record with completed status
+      const transfersRef = collection(db, "companies-transfers");
+      const transferDocRef = doc(transfersRef);
+
+      const transferRequest = {
+        type: "company-to-company",
+        fromCompany: {
+          id: senderCompanyDocId,
+          name: senderCompany.name || senderData.name || senderData.brandName,
+          email: senderCompany.email || senderData.email,
+          uid: senderCompany.uid || senderData.uId || currentUser.uid,
+        },
+        toCompany: {
+          id: recipientCompanyDocId,
+          name: recipientCompany.name,
+          email: recipientCompany.email,
+          phoneNumber: recipientCompany.phoneNumber,
+        },
+        amount: transferData.amount,
+        status: "completed", // Changed from "pending" to "completed"
+        requestDate: serverTimestamp(),
+        completedAt: serverTimestamp(), // Add completion timestamp
+        createdUserId: currentUser.email,
+        companyId: senderCompanyDocId, // For easy lookup
+        recipientCompanyId: recipientCompanyDocId,
+      };
+
+      transaction.set(transferDocRef, transferRequest);
+
+      console.log("✅ Transfer completed with ID:", transferDocRef.id);
+      return transferDocRef.id;
+    });
+
+    // Send notification to recipient (outside transaction)
+    try {
+      await sendTransferNotification(
+        recipientCompanyDocId,
+        senderCompany.name || "شركة",
+        transferData.amount
+      );
+      console.log("✅ Notification sent to recipient");
+    } catch (notifError) {
+      console.error("⚠️ Failed to send notification:", notifError);
+      // Don't throw - transfer is already completed
+    }
+
+    console.log("========================================\n");
+    return result;
+  } catch (error: any) {
+    console.error("❌ Error submitting company transfer request:", error);
+    throw error;
+  }
+};
+
+/**
+ * Approve company-to-company transfer request
+ * Adds money to recipient balance and sends notification
+ * @param requestId - Transfer request document ID
+ * @param adminUser - Admin processing the request
+ * @returns Promise with success boolean
+ */
+export const approveCompanyTransferRequest = async (
+  requestId: string,
+  adminUser: { uid: string; email: string; name: string }
+): Promise<boolean> => {
+  try {
+    console.log("\n✅ ========================================");
+    console.log("📝 APPROVING COMPANY TRANSFER REQUEST");
+    console.log("========================================");
+    console.log("📋 Request ID:", requestId);
+    console.log("👤 Admin:", adminUser.email);
+
+    const requestRef = doc(db, "companies-transfers", requestId);
+    const requestSnap = await getDoc(requestRef);
+
+    if (!requestSnap.exists()) {
+      throw new Error("Transfer request not found");
+    }
+
+    const initialRequestData = requestSnap.data();
+
+    if (initialRequestData.status !== "pending") {
+      throw new Error(`Request already ${initialRequestData.status}`);
+    }
+
+    console.log("💵 Transfer Amount:", initialRequestData.amount);
+    console.log("🏢 From Company:", initialRequestData.fromCompany.name);
+    console.log("🏢 To Company:", initialRequestData.toCompany.name);
+
+    // Store data for notification (before transaction)
+    const recipientCompanyId = initialRequestData.recipientCompanyId;
+    const fromCompanyName = initialRequestData.fromCompany.name;
+    const transferAmount = initialRequestData.amount;
+
+    // Use atomic transaction to add balance and update request
+    const result = await runTransaction(db, async (transaction) => {
+      // Re-read request inside transaction
+      const requestSnap = await transaction.get(requestRef);
+      if (!requestSnap.exists()) {
+        throw new Error("Transfer request not found");
+      }
+
+      const requestData = requestSnap.data();
+
+      // Validate status again
+      if (requestData.status !== "pending") {
+        throw new Error(`Request already ${requestData.status}`);
+      }
+
+      // Get recipient company document
+      const recipientCompanyDocRef = doc(
+        db,
+        "companies",
+        requestData.recipientCompanyId
+      );
+      const recipientCompanySnap = await transaction.get(recipientCompanyDocRef);
+
+      if (!recipientCompanySnap.exists()) {
+        throw new Error("Recipient company not found");
+      }
+
+      const recipientCompanyData = recipientCompanySnap.data();
+      const currentBalance = recipientCompanyData.balance || 0;
+      const newBalance = currentBalance + requestData.amount;
+
+      console.log("💰 Recipient Current Balance:", currentBalance);
+      console.log("➕ Adding:", requestData.amount);
+      console.log("💰 Recipient New Balance:", newBalance);
+
+      // Update request status
+      transaction.update(requestRef, {
+        status: "approved",
+        processedAt: serverTimestamp(),
+        processedBy: adminUser,
+      });
+
+      // Add to recipient balance
+      transaction.update(recipientCompanyDocRef, {
+        balance: newBalance,
+      });
+
+      console.log("✅ Transaction completed successfully");
+      return true;
+    });
+
+    // Send notification to recipient company (outside transaction)
+    try {
+      await sendTransferNotification(
+        recipientCompanyId,
+        fromCompanyName,
+        transferAmount
+      );
+      console.log("✅ Notification sent to recipient");
+    } catch (notifError) {
+      console.error("⚠️ Failed to send notification:", notifError);
+      // Don't throw - notification failure shouldn't fail the approval
+    }
+
+    console.log("========================================\n");
+    return result;
+  } catch (error: any) {
+    console.error("❌ Error approving company transfer:", error);
+    throw error;
+  }
+};
+
+/**
+ * Reject company-to-company transfer request
+ * Refunds money back to sender and updates request status
+ * @param requestId - Transfer request document ID
+ * @param adminUser - Admin processing the request
+ * @param reason - Optional rejection reason
+ * @returns Promise with success boolean
+ */
+export const rejectCompanyTransferRequest = async (
+  requestId: string,
+  adminUser: { uid: string; email: string; name: string },
+  reason?: string
+): Promise<boolean> => {
+  try {
+    console.log("\n❌ ========================================");
+    console.log("📝 REJECTING COMPANY TRANSFER REQUEST");
+    console.log("========================================");
+    console.log("📋 Request ID:", requestId);
+    console.log("👤 Admin:", adminUser.email);
+    if (reason) console.log("📝 Reason:", reason);
+
+    const requestRef = doc(db, "companies-transfers", requestId);
+    const requestSnap = await getDoc(requestRef);
+
+    if (!requestSnap.exists()) {
+      throw new Error("Transfer request not found");
+    }
+
+    const requestData = requestSnap.data();
+
+    if (requestData.status !== "pending") {
+      throw new Error(`Request already ${requestData.status}`);
+    }
+
+    console.log("💵 Transfer Amount:", requestData.amount);
+    console.log("🏢 From Company:", requestData.fromCompany.name);
+    console.log("🏢 To Company:", requestData.toCompany.name);
+
+    // Use atomic transaction to refund balance and update request
+    const result = await runTransaction(db, async (transaction) => {
+      // Re-read request inside transaction
+      const requestSnap = await transaction.get(requestRef);
+      if (!requestSnap.exists()) {
+        throw new Error("Transfer request not found");
+      }
+
+      const requestData = requestSnap.data();
+
+      // Validate status again
+      if (requestData.status !== "pending") {
+        throw new Error(`Request already ${requestData.status}`);
+      }
+
+      // Get sender company document to refund the money
+      const senderCompanyDocRef = doc(db, "companies", requestData.companyId);
+      const senderCompanySnap = await transaction.get(senderCompanyDocRef);
+
+      if (!senderCompanySnap.exists()) {
+        throw new Error("Sender company not found");
+      }
+
+      const senderCompanyData = senderCompanySnap.data();
+      const currentBalance = senderCompanyData.balance || 0;
+      const refundAmount = requestData.amount;
+      const newBalance = currentBalance + refundAmount;
+
+      console.log("💰 Sender Current Balance:", currentBalance);
+      console.log("➕ Refunding:", refundAmount);
+      console.log("💰 Sender New Balance:", newBalance);
+
+      // Update request status
+      transaction.update(requestRef, {
+        status: "rejected",
+        processedAt: serverTimestamp(),
+        processedBy: adminUser,
+        rejectionReason: reason || "لم يتم تحديد سبب",
+      });
+
+      // Refund to sender balance
+      transaction.update(senderCompanyDocRef, {
+        balance: newBalance,
+      });
+
+      console.log("✅ Transaction completed successfully");
+      return true;
+    });
+
+    console.log("========================================\n");
+    return result;
+  } catch (error: any) {
+    console.error("❌ Error rejecting company transfer:", error);
+    throw error;
+  }
+};
+
+/**
+ * Send transfer notification to recipient company
+ * @param recipientCompanyId - Company document ID
+ * @param fromCompanyName - Name of sending company
+ * @param amount - Transfer amount
+ * @returns Promise with notification ID
+ */
+export const sendTransferNotification = async (
+  recipientCompanyId: string,
+  fromCompanyName: string,
+  amount: number
+): Promise<string> => {
+  try {
+    // Get recipient company email for notification targeting
+    const recipientCompanyDoc = await getDoc(
+      doc(db, "companies", recipientCompanyId)
+    );
+    if (!recipientCompanyDoc.exists()) {
+      throw new Error("Recipient company not found");
+    }
+
+    const recipientCompanyData = recipientCompanyDoc.data();
+    const recipientEmail = recipientCompanyData.email;
+
+    if (!recipientEmail) {
+      throw new Error("Recipient company email not found");
+    }
+
+    // Create notification using notificationService
+    const { createNotification } = await import("./notificationService");
+    const notificationId = await createNotification({
+      title: "تحويل أموال",
+      body: `تم استلام ${amount} ر.س من شركة ${fromCompanyName}`,
+      targetedUsers: {
+        companies: [recipientEmail], // Target specific company by email
+      },
+    });
+
+    console.log("✅ Transfer notification created:", notificationId);
+    return notificationId;
+  } catch (error) {
+    console.error("❌ Error sending transfer notification:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all company-to-company transfer requests
+ * @returns Promise with array of transfer requests
+ */
+export const fetchCompanyTransferRequests = async (): Promise<any[]> => {
+  try {
+    console.log("🔍 Fetching company transfer requests...");
+
+    const transfersRef = collection(db, "companies-transfers");
+    const q = query(transfersRef, orderBy("requestDate", "desc"));
+    const querySnapshot = await getDocs(q);
+
+    const transfers: any[] = [];
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      transfers.push({
+        id: doc.id,
+        type: data.type || "company-to-company",
+        fromCompany: data.fromCompany,
+        toCompany: data.toCompany,
+        amount: data.amount,
+        status: data.status || "pending",
+        requestDate: data.requestDate,
+        processedAt: data.processedAt,
+        processedBy: data.processedBy,
+        createdUserId: data.createdUserId,
+        companyId: data.companyId,
+        recipientCompanyId: data.recipientCompanyId,
+      });
+    });
+
+    console.log(`✅ Found ${transfers.length} company transfer requests`);
+    return transfers;
+  } catch (error: any) {
+    console.error("❌ Error fetching company transfer requests:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch company transfers for a specific company (both sent and received)
+ * @param companyId - The company document ID
+ * @param companyEmail - The company email (optional, for fallback lookup)
+ * @returns Promise with array of transfer requests
+ */
+export const fetchCompanyTransfersForCompany = async (
+  companyId?: string,
+  companyEmail?: string
+): Promise<any[]> => {
+  try {
+    console.log("🔍 Fetching company transfers for company...");
+    console.log("Company ID:", companyId);
+    console.log("Company Email:", companyEmail);
+
+    const transfersRef = collection(db, "companies-transfers");
+    const querySnapshot = await getDocs(transfersRef);
+
+    const transfers: any[] = [];
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      transfers.push({
+        id: doc.id,
+        type: data.type || "company-to-company",
+        fromCompany: data.fromCompany,
+        toCompany: data.toCompany,
+        amount: data.amount,
+        status: data.status || "pending",
+        requestDate: data.requestDate,
+        processedAt: data.processedAt,
+        processedBy: data.processedBy,
+        createdUserId: data.createdUserId,
+        companyId: data.companyId,
+        recipientCompanyId: data.recipientCompanyId,
+      });
+    });
+
+    // Filter transfers where company is either sender or recipient
+    const filteredTransfers = transfers.filter((transfer) => {
+      const isSender = 
+        transfer.companyId === companyId ||
+        transfer.fromCompany?.id === companyId ||
+        transfer.fromCompany?.email === companyEmail ||
+        transfer.createdUserId === companyEmail;
+      
+      const isRecipient =
+        transfer.recipientCompanyId === companyId ||
+        transfer.toCompany?.id === companyId ||
+        transfer.toCompany?.email === companyEmail;
+
+      return isSender || isRecipient;
+    });
+
+    // Sort by date descending
+    filteredTransfers.sort((a, b) => {
+      const dateA = a.requestDate?.toDate
+        ? a.requestDate.toDate()
+        : a.requestDate
+        ? new Date(a.requestDate)
+        : new Date(0);
+      const dateB = b.requestDate?.toDate
+        ? b.requestDate.toDate()
+        : b.requestDate
+        ? new Date(b.requestDate)
+        : new Date(0);
+      return dateB.getTime() - dateA.getTime();
+    });
+
+    console.log(`✅ Found ${filteredTransfers.length} transfers for company`);
+    return filteredTransfers;
+  } catch (error: any) {
+    console.error("❌ Error fetching company transfers:", error);
     throw error;
   }
 };
