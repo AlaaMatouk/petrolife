@@ -527,6 +527,36 @@ function AddStations() {
           </div>
 
           <div className="grid grid-cols-2 gap-5 w-full">
+            {/* Right Column */}
+            <div className="flex flex-col gap-5">
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-normal text-[var(--form-readonly-label-color)]">
+                  اسم المحطة
+                </label>
+                <input
+                  type="text"
+                  value={formData.stationName}
+                  onChange={(e) => handleChange("stationName", e.target.value)}
+                  placeholder="ادخل اسم المحطه"
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-normal text-[var(--form-readonly-label-color)]">
+                  رقم الجوال
+                </label>
+                <input
+                  type="tel"
+                  value={formData.phoneNumber}
+                  onChange={(e) => handleChange("phoneNumber", e.target.value)}
+                  placeholder="+966 XXX XXX XXXX"
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+            </div>
+
             {/* Left Column */}
             <div className="flex flex-col gap-5">
               <div className="flex flex-col gap-2">
@@ -558,49 +588,21 @@ function AddStations() {
                 />
               </div>
             </div>
-
-            {/* Right Column */}
-            <div className="flex flex-col gap-5">
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-normal text-[var(--form-readonly-label-color)]">
-                  اسم المحطة
-                </label>
-                <input
-                  type="text"
-                  value={formData.stationName}
-                  onChange={(e) => handleChange("stationName", e.target.value)}
-                  placeholder="ادخل اسم المحطه"
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-normal text-[var(--form-readonly-label-color)]">
-                  رقم الجوال
-                </label>
-                <input
-                  type="tel"
-                  value={formData.phoneNumber}
-                  onChange={(e) => handleChange("phoneNumber", e.target.value)}
-                  placeholder="+966 XXX XXX XXXX"
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-normal text-[var(--form-readonly-label-color)]">
-                  العنوان
-                </label>
-                <textarea
-                  value={formData.address}
-                  onChange={(e) => handleChange("address", e.target.value)}
-                  placeholder="ادخل عنوان المحطه بالتفصيل"
-                  rows={3}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                  required
-                />
-              </div>
-            </div>
+          </div>
+          
+          {/* Address field - spans full width at bottom */}
+          <div className="flex flex-col gap-2 w-full">
+            <label className="text-sm font-normal text-[var(--form-readonly-label-color)]">
+              العنوان
+            </label>
+            <textarea
+              value={formData.address}
+              onChange={(e) => handleChange("address", e.target.value)}
+              placeholder="ادخل عنوان المحطه بالتفصيل"
+              rows={3}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              required
+            />
           </div>
         </div>
 
@@ -774,7 +776,7 @@ function AddStations() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-medium)] pb-[var(--corner-radius-medium)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white font-medium"
+            className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-medium)] pb-[var(--corner-radius-medium)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] bg-blue-900 hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white font-medium"
           >
             {isSubmitting ? "جاري الحفظ..." : "إضافة المحطة"}
           </button>
