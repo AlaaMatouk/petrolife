@@ -199,6 +199,14 @@ export const adminNavigationMenuData = {
       hasBackground: false,
       href: ROUTES.ADMIN_DASHBOARD,
     },
+    {
+      id: "main-wallet",
+      label: "المحفظة الرئيسية",
+      icon: "/img/side-icons-6.svg",
+      isActive: false,
+      hasBackground: false,
+      href: ROUTES.ADMIN_MAIN_WALLET,
+    },
   ],
   sections: [
     {
