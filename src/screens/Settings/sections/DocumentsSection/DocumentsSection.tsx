@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Camera, Download } from "lucide-react";
+import { useAuth } from "../../../../hooks/useGlobalState";
 
 interface DocumentCardProps {
   title: string;
@@ -55,11 +56,24 @@ const DocumentCard: React.FC<DocumentCardProps> = ({ title, imageUrl, onUpdate, 
 };
 
 export const DocumentsSection = (): JSX.Element => {
+  const { company } = useAuth();
+  
   const [documents, setDocuments] = useState({
     commercialRegister: null as string | null,
     taxCertificate: null as string | null,
     addressFile: null as string | null,
   });
+
+  // Initialize documents from company data
+  useEffect(() => {
+    if (company) {
+      setDocuments({
+        commercialRegister: company.commercialRegistration || null,
+        taxCertificate: company.taxCertificate || null,
+        addressFile: company.addressFile || null,
+      });
+    }
+  }, [company]);
 
   const handleDocumentUpdate = (documentType: keyof typeof documents) => {
     const input = document.createElement("input");
@@ -81,19 +95,68 @@ export const DocumentsSection = (): JSX.Element => {
     input.click();
   };
 
-  const handleDownload = (documentType: keyof typeof documents) => {
-    console.log("Downloading:", documentType);
-    // TODO: Implement download functionality
+  const handleDownload = async (documentType: keyof typeof documents) => {
+    const documentUrl = documents[documentType];
+    if (!documentUrl) {
+      return;
+    }
+
+    try {
+      let blob: Blob;
+      let filename: string;
+
+      // Determine filename based on document type
+      const documentNames: Record<keyof typeof documents, string> = {
+        commercialRegister: "السجل_التجاري",
+        taxCertificate: "شهادة_الضرائب",
+        addressFile: "ملف_العنوان",
+      };
+      filename = documentNames[documentType];
+
+      // Check if it's a data URL (base64) or a regular URL
+      if (documentUrl.startsWith("data:")) {
+        // Convert data URL to blob
+        const response = await fetch(documentUrl);
+        blob = await response.blob();
+        
+        // Determine file extension from data URL
+        const matches = documentUrl.match(/data:([^;]+);base64,/);
+        const mimeType = matches ? matches[1] : "application/octet-stream";
+        const extension = mimeType.includes("pdf") ? "pdf" : mimeType.includes("image") ? "jpg" : "pdf";
+        filename = `${filename}.${extension}`;
+      } else {
+        // Fetch from URL
+        const response = await fetch(documentUrl);
+        blob = await response.blob();
+        
+        // Try to get filename from URL or Content-Disposition header
+        const urlPath = new URL(documentUrl).pathname;
+        const urlFilename = urlPath.split("/").pop() || filename;
+        filename = urlFilename.includes(".") ? urlFilename : `${filename}.pdf`;
+      }
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Error downloading document:", error);
+    }
   };
 
   return (
     <div className="flex flex-col gap-6 bg-white rounded-lg border border-[color:var(--border-subtle)] p-6" dir="rtl">
       <div className="relative flex items-center gap-2 mb-4">
-        <h2 className="text-xl font-bold text-[var(--text-primary)] relative z-10 flex items-center gap-2">
-          <span>الوثائق</span>
-          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <h2 className="text-xl font-normal text-blue-600 relative z-10 flex items-center gap-2">
+          <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
+          <span>الوثائق</span>
         </h2>
       </div>
 
