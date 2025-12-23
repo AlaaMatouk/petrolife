@@ -123,6 +123,7 @@ import SpecialNotificationDetails from "../components/AdminDashboard/pages/speci
 import Subscriptions from "../components/AdminDashboard/pages/subscriptions/Subscriptions";
 import AddSubscription from "../components/AdminDashboard/pages/subscriptions/AddSubscription";
 import SubscriptionDetails from "../components/AdminDashboard/pages/subscriptions/SubscriptionDetails";
+import MainWallet from "../components/AdminDashboard/pages/main-wallet/MainWallet";
 import { ServiceDistributerGeneralInformation } from "../screens/ServiceDistributerGeneralInformation";
 import CompanyFAQ from "../screens/FAQ/FAQ";
 import TechnicalSupport from "../screens/TechnicalSupport/TechnicalSupport";
@@ -148,6 +149,7 @@ export const AppRouter = () => {
       {/* Admin Dashboard with AdminLayoutWrapper */}
       <Route element={<AdminLayoutWrapper />}>
         <Route path={ROUTES.ADMIN_DASHBOARD} element={<AdminDashboard />} />
+        <Route path={ROUTES.ADMIN_MAIN_WALLET} element={<MainWallet />} />
         <Route path={ROUTES.SUPERVISORS} element={<Supervisors />} />
         <Route path={ROUTES.ADD_SUPERVISOR} element={<AddSupervisor />} />
         <Route

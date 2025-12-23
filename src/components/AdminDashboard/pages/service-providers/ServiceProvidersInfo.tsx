@@ -1,6 +1,7 @@
-import { Truck, ArrowLeft, Fuel } from "lucide-react";
-import React from "react";
+import { Truck, ArrowLeft, Fuel, MessageCircle, Mail, Phone } from "lucide-react";
+import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { createPortal } from "react-dom";
 import { DataTableSection } from "../../../sections/DataTableSection";
 import {
   fetchFuelStationsByProvider,
@@ -109,6 +110,9 @@ export const ServiceProvidersInfo = ({
 }: ServiceProvidersInfoProps): JSX.Element => {
   const navigate = useNavigate();
   const { addToast } = useToast();
+  const [isContactMenuOpen, setIsContactMenuOpen] = useState(false);
+  const contactButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
 
   // Fetch data function for stations - filtered by provider
   // Same transformation logic as ServiceDistributerStationLocations
@@ -356,6 +360,91 @@ export const ServiceProvidersInfo = ({
     return rows;
   };
 
+  // Update menu position when opened
+  const updateMenuPosition = () => {
+    if (!contactButtonRef.current) return;
+    
+    const rect = contactButtonRef.current.getBoundingClientRect();
+    const menuWidth = 200;
+    const viewportWidth = window.innerWidth;
+    
+    let left = rect.right - menuWidth;
+    
+    if (left < 4) {
+      left = 4;
+    }
+    if (left + menuWidth > viewportWidth - 4) {
+      left = viewportWidth - menuWidth - 4;
+    }
+    
+    setMenuPosition({
+      top: rect.bottom + 8,
+      left: left
+    });
+  };
+
+  // Handle contact menu toggle
+  const handleContactMenuToggle = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsContactMenuOpen(!isContactMenuOpen);
+    if (!isContactMenuOpen) {
+      setTimeout(updateMenuPosition, 0);
+    }
+  };
+
+  // Handle contact option click
+  const handleContactOption = (option: string) => {
+    setIsContactMenuOpen(false);
+    
+    if (option === 'email') {
+      const email = providerData.email || providerInfo.email;
+      if (email && email !== '-') {
+        window.location.href = `mailto:${email}`;
+      } else {
+        alert('لا يوجد بريد إلكتروني متاح لمزود الخدمة');
+      }
+    } else if (option === 'whatsapp') {
+      const phone = providerData.phone || providerData.phoneNumber || providerInfo.phone;
+      if (phone && phone !== '-') {
+        let cleanPhone = phone.replace(/\D/g, '');
+        
+        if (cleanPhone.startsWith('0')) {
+          cleanPhone = cleanPhone.substring(1);
+        }
+        
+        if (!cleanPhone.startsWith('966') && cleanPhone.length > 0) {
+          cleanPhone = '966' + cleanPhone;
+        }
+        
+        const whatsappUrl = `https://wa.me/${cleanPhone}`;
+        window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        alert('لا يوجد رقم هاتف متاح لمزود الخدمة');
+      }
+    } else if (option === 'internal-chat') {
+      console.log('Internal chat selected');
+    }
+  };
+
+  // Update menu position on scroll/resize
+  useEffect(() => {
+    if (isContactMenuOpen) {
+      updateMenuPosition();
+      
+      const handleScroll = () => updateMenuPosition();
+      const handleResize = () => updateMenuPosition();
+      
+      window.addEventListener('scroll', handleScroll);
+      window.addEventListener('resize', handleResize);
+      
+      return () => {
+        window.removeEventListener('scroll', handleScroll);
+        window.removeEventListener('resize', handleResize);
+      };
+    }
+  }, [isContactMenuOpen]);
+
   return (
     <div>
       <main
@@ -472,17 +561,75 @@ export const ServiceProvidersInfo = ({
 
               {/* Contact Button */}
               <div className="flex items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
-                <button
-                  className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-medium)] pb-[var(--corner-radius-medium)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] hover:opacity-90 transition-opacity"
-                  style={{ border: "0.5px solid #A9B4BE" }}
-                  aria-label="تواصل مع مزود الخدمة"
-                >
-                  <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
-                    <div className="w-fit font-[number:var(--subtitle-subtitle-3-font-weight)] text-[#5B738B] text-left tracking-[var(--subtitle-subtitle-3-letter-spacing)] whitespace-nowrap [direction:rtl] relative mt-[-1.00px] font-subtitle-subtitle-3 text-[length:var(--subtitle-subtitle-3-font-size)] leading-[var(--subtitle-subtitle-3-line-height)] [font-style:var(--subtitle-subtitle-3-font-style)]">
-                      تواصل مع مزود الخدمة
+                <div className="relative">
+                  <button
+                    type="button"
+                    ref={contactButtonRef}
+                    onClick={handleContactMenuToggle}
+                    className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-medium)] pb-[var(--corner-radius-medium)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] hover:opacity-90 transition-opacity"
+                    style={{ border: "0.5px solid #A9B4BE" }}
+                    aria-label="تواصل مع مزود الخدمة"
+                  >
+                    <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
+                      <div className="w-fit font-[number:var(--subtitle-subtitle-3-font-weight)] text-[#5B738B] text-left tracking-[var(--subtitle-subtitle-3-letter-spacing)] whitespace-nowrap [direction:rtl] relative mt-[-1.00px] font-subtitle-subtitle-3 text-[length:var(--subtitle-subtitle-3-font-size)] leading-[var(--subtitle-subtitle-3-line-height)] [font-style:var(--subtitle-subtitle-3-font-style)]">
+                        تواصل مع مزود الخدمة
+                      </div>
                     </div>
-                  </div>
-                </button>
+                  </button>
+
+                  {/* Contact Menu Dropdown */}
+                  {isContactMenuOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setIsContactMenuOpen(false)}
+                      />
+                      {createPortal(
+                        <div
+                          className="fixed bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50 w-[220px]"
+                          style={{
+                            top: `${menuPosition.top}px`,
+                            left: `${menuPosition.left}px`
+                          }}
+                        >
+                          {/* Internal Chat Option */}
+                          <button
+                            onClick={() => handleContactOption('internal-chat')}
+                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors [direction:rtl] text-right"
+                          >
+                            <span className="text-sm text-gray-700 font-medium flex-1">دردشة داخلية</span>
+                            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                              <MessageCircle className="w-4 h-4 text-blue-500" />
+                            </div>
+                          </button>
+
+                          {/* Email Message Option */}
+                          <button
+                            onClick={() => handleContactOption('email')}
+                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors [direction:rtl] text-right border-t border-gray-100"
+                          >
+                            <span className="text-sm text-gray-700 font-medium flex-1">رسالة ايميل</span>
+                            <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+                              <Mail className="w-4 h-4 text-purple-500" />
+                            </div>
+                          </button>
+
+                          {/* Via WhatsApp Option */}
+                          <button
+                            onClick={() => handleContactOption('whatsapp')}
+                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors [direction:rtl] text-right border-t border-gray-100"
+                          >
+                            <span className="text-sm text-gray-700 font-medium flex-1">عبر الواتساب</span>
+                            <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                              <Phone className="w-4 h-4 text-white" />
+                            </div>
+                          </button>
+                        </div>,
+                        document.body
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             </form>
           </div>
