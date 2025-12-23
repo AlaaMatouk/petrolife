@@ -6440,19 +6440,7 @@ export const updateService = async (
  */
 export const fetchWalletChargeRequests = async () => {
   try {
-    const requestsRef = collection(db, "companies-wallets-requests");
-    const q = query(requestsRef, orderBy("createdDate", "desc"));
-    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
-
     const allRequestsData: any[] = [];
-
-    querySnapshot.forEach((doc) => {
-      allRequestsData.push({
-        id: doc.id,
-        ...doc.data(),
-      });
-    });
-
     const currentUser = auth.currentUser;
 
     if (!currentUser) {
@@ -6461,6 +6449,39 @@ export const fetchWalletChargeRequests = async () => {
 
     const userEmail = currentUser.email;
 
+    // STEP 1: Fetch from companies-wallets-requests
+    try {
+      const companiesRef = collection(db, "companies-wallets-requests");
+      const q = query(companiesRef, orderBy("createdDate", "desc"));
+      const snapshot = await getDocs(q);
+      
+      snapshot.forEach((doc) => {
+        allRequestsData.push({
+          id: doc.id,
+          ...doc.data(),
+        });
+      });
+    } catch (error) {
+      console.error("Error fetching company requests:", error);
+    }
+
+    // STEP 2: Fetch from wallets-requests (for clients/individuals)
+    try {
+      const walletsRef = collection(db, "wallets-requests");
+      const q = query(walletsRef, orderBy("createdDate", "desc"));
+      const snapshot = await getDocs(q);
+      
+      snapshot.forEach((doc) => {
+        allRequestsData.push({
+          id: doc.id,
+          ...doc.data(),
+        });
+      });
+    } catch (error) {
+      console.warn("wallets-requests collection not found or error:", error);
+    }
+
+    // Filter by user email (works for both collections)
     const filteredRequests = allRequestsData.filter((request) => {
       const requestedUserEmail = request.requestedUser?.email;
 
@@ -6664,13 +6685,7 @@ export const fetchAdminWalletReports = async () => {
 export const fetchAllAdminWalletRequests = async () => {
   try {
     console.log(
-      "\n🔄 Fetching admin wallet requests from companies-wallets-requests..."
-    );
-
-    const requestsRef = collection(db, "companies-wallets-requests");
-    // Query by createdDate (new requests) or actionDate (old requests) - get all and sort
-    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(
-      requestsRef
+      "\n🔄 Fetching admin wallet requests from multiple collections..."
     );
 
     const allRequestsData: any[] = [];
@@ -6710,23 +6725,48 @@ export const fetchAllAdminWalletRequests = async () => {
       }
     };
 
-    querySnapshot.forEach((doc) => {
+    // Helper function to process a document from any collection
+    const processDocument = (doc: any, source: string) => {
       const data = doc.data();
+
+      // Debug logging for each document
+      console.log(`📄 Processing document ${doc.id} from ${source}:`, {
+        hasStatus: !!data.status,
+        status: data.status,
+        hasRequestedUser: !!data.requestedUser,
+        hasValue: !!data.value,
+        hasRefid: !!data.refid,
+        hasCreatedDate: !!data.createdDate,
+      });
 
       // Determine the date to use (createdDate for new requests, actionDate for old ones)
       const dateToUse = data.createdDate || data.actionDate || data.requestDate;
 
       // Get status from correct location (data.status for new, data.requestedUser.status for old)
-      const status = data.status || data.requestedUser?.status || "pending";
+      // Ensure status is always a string and handle null/undefined
+      let status = data.status;
+      if (!status && data.requestedUser?.status) {
+        status = data.requestedUser.status;
+      }
+      if (!status || status === null || status === undefined) {
+        status = "pending";
+      }
+      status = String(status).toLowerCase(); // Normalize to lowercase for consistency
 
-      // Get order type
-      const orderType = data.type || "-";
+      // Get order type (for wallets-requests, it might be in requestedUser.type)
+      const orderType = data.type || data.requestedUser?.type || "-";
 
       // Get responsible person (processedBy for new, actionUser for old)
       const responsible =
         data.processedBy?.name || data.actionUser?.name || "-";
 
-      allRequestsData.push({
+      // Ensure we have at least basic data before adding
+      if (!data.requestedUser && !data.value) {
+        console.warn(`⚠️ Skipping document ${doc.id} from ${source} - missing required fields`);
+        return null;
+      }
+
+      return {
         id: doc.id,
         requestNumber: data.refid || doc.id, // رقم العملية
         clientName: data.requestedUser?.name || "-", // العميل
@@ -6737,10 +6777,47 @@ export const fetchAllAdminWalletRequests = async () => {
         status: status, // حالة الطلب
         responsible: responsible, // المسؤول
         rawDate: dateToUse, // For sorting
-      });
-    });
+        source: source, // Track which collection it came from
+      };
+    };
 
-    // Sort by date descending (newest first)
+    // STEP 1: Fetch from companies-wallets-requests
+    try {
+      console.log("📦 Fetching from companies-wallets-requests...");
+      const companiesRef = collection(db, "companies-wallets-requests");
+      const companiesSnapshot = await getDocs(companiesRef);
+      
+      companiesSnapshot.forEach((doc) => {
+        const processed = processDocument(doc, "company");
+        if (processed) {
+          allRequestsData.push(processed);
+        }
+      });
+      console.log(`✅ Found ${companiesSnapshot.size} company requests`);
+    } catch (error) {
+      console.error("❌ Error fetching company requests:", error);
+      // Continue even if one collection fails
+    }
+
+    // STEP 2: Fetch from wallets-requests (for clients/individuals)
+    try {
+      console.log("📦 Fetching from wallets-requests...");
+      const walletsRef = collection(db, "wallets-requests");
+      const walletsSnapshot = await getDocs(walletsRef);
+      
+      walletsSnapshot.forEach((doc) => {
+        const processed = processDocument(doc, "client");
+        if (processed) {
+          allRequestsData.push(processed);
+        }
+      });
+      console.log(`✅ Found ${walletsSnapshot.size} client/individual requests`);
+    } catch (error) {
+      console.warn("⚠️ wallets-requests collection not found or error:", error);
+      // Continue if collection doesn't exist
+    }
+
+    // STEP 3: Sort all requests by date descending (newest first)
     allRequestsData.sort((a, b) => {
       const dateA = a.rawDate?.toDate
         ? a.rawDate.toDate()
@@ -6753,6 +6830,14 @@ export const fetchAllAdminWalletRequests = async () => {
 
     console.log(
       `✅ Total admin wallet requests found: ${allRequestsData.length}`
+    );
+    console.log(
+      `📊 Status breakdown:`,
+      allRequestsData.reduce((acc, req) => {
+        const status = req.status || "unknown";
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>)
     );
     return allRequestsData;
   } catch (error) {
@@ -6800,87 +6885,124 @@ export const addRefidToExistingWalletRequests = async (): Promise<number> => {
       "🔄 Starting migration: Adding refid to existing wallet requests..."
     );
 
-    const requestsRef = collection(db, "companies-wallets-requests");
-    const requestsSnapshot = await getDocs(requestsRef);
-    console.log(`📦 Found ${requestsSnapshot.size} wallet requests`);
+    let totalUpdatedCount = 0;
+    const requestsToUpdate: Array<{ docRef: any; refid: string; collection: string }> = [];
 
-    let updatedCount = 0;
-    const requestsToUpdate: Array<{ docRef: any; refid: string }> = [];
+    // Helper function to check if refid exists in both collections
+    const checkRefidUniqueness = async (refid: string): Promise<boolean> => {
+      // Check companies-wallets-requests
+      const companiesRefCheck = collection(db, "companies-wallets-requests");
+      const qCompanies = query(companiesRefCheck, where("refid", "==", refid));
+      const companiesSnapshot = await getDocs(qCompanies);
 
-    // First pass: Identify requests without refid and generate refids
-    for (const requestDoc of requestsSnapshot.docs) {
-      const requestData = requestDoc.data();
-
-      // Skip if request already has refid
-      if (requestData.refid) {
-        console.log(
-          `⏭️  Wallet request ${requestDoc.id} already has refid: ${requestData.refid}`
-        );
-        continue;
+      // Check wallets-requests
+      try {
+        const walletsRefCheck = collection(db, "wallets-requests");
+        const qWallets = query(walletsRefCheck, where("refid", "==", refid));
+        const walletsSnapshot = await getDocs(qWallets);
+        
+        return companiesSnapshot.empty && walletsSnapshot.empty;
+      } catch (error) {
+        // If wallets-requests doesn't exist, just check companies
+        return companiesSnapshot.empty;
       }
+    };
 
-      // Generate unique 8-digit refid
-      let refid: string = "";
-      let isUnique = false;
-      let attempts = 0;
-      const maxAttempts = 20;
+    // Helper function to process a collection
+    const processCollection = async (collectionName: string) => {
+      console.log(`📦 Processing ${collectionName}...`);
+      const requestsRef = collection(db, collectionName);
+      const requestsSnapshot = await getDocs(requestsRef);
+      console.log(`📦 Found ${requestsSnapshot.size} requests in ${collectionName}`);
 
-      while (!isUnique && attempts < maxAttempts) {
-        // Generate 8-digit number (10000000 to 99999999)
-        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
-        refid = randomCode.toString();
+      let collectionUpdatedCount = 0;
 
-        // Check if refid already exists in Firestore or in our pending updates
-        const requestsRefCheck = collection(db, "companies-wallets-requests");
-        const qCheck = query(requestsRefCheck, where("refid", "==", refid));
-        const querySnapshot = await getDocs(qCheck);
+      for (const requestDoc of requestsSnapshot.docs) {
+        const requestData = requestDoc.data();
 
-        // Also check if this refid is already in our pending updates
-        const isInPendingUpdates = requestsToUpdate.some(
-          (item) => item.refid === refid
-        );
-
-        if (querySnapshot.empty && !isInPendingUpdates) {
-          isUnique = true;
-        } else {
-          attempts++;
+        // Skip if request already has refid
+        if (requestData.refid) {
+          console.log(
+            `⏭️  Request ${requestDoc.id} in ${collectionName} already has refid: ${requestData.refid}`
+          );
+          continue;
         }
-      }
 
-      if (!isUnique || !refid) {
-        console.error(
-          `❌ Failed to generate unique refid for wallet request ${requestDoc.id} after ${maxAttempts} attempts`
+        // Generate unique 8-digit refid
+        let refid: string = "";
+        let isUnique = false;
+        let attempts = 0;
+        const maxAttempts = 20;
+
+        while (!isUnique && attempts < maxAttempts) {
+          // Generate 8-digit number (10000000 to 99999999)
+          const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+          refid = randomCode.toString();
+
+          // Check if refid already exists in both collections or in our pending updates
+          const existsInFirestore = !(await checkRefidUniqueness(refid));
+          const isInPendingUpdates = requestsToUpdate.some(
+            (item) => item.refid === refid
+          );
+
+          if (!existsInFirestore && !isInPendingUpdates) {
+            isUnique = true;
+          } else {
+            attempts++;
+          }
+        }
+
+        if (!isUnique || !refid) {
+          console.error(
+            `❌ Failed to generate unique refid for request ${requestDoc.id} in ${collectionName} after ${maxAttempts} attempts`
+          );
+          continue;
+        }
+
+        requestsToUpdate.push({
+          docRef: doc(db, collectionName, requestDoc.id),
+          refid: refid,
+          collection: collectionName,
+        });
+        console.log(
+          `✅ Generated refid ${refid} for request ${requestDoc.id} in ${collectionName}`
         );
-        continue;
       }
 
-      requestsToUpdate.push({
-        docRef: doc(db, "companies-wallets-requests", requestDoc.id),
-        refid: refid,
-      });
-      console.log(
-        `✅ Generated refid ${refid} for wallet request ${requestDoc.id}`
-      );
+      return collectionUpdatedCount;
+    };
+
+    // Process companies-wallets-requests
+    await processCollection("companies-wallets-requests");
+
+    // Process wallets-requests
+    try {
+      await processCollection("wallets-requests");
+    } catch (error) {
+      console.warn("⚠️ wallets-requests collection not found or error:", error);
     }
 
     console.log(
       `📝 Updating ${requestsToUpdate.length} wallet requests with refid...`
     );
-    for (const { docRef, refid } of requestsToUpdate) {
+    
+    // Update all requests
+    for (const { docRef, refid, collection } of requestsToUpdate) {
       try {
         await updateDoc(docRef, { refid: refid });
-        updatedCount++;
+        totalUpdatedCount++;
         console.log(
-          `✅ Updated wallet request ${docRef.id} with refid: ${refid}`
+          `✅ Updated request ${docRef.id} in ${collection} with refid: ${refid}`
         );
       } catch (error) {
-        console.error(`❌ Error updating wallet request ${docRef.id}:`, error);
+        console.error(`❌ Error updating request ${docRef.id} in ${collection}:`, error);
       }
     }
+    
     console.log(
-      `✅ Migration completed: ${updatedCount} wallet requests updated with refid`
+      `✅ Migration completed: ${totalUpdatedCount} wallet requests updated with refid`
     );
-    return updatedCount;
+    return totalUpdatedCount;
   } catch (error) {
     console.error("❌ Error in migration:", error);
     throw error;
@@ -18155,65 +18277,127 @@ export const approveWalletChargeRequest = async (
     console.log("📋 Request ID:", requestId);
     console.log("👤 Admin:", adminUser.email);
 
-    // STEP 1: Fetch request and find company BEFORE transaction
-    const requestRef = doc(db, "companies-wallets-requests", requestId);
-    const requestSnap = await getDoc(requestRef);
+    // STEP 1: Try to find request in both collections
+    let requestRef: any;
+    let requestSnap: any;
+    let requestData: any;
+    let collectionName: string;
+    let isClientRequest = false;
 
-    if (!requestSnap.exists()) {
-      throw new Error("Request not found");
+    // Try companies-wallets-requests first
+    requestRef = doc(db, "companies-wallets-requests", requestId);
+    requestSnap = await getDoc(requestRef);
+
+    if (requestSnap.exists()) {
+      collectionName = "companies-wallets-requests";
+      requestData = requestSnap.data();
+      console.log("✅ Found request in companies-wallets-requests");
+    } else {
+      // Try wallets-requests (for clients/individuals)
+      requestRef = doc(db, "wallets-requests", requestId);
+      requestSnap = await getDoc(requestRef);
+
+      if (requestSnap.exists()) {
+        collectionName = "wallets-requests";
+        requestData = requestSnap.data();
+        isClientRequest = true;
+        console.log("✅ Found request in wallets-requests (client/individual)");
+      } else {
+        throw new Error("Request not found in any collection");
+      }
     }
 
-    const requestData = requestSnap.data();
     console.log("💵 Request Amount:", requestData.value);
+    console.log("📦 Collection:", collectionName);
+    console.log("👤 User Type:", isClientRequest ? "Client/Individual" : "Company");
 
-    // Find company document ID
-    let companyDocId: string;
+    // STEP 2: Find the user document (company or client)
+    let userDocId: string;
+    let userCollection: string;
+    let userDocRef: any;
 
-    if (requestData.companyId) {
-      // New requests: Use stored company ID
-      console.log("🏢 Using stored Company ID:", requestData.companyId);
-      companyDocId = requestData.companyId;
-    } else {
-      // Old requests: Query by UID or email (fallback for legacy data)
-      console.log("🔍 Searching for company by UID/email...");
-      const companiesRef = collection(db, "companies");
+    if (isClientRequest) {
+      // For wallets-requests, find in clients collection
+      userCollection = "clients";
+      console.log("🔍 Searching for client by UID/email...");
+      const clientsRef = collection(db, "clients");
 
       // Try by UID
       let qByUid = query(
-        companiesRef,
-        where("uid", "==", requestData.requestedUser.uid)
+        clientsRef,
+        where("uid", "==", requestData.requestedUser?.uid || requestData.requestedUser?.id)
       );
-      let companySnapshot = await getDocs(qByUid);
+      let clientSnapshot = await getDocs(qByUid);
 
       // If not found, try by email
-      if (companySnapshot.empty && requestData.requestedUser.email) {
+      if (clientSnapshot.empty && requestData.requestedUser?.email) {
         console.log("🔍 Not found by UID, trying email...");
         const qByEmail = query(
-          companiesRef,
+          clientsRef,
           where("email", "==", requestData.requestedUser.email)
         );
-        companySnapshot = await getDocs(qByEmail);
+        clientSnapshot = await getDocs(qByEmail);
       }
 
-      // If still not found, try by createdUserId
-      if (companySnapshot.empty && requestData.requestedUser.email) {
-        console.log("🔍 Not found by email, trying createdUserId...");
-        const qByCreatedUserId = query(
+      if (clientSnapshot.empty) {
+        throw new Error("Client not found");
+      }
+
+      userDocId = clientSnapshot.docs[0].id;
+      userDocRef = doc(db, "clients", userDocId);
+      console.log("✓ Found Client ID:", userDocId);
+    } else {
+      // For companies-wallets-requests, find in companies collection
+      userCollection = "companies";
+      
+      if (requestData.companyId) {
+        // New requests: Use stored company ID
+        console.log("🏢 Using stored Company ID:", requestData.companyId);
+        userDocId = requestData.companyId;
+      } else {
+        // Old requests: Query by UID or email (fallback for legacy data)
+        console.log("🔍 Searching for company by UID/email...");
+        const companiesRef = collection(db, "companies");
+
+        // Try by UID
+        let qByUid = query(
           companiesRef,
-          where("createdUserId", "==", requestData.requestedUser.email)
+          where("uid", "==", requestData.requestedUser?.uid)
         );
-        companySnapshot = await getDocs(qByCreatedUserId);
-      }
+        let companySnapshot = await getDocs(qByUid);
 
-      if (companySnapshot.empty) {
-        throw new Error("Company not found");
-      }
+        // If not found, try by email
+        if (companySnapshot.empty && requestData.requestedUser?.email) {
+          console.log("🔍 Not found by UID, trying email...");
+          const qByEmail = query(
+            companiesRef,
+            where("email", "==", requestData.requestedUser.email)
+          );
+          companySnapshot = await getDocs(qByEmail);
+        }
 
-      companyDocId = companySnapshot.docs[0].id;
-      console.log("✓ Found Company ID:", companyDocId);
+        // If still not found, try by createdUserId
+        if (companySnapshot.empty && requestData.requestedUser?.email) {
+          console.log("🔍 Not found by email, trying createdUserId...");
+          const qByCreatedUserId = query(
+            companiesRef,
+            where("createdUserId", "==", requestData.requestedUser.email)
+          );
+          companySnapshot = await getDocs(qByCreatedUserId);
+        }
+
+        if (companySnapshot.empty) {
+          throw new Error("Company not found");
+        }
+
+        userDocId = companySnapshot.docs[0].id;
+        console.log("✓ Found Company ID:", userDocId);
+      }
+      
+      userDocRef = doc(db, "companies", userDocId);
     }
 
-    // STEP 2: Run atomic transaction
+    // STEP 3: Run atomic transaction
     const result = await runTransaction(db, async (transaction) => {
       // Re-read request inside transaction to ensure consistency
       const requestSnap = await transaction.get(requestRef);
@@ -18230,16 +18414,15 @@ export const approveWalletChargeRequest = async (
       }
       console.log("✓ Request status is pending");
 
-      // Get company document
-      const companyDocRef = doc(db, "companies", companyDocId);
-      const companySnap = await transaction.get(companyDocRef);
+      // Get user document (company or client)
+      const userSnap = await transaction.get(userDocRef);
 
-      if (!companySnap.exists()) {
-        throw new Error("Company not found");
+      if (!userSnap.exists()) {
+        throw new Error(`${isClientRequest ? "Client" : "Company"} not found`);
       }
 
-      const companyData = companySnap.data();
-      const currentBalance = companyData.balance || 0;
+      const userData = userSnap.data();
+      const currentBalance = userData.balance || 0;
       const newBalance = currentBalance + requestData.value;
 
       console.log("💰 Current Balance:", currentBalance);
@@ -18253,8 +18436,8 @@ export const approveWalletChargeRequest = async (
         processedBy: adminUser,
       });
 
-      // Update company balance
-      transaction.update(companyDocRef, {
+      // Update user balance (company or client)
+      transaction.update(userDocRef, {
         balance: newBalance,
       });
 
@@ -18860,14 +19043,35 @@ export const rejectWalletChargeRequest = async (
     console.log("👤 Admin:", adminUser.email);
     if (reason) console.log("📝 Reason:", reason);
 
-    const requestRef = doc(db, "companies-wallets-requests", requestId);
-    const requestSnap = await getDoc(requestRef);
+    // Try to find request in both collections
+    let requestRef: any;
+    let requestSnap: any;
+    let requestData: any;
+    let collectionName: string;
 
-    if (!requestSnap.exists()) {
-      throw new Error("Request not found");
+    // Try companies-wallets-requests first
+    requestRef = doc(db, "companies-wallets-requests", requestId);
+    requestSnap = await getDoc(requestRef);
+
+    if (requestSnap.exists()) {
+      collectionName = "companies-wallets-requests";
+      requestData = requestSnap.data();
+      console.log("✅ Found request in companies-wallets-requests");
+    } else {
+      // Try wallets-requests (for clients/individuals)
+      requestRef = doc(db, "wallets-requests", requestId);
+      requestSnap = await getDoc(requestRef);
+
+      if (requestSnap.exists()) {
+        collectionName = "wallets-requests";
+        requestData = requestSnap.data();
+        console.log("✅ Found request in wallets-requests (client/individual)");
+      } else {
+        throw new Error("Request not found in any collection");
+      }
     }
 
-    const requestData = requestSnap.data();
+    console.log("📦 Collection:", collectionName);
 
     if (requestData.status !== "pending") {
       throw new Error(`Request already ${requestData.status}`);
@@ -19066,54 +19270,229 @@ export const approveWalletWithdrawalRequest = async (
     }
 
     const requestData = requestSnap.data();
-    console.log("💵 Withdrawal Amount:", requestData.withdrawalAmount);
+    
+    // Handle both withdrawaAmount (typo) and withdrawalAmount field names
+    const withdrawalAmount = requestData.withdrawalAmount || requestData.withdrawaAmount;
+    console.log("💵 Withdrawal Amount:", withdrawalAmount);
+    
+    // Validate request data structure
+    if (!requestData.requestedUser) {
+      throw new Error("Request data is missing requestedUser information");
+    }
+    
+    if (!withdrawalAmount || withdrawalAmount <= 0) {
+      throw new Error("Invalid withdrawal amount");
+    }
+    
+    console.log("📋 Request data:", {
+      hasCompanyId: !!requestData.companyId,
+      companyId: requestData.companyId,
+      requestedUserUid: requestData.requestedUser?.uid,
+      requestedUserEmail: requestData.requestedUser?.email,
+    });
 
-    // Find company document ID
-    let companyDocId: string;
+    // STEP 1: Determine if this is a company or client request
+    let userDocId: string | undefined;
+    let userCollection: string | undefined;
+    let userDocRef: any;
+    let isClientRequest = false;
 
+    // First, try to find in companies collection
     if (requestData.companyId) {
       // New requests: Use stored company ID
       console.log("🏢 Using stored Company ID:", requestData.companyId);
-      companyDocId = requestData.companyId;
-    } else {
-      // Old requests: Query by UID or email (fallback for legacy data)
-      console.log("🔍 Searching for company by UID/email...");
+      const companyDocRef = doc(db, "companies", requestData.companyId);
+      const companyDoc = await getDoc(companyDocRef);
+      if (companyDoc.exists()) {
+        userDocId = requestData.companyId;
+        userCollection = "companies";
+        userDocRef = companyDocRef;
+        console.log("✓ Verified company exists with stored ID");
+      } else {
+        console.warn("⚠️ Stored companyId doesn't exist, searching...");
+        // Continue to search below
+      }
+    }
+
+    // If companyId not set or invalid, search for company or client
+    if (!userDocId) {
+      console.log("🔍 Searching for user (company or client) by UID/email...");
+      
+      // Try to find in companies first
       const companiesRef = collection(db, "companies");
+      let companySnapshot: any = null;
 
-      // Try by UID
-      let qByUid = query(
-        companiesRef,
-        where("uid", "==", requestData.requestedUser.uid)
-      );
-      let companySnapshot = await getDocs(qByUid);
+      if (requestData.requestedUser?.uid) {
+        console.log("🔍 Trying to find company by UID:", requestData.requestedUser.uid);
+        const qByUid = query(
+          companiesRef,
+          where("uid", "==", requestData.requestedUser.uid)
+        );
+        companySnapshot = await getDocs(qByUid);
+        if (!companySnapshot.empty) {
+          console.log("✅ Found company by UID");
+        }
+      }
 
-      // If not found, try by email
-      if (companySnapshot.empty && requestData.requestedUser.email) {
-        console.log("🔍 Not found by UID, trying email...");
+      // If not found in companies, try by email
+      if ((!companySnapshot || companySnapshot.empty) && requestData.requestedUser?.email) {
+        console.log("🔍 Not found by UID, trying company by email:", requestData.requestedUser.email);
         const qByEmail = query(
           companiesRef,
           where("email", "==", requestData.requestedUser.email)
         );
         companySnapshot = await getDocs(qByEmail);
+        if (!companySnapshot.empty) {
+          console.log("✅ Found company by email");
+        }
       }
 
       // If still not found, try by createdUserId
-      if (companySnapshot.empty && requestData.requestedUser.email) {
-        console.log("🔍 Not found by email, trying createdUserId...");
+      if ((!companySnapshot || companySnapshot.empty) && requestData.requestedUser?.email) {
+        console.log("🔍 Not found by email, trying company by createdUserId:", requestData.requestedUser.email);
         const qByCreatedUserId = query(
           companiesRef,
           where("createdUserId", "==", requestData.requestedUser.email)
         );
         companySnapshot = await getDocs(qByCreatedUserId);
+        if (!companySnapshot.empty) {
+          console.log("✅ Found company by createdUserId");
+        }
       }
 
-      if (companySnapshot.empty) {
-        throw new Error("Company not found");
+      // If still not found, try by uId (case variation)
+      if ((!companySnapshot || companySnapshot.empty) && requestData.requestedUser?.uid) {
+        console.log("🔍 Not found, trying company by uId (lowercase):", requestData.requestedUser.uid);
+        const qByUId = query(
+          companiesRef,
+          where("uId", "==", requestData.requestedUser.uid)
+        );
+        companySnapshot = await getDocs(qByUId);
+        if (!companySnapshot.empty) {
+          console.log("✅ Found company by uId");
+        }
       }
 
-      companyDocId = companySnapshot.docs[0].id;
-      console.log("✓ Found Company ID:", companyDocId);
+      // If found in companies, use it
+      if (companySnapshot && !companySnapshot.empty) {
+        userDocId = companySnapshot.docs[0].id;
+        userCollection = "companies";
+        userDocRef = doc(db, "companies", userDocId);
+        console.log("✓ Found Company ID:", userDocId);
+        const companyData = companySnapshot.docs[0].data();
+        console.log("📋 Company data:", {
+          id: userDocId,
+          name: companyData.name,
+          email: companyData.email,
+          uid: companyData.uid || companyData.uId,
+        });
+      } else {
+        // Not found in companies, try clients collection
+        console.log("🔍 Company not found, searching in clients collection...");
+        const clientsRef = collection(db, "clients");
+        let clientSnapshot: any = null;
+
+        // Try by UID
+        if (requestData.requestedUser?.uid) {
+          console.log("🔍 Trying to find client by UID:", requestData.requestedUser.uid);
+          const qByUid = query(
+            clientsRef,
+            where("uid", "==", requestData.requestedUser.uid)
+          );
+          clientSnapshot = await getDocs(qByUid);
+          if (!clientSnapshot.empty) {
+            console.log("✅ Found client by UID");
+          }
+        }
+
+        // Try by email
+        if ((!clientSnapshot || clientSnapshot.empty) && requestData.requestedUser?.email) {
+          console.log("🔍 Not found by UID, trying client by email:", requestData.requestedUser.email);
+          const qByEmail = query(
+            clientsRef,
+            where("email", "==", requestData.requestedUser.email)
+          );
+          clientSnapshot = await getDocs(qByEmail);
+          if (!clientSnapshot.empty) {
+            console.log("✅ Found client by email");
+          }
+        }
+
+        // Try by id field
+        if ((!clientSnapshot || clientSnapshot.empty) && requestData.requestedUser?.uid) {
+          console.log("🔍 Not found, trying client by id field:", requestData.requestedUser.uid);
+          const qById = query(
+            clientsRef,
+            where("id", "==", requestData.requestedUser.uid)
+          );
+          clientSnapshot = await getDocs(qById);
+          if (!clientSnapshot.empty) {
+            console.log("✅ Found client by id field");
+          }
+        }
+
+        // Try by document ID directly (uid might be the document ID)
+        if ((!clientSnapshot || clientSnapshot.empty) && requestData.requestedUser?.uid) {
+          console.log("🔍 Not found, trying client by document ID (uid as doc ID):", requestData.requestedUser.uid);
+          try {
+            const clientDocRef = doc(db, "clients", requestData.requestedUser.uid);
+            const clientDoc = await getDoc(clientDocRef);
+            if (clientDoc.exists()) {
+              console.log("✅ Found client by document ID");
+              // Create a snapshot-like object for consistency
+              clientSnapshot = {
+                docs: [{ id: clientDoc.id, data: () => clientDoc.data() }],
+                empty: false,
+              };
+            }
+          } catch (error) {
+            console.log("⚠️ Error trying document ID lookup:", error);
+          }
+        }
+
+        if (clientSnapshot && !clientSnapshot.empty) {
+          userDocId = clientSnapshot.docs[0].id;
+          userCollection = "clients";
+          userDocRef = doc(db, "clients", userDocId);
+          isClientRequest = true;
+          console.log("✓ Found Client ID:", userDocId);
+          const clientData = clientSnapshot.docs[0].data();
+          console.log("📋 Client data:", {
+            id: userDocId,
+            name: clientData.name,
+            email: clientData.email,
+            uid: clientData.uid || clientData.id,
+          });
+        } else {
+          console.error("❌ User not found in companies or clients collections");
+          console.error("📋 Full request data:", JSON.stringify({
+            id: requestSnap.id,
+            companyId: requestData.companyId,
+            requestedUser: requestData.requestedUser,
+            withdrawalAmount: withdrawalAmount,
+          }, null, 2));
+          throw new Error(
+            `User not found. Requested user: ${requestData.requestedUser?.email || requestData.requestedUser?.uid || "unknown"}. Please ensure the user exists in the companies or clients collection.`
+          );
+        }
+      }
     }
+
+    // Validate that we found a user (company or client)
+    if (!userDocId || !userCollection || !userDocRef) {
+      console.error("❌ Failed to find user (company or client) for withdrawal request");
+      console.error("📋 Request data:", {
+        id: requestSnap.id,
+        companyId: requestData.companyId,
+        requestedUser: requestData.requestedUser,
+        withdrawalAmount: withdrawalAmount,
+      });
+      throw new Error(
+        `User not found. Requested user: ${requestData.requestedUser?.email || requestData.requestedUser?.uid || "unknown"}. Please ensure the user exists in the companies or clients collection.`
+      );
+    }
+
+    console.log(`✅ Found ${userCollection} with ID: ${userDocId}`);
 
     // STEP 2: Run atomic transaction
     const result = await runTransaction(db, async (transaction) => {
@@ -19127,34 +19506,40 @@ export const approveWalletWithdrawalRequest = async (
       const requestData = requestSnap.data();
 
       // Validate request status
-      if (requestData.status !== "pending") {
-        throw new Error(`Request already ${requestData.status}`);
+      const currentStatus = String(requestData.status || "pending").toLowerCase();
+      if (currentStatus !== "pending") {
+        throw new Error(`Request already ${currentStatus}`);
       }
       console.log("✓ Request status is pending");
 
-      // Get company document
-      const companyDocRef = doc(db, "companies", companyDocId);
-      const companySnap = await transaction.get(companyDocRef);
+      // Get user document (company or client)
+      const userSnap = await transaction.get(userDocRef);
 
-      if (!companySnap.exists()) {
-        throw new Error("Company not found");
+      if (!userSnap.exists()) {
+        throw new Error(`${userCollection} not found`);
       }
 
-      const companyData = companySnap.data();
-      const currentBalance = companyData.balance || 0;
-      const withdrawalAmount = requestData.withdrawalAmount;
+      const userData = userSnap.data();
+      const currentBalance = userData.balance || 0;
+      
+      // Handle both withdrawaAmount (typo) and withdrawalAmount field names
+      const withdrawalAmountValue = requestData.withdrawalAmount || requestData.withdrawaAmount;
+      
+      if (!withdrawalAmountValue || withdrawalAmountValue <= 0) {
+        throw new Error("Invalid withdrawal amount");
+      }
 
       // CRITICAL: Validate sufficient balance
-      if (currentBalance < withdrawalAmount) {
+      if (currentBalance < withdrawalAmountValue) {
         throw new Error(
-          `رصيد غير كافٍ. الرصيد الحالي: ${currentBalance} ر.س، المبلغ المطلوب: ${withdrawalAmount} ر.س`
+          `رصيد غير كافٍ. الرصيد الحالي: ${currentBalance} ر.س، المبلغ المطلوب: ${withdrawalAmountValue} ر.س`
         );
       }
 
-      const newBalance = currentBalance - withdrawalAmount;
+      const newBalance = currentBalance - withdrawalAmountValue;
 
-      console.log("💰 Current Balance:", currentBalance);
-      console.log("➖ Withdrawing:", withdrawalAmount);
+      console.log(`💰 Current Balance (${userCollection}):`, currentBalance);
+      console.log("➖ Withdrawing:", withdrawalAmountValue);
       console.log("💰 New Balance:", newBalance);
 
       // Update request status
@@ -19164,12 +19549,12 @@ export const approveWalletWithdrawalRequest = async (
         processedBy: adminUser,
       });
 
-      // Update company balance (DEDUCTION)
-      transaction.update(companyDocRef, {
+      // Update user balance (DEDUCTION) - works for both companies and clients
+      transaction.update(userDocRef, {
         balance: newBalance,
       });
 
-      console.log("✅ Transaction completed successfully");
+      console.log(`✅ Transaction completed successfully (${userCollection})`);
       return true;
     });
 
@@ -19292,12 +19677,15 @@ export const fetchAllAdminWithdrawalRequests = async () => {
       const responsible =
         data.processedBy?.name || data.actionUser?.name || "-";
 
+      // Handle both withdrawaAmount (typo) and withdrawalAmount field names
+      const withdrawalAmount = data.withdrawalAmount || data.withdrawaAmount || "-";
+
       allRequestsData.push({
         id: doc.id,
-        requestNumber: data.refid || doc.id,
+        requestNumber: data.refid || data.refId || doc.id,
         clientName: data.requestedUser?.name || "-",
         oldBalance: data.requestedUser?.balance || "-",
-        withdrawalAmount: data.withdrawalAmount || "-",
+        withdrawalAmount: withdrawalAmount,
         companyIban: data.companyIban || "-",
         bankName: data.bankName || "-",
         ibanImage: data.ibanImageUrl || "-",

@@ -130,14 +130,33 @@ export const WalletReq = () => {
   const fetchDataWithState = useCallback(async () => {
     const data = await fetchAllAdminWalletRequests();
 
-    // Fetch raw Firestore data to check for refid
+    // Fetch raw Firestore data from both collections to check for refid
     try {
-      const requestsRef = collection(db, "companies-wallets-requests");
-      const querySnapshot = await getDocs(requestsRef);
       const rawData: any[] = [];
-      querySnapshot.forEach((doc) => {
-        rawData.push({ id: doc.id, ...doc.data() });
-      });
+
+      // Fetch from companies-wallets-requests
+      try {
+        const companiesRef = collection(db, "companies-wallets-requests");
+        const companiesSnapshot = await getDocs(companiesRef);
+        companiesSnapshot.forEach((doc) => {
+          rawData.push({ id: doc.id, ...doc.data() });
+        });
+        console.log(`📦 Fetched ${companiesSnapshot.size} requests from companies-wallets-requests`);
+      } catch (error) {
+        console.error("Error fetching company requests:", error);
+      }
+
+      // Fetch from wallets-requests
+      try {
+        const walletsRef = collection(db, "wallets-requests");
+        const walletsSnapshot = await getDocs(walletsRef);
+        walletsSnapshot.forEach((doc) => {
+          rawData.push({ id: doc.id, ...doc.data() });
+        });
+        console.log(`📦 Fetched ${walletsSnapshot.size} requests from wallets-requests`);
+      } catch (error) {
+        console.warn("Error fetching wallet requests (may not exist):", error);
+      }
 
       // Sort manually by date (support both old and new structures)
       rawData.sort((a, b) => {
@@ -161,6 +180,7 @@ export const WalletReq = () => {
 
       setRawWalletRequestsData(rawData);
       setNeedsMigration(rawData.some((request) => !request.refid));
+      console.log(`✅ Total raw requests loaded: ${rawData.length}`);
     } catch (error) {
       console.error("Error fetching raw wallet requests data:", error);
     }
@@ -285,8 +305,10 @@ export const WalletReq = () => {
     }
 
     // Get status from correct location (support both old and new structures)
-    const currentStatus =
-      request.status || request.requestedUser?.status || "pending";
+    // Normalize to lowercase for consistent comparison
+    const currentStatus = String(
+      request.status || request.requestedUser?.status || "pending"
+    ).toLowerCase();
     if (currentStatus !== "pending") {
       addToast({
         type: "error",
@@ -340,10 +362,12 @@ export const WalletReq = () => {
       return;
     }
 
-    if (request.status !== "pending") {
+    // Normalize status to lowercase for consistent comparison
+    const currentStatus = String(request.status || "pending").toLowerCase();
+    if (currentStatus !== "pending") {
       addToast({
         type: "error",
-        message: `لا يمكن رفض طلب ${request.status}`,
+        message: `لا يمكن رفض طلب ${currentStatus}`,
         duration: 3000,
       });
       return;

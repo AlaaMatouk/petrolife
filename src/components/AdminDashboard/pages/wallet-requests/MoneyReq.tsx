@@ -48,6 +48,7 @@ export const MoneyReq = () => {
     any[]
   >([]);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Fetch data
   const fetchDataWithState = useCallback(async () => {
@@ -98,8 +99,8 @@ export const MoneyReq = () => {
       return;
     }
 
-    // Get status from correct location
-    const currentStatus = request.status || "pending";
+    // Get status from correct location and normalize to lowercase
+    const currentStatus = String(request.status || "pending").toLowerCase();
     if (currentStatus !== "pending") {
       addToast({
         type: "error",
@@ -124,8 +125,9 @@ export const MoneyReq = () => {
         duration: 4000,
       });
 
-      // Refresh data
+      // Refresh data and trigger table refresh
       await fetchDataWithState();
+      setRefreshTrigger((prev) => prev + 1);
     } catch (error: any) {
       console.error("Error approving withdrawal request:", error);
       addToast({
@@ -163,7 +165,8 @@ export const MoneyReq = () => {
       return;
     }
 
-    const currentStatus = request.status || "pending";
+    // Normalize status to lowercase for consistent comparison
+    const currentStatus = String(request.status || "pending").toLowerCase();
     if (currentStatus !== "pending") {
       addToast({
         type: "error",
@@ -195,8 +198,9 @@ export const MoneyReq = () => {
         duration: 3000,
       });
 
-      // Refresh data
+      // Refresh data and trigger table refresh
       await fetchDataWithState();
+      setRefreshTrigger((prev) => prev + 1);
     } catch (error: any) {
       console.error("Error rejecting withdrawal request:", error);
       addToast({
@@ -240,6 +244,7 @@ export const MoneyReq = () => {
         onApprove={handleApprove}
         onReject={handleReject}
         processingId={processingId}
+        refreshTrigger={refreshTrigger}
       />
     </>
   );
