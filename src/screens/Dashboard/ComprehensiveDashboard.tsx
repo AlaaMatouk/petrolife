@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { LegendHighlightLineChart, Spinner, Table, TimeFilter } from "../../components/shared";
 import {
   BarChart3,
@@ -14,6 +15,11 @@ import {
   Rocket,
   AlertTriangle,
   ArrowLeft,
+  MessageCircle,
+  Headphones,
+  X,
+  Send,
+  ChevronDown,
 } from "lucide-react";
 import { useAuth } from "../../hooks/useGlobalState";
 import {
@@ -2104,10 +2110,164 @@ const LatestOrdersSection = () => {
   );
 };
 
+// Live Support Modal Component
+const LiveSupportModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
+  const [selectedSection, setSelectedSection] = useState("");
+  const [inquirySubject, setInquirySubject] = useState("");
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const sections = [
+    "الدعم الفني",
+    "الاستفسارات العامة",
+    "المشاكل التقنية",
+    "الاستفسارات المالية",
+    "خدمة العملاء",
+  ];
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    if (isDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isDropdownOpen]);
+
+  const handleStartChat = () => {
+    // Handle start chat logic here
+    console.log("Starting chat with:", { selectedSection, inquirySubject });
+    // You can navigate to chat or open chat widget here
+  };
+
+  if (!isOpen) return null;
+
+  return createPortal(
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/50 z-50"
+        onClick={onClose}
+      />
+      
+      {/* Modal - Positioned at right bottom */}
+      <div
+        dir="rtl"
+        className="fixed right-6 bottom-6 z-50 w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="bg-[#1e40af] px-6 py-4 rounded-t-2xl flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Headphones className="w-5 h-5 text-white" strokeWidth={2} />
+            <h2 className="text-lg font-semibold text-white">الدعم المباشر</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/20 transition-colors"
+            aria-label="إغلاق"
+          >
+            <X className="w-5 h-5 text-white" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 space-y-6">
+          {/* Section Selection */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              اختر القسم
+            </label>
+            <div className="relative" ref={dropdownRef}>
+              <button
+                type="button"
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                className="w-full px-4 py-3 text-right bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e40af] focus:border-transparent flex items-center justify-between"
+              >
+                <span className={selectedSection ? "text-gray-900" : "text-gray-400"}>
+                  {selectedSection || "اختر القسم..."}
+                </span>
+                <ChevronDown className="w-4 h-4 text-gray-500" />
+              </button>
+              
+              {isDropdownOpen && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-auto">
+                  {sections.map((section) => (
+                    <button
+                      key={section}
+                      type="button"
+                      onClick={() => {
+                        setSelectedSection(section);
+                        setIsDropdownOpen(false);
+                      }}
+                      className="w-full px-4 py-3 text-right hover:bg-gray-50 transition-colors"
+                    >
+                      {section}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Inquiry Subject */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              موضوع الاستفسار
+            </label>
+            <textarea
+              value={inquirySubject}
+              onChange={(e) => setInquirySubject(e.target.value)}
+              placeholder="اكتب موضوع استفسارك هنا..."
+              rows={4}
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e40af] focus:border-transparent resize-none"
+            />
+          </div>
+
+          {/* Start Chat Button */}
+          <button
+            onClick={handleStartChat}
+            disabled={!selectedSection || !inquirySubject.trim()}
+            className="w-full px-6 py-3 bg-gray-200 hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center justify-center gap-2 font-medium text-gray-700"
+          >
+            <Send className="w-5 h-5 text-gray-600" />
+            ابدأ المحادثة
+          </button>
+
+          {/* Working Hours and Response Time */}
+          <div className="pt-4 border-t border-gray-200 space-y-2 text-sm text-gray-600">
+            <p>أوقات العمل: من 8:00 صباحاً حتى 10:00 مساءً</p>
+            <p>متوسط وقت الاستجابة: 2-5 دقائق</p>
+          </div>
+        </div>
+      </div>
+    </>,
+    document.body
+  );
+};
+
 // Main Dashboard Component
 export const ComprehensiveDashboard = (): JSX.Element => {
+  const [isLiveSupportOpen, setIsLiveSupportOpen] = useState(false);
+
+  const handleChatClick = () => {
+    setIsLiveSupportOpen(true);
+  };
+
+  const handleCloseLiveSupport = () => {
+    setIsLiveSupportOpen(false);
+  };
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 relative">
       {/* Banner Section */}
       <BannerSection />
 
@@ -2134,6 +2294,32 @@ export const ComprehensiveDashboard = (): JSX.Element => {
 
       {/* Latest Orders */}
       <LatestOrdersSection />
+
+      {/* Floating Chat Button - Left Bottom */}
+      <button
+        onClick={handleChatClick}
+        className="fixed left-6 bottom-6 z-50 w-14 h-14 bg-[#1e40af] rounded-full shadow-lg hover:shadow-xl hover:scale-110 transition-all duration-300 flex items-center justify-center group"
+        aria-label="الدعم الفني"
+      >
+        {/* Notification Dot */}
+        <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#4ade80] rounded-full border-2 border-white"></div>
+        
+        {/* Chat Icon - Filled */}
+        <svg
+          className="w-7 h-7"
+          viewBox="0 0 24 24"
+          fill="white"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z"
+            fill="white"
+          />
+        </svg>
+      </button>
+
+      {/* Live Support Modal */}
+      <LiveSupportModal isOpen={isLiveSupportOpen} onClose={handleCloseLiveSupport} />
     </div>
   );
 };
