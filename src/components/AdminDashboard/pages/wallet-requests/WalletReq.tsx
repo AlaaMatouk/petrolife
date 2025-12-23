@@ -1,11 +1,12 @@
 import { DataTableSection } from "../../../sections/DataTableSection";
-import { Wallet } from "lucide-react";
+import { Wallet, ArrowRightLeft } from "lucide-react";
 import {
   fetchAllAdminWalletRequests,
   addRefidToExistingWalletRequests,
   deleteWalletRequest,
   approveWalletChargeRequest,
   rejectWalletChargeRequest,
+  fetchCompanyTransferRequests,
 } from "../../../../services/firestore";
 import { useToast } from "../../../../context/ToastContext";
 import { useState, useCallback, useEffect } from "react";
@@ -25,6 +26,17 @@ type WalletRequest = {
   responsible: string;
 };
 
+type CompanyTransfer = {
+  id: string;
+  fromCompany: string;
+  toCompany: string;
+  amount: string;
+  status: string;
+  requestDate: string;
+  actions: string;
+  _rawStatus?: string; // Internal field to check status in ActionMenu
+};
+
 const columns = [
   { key: "actions", priority: "high" as const },
   { key: "responsible", label: "المسؤول", priority: "high" as const },
@@ -41,6 +53,52 @@ const fetchWalletRequests = async (): Promise<WalletRequest[]> => {
   return await fetchAllAdminWalletRequests();
 };
 
+const transferColumns = [
+  { 
+    key: "status", 
+    label: "الحالة", 
+    priority: "high" as const,
+    render: (value: string) => {
+      const statusConfig = {
+        completed: { text: "مكتمل", className: "bg-green-100 text-green-800" },
+        approved: { text: "موافق عليه", className: "bg-green-100 text-green-800" },
+        rejected: { text: "مرفوض", className: "bg-red-100 text-red-800" },
+        pending: { text: "قيد الانتظار", className: "bg-yellow-100 text-yellow-800" },
+      };
+      const config = statusConfig[value as keyof typeof statusConfig] || statusConfig.pending;
+      return (
+        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${config.className}`}>
+          {config.text}
+        </span>
+      );
+    }
+  },
+  { key: "requestDate", label: "تاريخ التحويل", priority: "high" as const },
+  { key: "amount", label: "المبلغ", priority: "high" as const },
+  { key: "toCompany", label: "إلى الشركة", priority: "high" as const },
+  { key: "fromCompany", label: "من الشركة", priority: "high" as const },
+];
+
+const fetchCompanyTransfersData = async (): Promise<CompanyTransfer[]> => {
+  const transfers = await fetchCompanyTransferRequests();
+  return transfers.map((transfer) => {
+    const requestDate = transfer.requestDate?.toDate
+      ? transfer.requestDate.toDate().toLocaleDateString("ar-SA")
+      : transfer.requestDate
+      ? new Date(transfer.requestDate).toLocaleDateString("ar-SA")
+      : "-";
+
+    return {
+      id: transfer.id,
+      fromCompany: transfer.fromCompany?.name || "-",
+      toCompany: transfer.toCompany?.name || "-",
+      amount: `${new Intl.NumberFormat("ar-SA").format(transfer.amount || 0)} ر.س`,
+      status: transfer.status || "completed",
+      requestDate: requestDate,
+    };
+  });
+};
+
 export const WalletReq = () => {
   const { addToast } = useToast();
   const [isMigrating, setIsMigrating] = useState(false);
@@ -48,6 +106,7 @@ export const WalletReq = () => {
   const [needsMigration, setNeedsMigration] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [transferRefreshTrigger, setTransferRefreshTrigger] = useState(0);
   const [deleteConfirm, setDeleteConfirm] = useState<{
     isOpen: boolean;
     requestId: string | null;
@@ -266,6 +325,7 @@ export const WalletReq = () => {
     }
   };
 
+
   // Handle reject wallet request - open confirmation
   const handleReject = (id: string | number) => {
     const requestId = String(id);
@@ -395,6 +455,25 @@ export const WalletReq = () => {
         showTimeFilter={false}
         showMoneyRefundButton={true}
       />
+
+      {/* Company Transfer Requests Section */}
+      <div className="mt-8">
+        <DataTableSection<CompanyTransfer>
+          title="تحويلات بين الشركات"
+          entityName="التحويل"
+          entityNamePlural="تحويلات"
+          icon={ArrowRightLeft}
+          columns={transferColumns}
+          fetchData={fetchCompanyTransfersData}
+          addNewRoute="/wallet-requests"
+          viewDetailsRoute={(id) => `/wallet-requests/${id}`}
+          loadingMessage="جاري تحميل تحويلات الشركات..."
+          itemsPerPage={10}
+          showTimeFilter={false}
+          showAddButton={false}
+          refreshTrigger={transferRefreshTrigger}
+        />
+      </div>
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog

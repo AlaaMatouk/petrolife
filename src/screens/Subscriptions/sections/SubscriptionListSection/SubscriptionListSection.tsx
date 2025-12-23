@@ -144,7 +144,7 @@ export const SubscriptionListSection = (): JSX.Element => {
     const createdDate = currentSubscription?.createdDate;
     const periodValueInDays = currentSubscription?.periodValueInDays;
     
-    if (!createdDate || !periodValueInDays) return 'N/A';
+    if (!createdDate || !periodValueInDays) return '-';
     
     try {
       const startDate = createdDate.toDate ? createdDate.toDate() : new Date(createdDate);
@@ -152,7 +152,7 @@ export const SubscriptionListSection = (): JSX.Element => {
       expiryDate.setDate(expiryDate.getDate() + periodValueInDays);
       return formatDate(expiryDate);
     } catch (error) {
-      return 'N/A';
+      return '-';
     }
   };
 
@@ -181,20 +181,20 @@ export const SubscriptionListSection = (): JSX.Element => {
   const hasActiveSubscription = currentSubscription && !isSubscriptionExpired();
 
   const currentSubscriptionData = {
-    packageName: currentSubscription?.title?.ar || currentSubscription?.title?.en || 'N/A',
+    packageName: currentSubscription?.title?.ar || currentSubscription?.title?.en || '-',
     packageType: currentSubscription?.periodName?.ar || 
                 currentSubscription?.periodName?.en || 
-                (typeof currentSubscription?.periodName === 'string' ? currentSubscription?.periodName : 'N/A'),
-    price: String(currentSubscription?.price || 0),
-    vehicleCount: String(company?.maxCarNumber || 
+                (typeof currentSubscription?.periodName === 'string' ? currentSubscription?.periodName : '-'),
+    price: currentSubscription?.price ? String(currentSubscription.price) : '-',
+    vehicleCount: currentSubscription ? String(company?.maxCarNumber || 
                         company?.numberOfVehicles || 
                         company?.vehicleCount || 
                         company?.carsLimit || 
                         currentSubscription?.maxCarNumber || 
-                        0),
-    subscriptionDate: formatDate(currentSubscription?.createdDate),
-    expiryDate: calculateExpiryDate(),
-    paymentMethod: company?.paymentMethod || 'محفظة',
+                        0) : '-',
+    subscriptionDate: currentSubscription?.createdDate ? formatDate(currentSubscription.createdDate) : '-',
+    expiryDate: currentSubscription ? calculateExpiryDate() : '-',
+    paymentMethod: currentSubscription ? (company?.paymentMethod || 'محفظة') : '-',
   };
 
   console.log('\n📋 Current Subscription Data (Subscriptions Screen):');
@@ -310,9 +310,8 @@ export const SubscriptionListSection = (): JSX.Element => {
 
   return (
     <section className="flex flex-col w-full max-w-[1200px] mx-auto gap-5 px-4" role="main" aria-label="قسم قائمة الاشتراكات">
-      {/* Show current subscription section (even if expired) */}
-      {currentSubscription && (
-<article className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder">
+      {/* Show current subscription section (always show, even if no subscription) */}
+      <article className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder">
 <div className="flex flex-col items-end gap-7 relative self-stretch w-full flex-[0_0_auto]">
 <header className="inline-flex items-center gap-1.5 relative flex-[0_0_auto]">
 <h2 className="relative w-[103px] h-5 mt-[-1.00px] font-subtitle-subtitle-2 font-[number:var(--subtitle-subtitle-2-font-weight)] text-color-mode-text-icons-t-sec text-[length:var(--subtitle-subtitle-2-font-size)] tracking-[var(--subtitle-subtitle-2-letter-spacing)] leading-[var(--subtitle-subtitle-2-line-height)] whitespace-nowrap [direction:rtl] [font-style:var(--subtitle-subtitle-2-font-style)]">
@@ -429,7 +428,6 @@ export const SubscriptionListSection = (): JSX.Element => {
 </div>
 </button>
 </article>
-      )}
 <article className="flex flex-col items-start gap-[var(--corner-radius-extra-large)] pt-[var(--corner-radius-large)] pr-[var(--corner-radius-large)] pb-[var(--corner-radius-large)] pl-[var(--corner-radius-large)] relative self-stretch w-full flex-[0_0_auto] bg-color-mode-surface-bg-screen rounded-[var(--corner-radius-large)] border-[0.3px] border-solid border-color-mode-text-icons-t-placeholder">
 <div className="flex flex-col items-end gap-[var(--corner-radius-extra-large)] relative self-stretch w-full flex-[0_0_auto]">
 <div className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">

@@ -351,36 +351,42 @@ const ActionMenu = <
                   </>
                 ) : onApprove && onReject ? (
                   // Wallet request approve/reject buttons
-                  <>
-                    <button
-                      onClick={handleApproveWalletRequest}
-                      disabled={isThisItemProcessing}
-                      className={`w-full px-4 py-2 text-right text-sm flex items-center justify-end gap-2 transition-colors ${
-                        isThisItemProcessing
-                          ? "text-gray-400 cursor-not-allowed bg-gray-50"
-                          : "text-green-600 hover:bg-green-50"
-                      }`}
-                    >
-                      <span>
-                        {isThisItemProcessing ? "جاري المعالجة..." : "الموافقة"}
-                      </span>
-                      <CheckCircle className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={handleRejectWalletRequest}
-                      disabled={isThisItemProcessing}
-                      className={`w-full px-4 py-2 text-right text-sm flex items-center justify-end gap-2 transition-colors ${
-                        isThisItemProcessing
-                          ? "text-gray-400 cursor-not-allowed bg-gray-50"
-                          : "text-red-600 hover:bg-red-50"
-                      }`}
-                    >
-                      <span>
-                        {isThisItemProcessing ? "جاري المعالجة..." : "الرفض"}
-                      </span>
-                      <XCircle className="w-4 h-4" />
-                    </button>
-                  </>
+                  (() => {
+                    const itemStatus = (item as any).status || (item as any)._rawStatus || "pending";
+                    const isNotPending = itemStatus !== "pending";
+                    return (
+                      <>
+                        <button
+                          onClick={handleApproveWalletRequest}
+                          disabled={isThisItemProcessing || isNotPending}
+                          className={`w-full px-4 py-2 text-right text-sm flex items-center justify-end gap-2 transition-colors ${
+                            isThisItemProcessing || isNotPending
+                              ? "text-gray-400 cursor-not-allowed bg-gray-50"
+                              : "text-green-600 hover:bg-green-50"
+                          }`}
+                        >
+                          <span>
+                            {isThisItemProcessing ? "جاري المعالجة..." : "الموافقة"}
+                          </span>
+                          <CheckCircle className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={handleRejectWalletRequest}
+                          disabled={isThisItemProcessing || isNotPending}
+                          className={`w-full px-4 py-2 text-right text-sm flex items-center justify-end gap-2 transition-colors ${
+                            isThisItemProcessing || isNotPending
+                              ? "text-gray-400 cursor-not-allowed bg-gray-50"
+                              : "text-red-600 hover:bg-red-50"
+                          }`}
+                        >
+                          <span>
+                            {isThisItemProcessing ? "جاري المعالجة..." : "الرفض"}
+                          </span>
+                          <XCircle className="w-4 h-4" />
+                        </button>
+                      </>
+                    );
+                  })()
                 ) : showModifyButton ? (
                   <>
                     <button

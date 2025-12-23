@@ -3052,13 +3052,19 @@ export const updateLastTransferToFullBalance = async (
     }
 
     // Update the transfer amount to full balance
-    const transferRef = doc(db, "service-distributer-transfers", lastTransfer.id);
+    const transferRef = doc(
+      db,
+      "service-distributer-transfers",
+      lastTransfer.id
+    );
     await updateDoc(transferRef, {
       transferAmount: currentBalance,
     });
 
     console.log(
-      `✅ Updated transfer ${lastTransfer.transferNumber} (ID: ${lastTransfer.id}) to full balance: ${currentBalance.toFixed(2)}`
+      `✅ Updated transfer ${lastTransfer.transferNumber} (ID: ${
+        lastTransfer.id
+      }) to full balance: ${currentBalance.toFixed(2)}`
     );
 
     return lastTransfer.id;
@@ -3560,6 +3566,35 @@ export const fetchCoupons = async (): Promise<any[]> => {
   } catch (error) {
     console.error("Error fetching coupons:", error);
     return [];
+  }
+};
+
+/**
+ * Fetch coupon by code from Firestore
+ * @param code - The coupon code to search for
+ * @returns Promise with coupon data or null if not found
+ */
+export const fetchCouponByCode = async (code: string): Promise<any | null> => {
+  try {
+    const couponsCollection = collection(db, "coupons");
+    const q = query(
+      couponsCollection,
+      where("code", "==", code.toUpperCase().trim())
+    );
+    const querySnapshot = await getDocs(q);
+
+    if (querySnapshot.empty) {
+      return null;
+    }
+
+    const couponDoc = querySnapshot.docs[0];
+    return {
+      id: couponDoc.id,
+      ...couponDoc.data(),
+    };
+  } catch (error) {
+    console.error("Error fetching coupon by code:", error);
+    return null;
   }
 };
 export const calculateBatteryChangeStatistics = (
@@ -4709,6 +4744,48 @@ export const calculateFuelConsumptionByCities = async (
  * Fetch subscriptions for current user and calculate expiry dates
  * @returns Promise with subscription data including expiry dates
  */
+/**
+ * Check if this is the company's first time subscribing
+ * @returns Promise<boolean> - true if no subscription history exists, false otherwise
+ */
+export const checkIsFirstTimeSubscription = async (): Promise<boolean> => {
+  try {
+    const user = auth.currentUser;
+    if (!user) {
+      console.error("No authenticated user");
+      return false;
+    }
+
+    // Get the current company
+    const company = await fetchCurrentCompany();
+    if (!company) {
+      console.error("No company found for current user");
+      return false;
+    }
+
+    const companyEmail = company.email;
+    if (!companyEmail) {
+      console.error("No company email found");
+      return false;
+    }
+
+    // Query subscriptions-payment collection by company email
+    const subscriptionsCollection = collection(db, "subscriptions-payment");
+    const q = query(
+      subscriptionsCollection,
+      where("company.email", "==", companyEmail),
+      limit(1)
+    );
+    const subscriptionsSnapshot = await getDocs(q);
+
+    // Return true if no subscriptions found (first time)
+    return subscriptionsSnapshot.docs.length === 0;
+  } catch (error) {
+    console.error("Error checking first-time subscription status:", error);
+    return false;
+  }
+};
+
 export const fetchUserSubscriptions = async (): Promise<any[]> => {
   try {
     const user = auth.currentUser;
@@ -5305,6 +5382,8 @@ export const processSubscriptionPayment = async (subscriptionData: {
   vat: number;
   companyId: string;
   company: any;
+  couponCode?: string;
+  couponData?: any;
 }): Promise<{
   invoiceId: string;
   subscriptionPaymentId: string;
@@ -5362,6 +5441,19 @@ export const processSubscriptionPayment = async (subscriptionData: {
 
     // Safely determine periodValueInDays
     let periodValueInDays = subscription.periodValueInDays;
+
+    // If coupon is applied (especially LIFE1 with 100% discount), set to 1 year
+    const couponCode = subscriptionData.couponCode;
+    const couponData = subscriptionData.couponData;
+    if (couponCode && couponData) {
+      const couponPercentage =
+        couponData.percentage || couponData.precentage || 0;
+      // If it's LIFE1 or 100% discount coupon, set to 1 year (365 days)
+      if (couponCode.toUpperCase() === "LIFE1" || couponPercentage === 100) {
+        periodValueInDays = 365;
+      }
+    }
+
     if (!periodValueInDays) {
       // Try to determine from periodName
       let periodNameStr = "";
@@ -5413,19 +5505,20 @@ export const processSubscriptionPayment = async (subscriptionData: {
       const currentBalance =
         companyData.balance || companyData.walletBalance || 0;
 
-      // Verify sufficient balance
-      if (currentBalance < totalWithVAT) {
+      // Verify sufficient balance (skip if total is 0 due to 100% discount)
+      if (totalWithVAT > 0 && currentBalance < totalWithVAT) {
         throw new Error("Insufficient balance");
       }
 
-      // Calculate new balance
-      const newBalance = currentBalance - totalWithVAT;
+      // Calculate new balance (only deduct if total > 0)
+      const newBalance =
+        totalWithVAT > 0 ? currentBalance - totalWithVAT : currentBalance;
 
       // 2. Create subscription payment document
       const subscriptionPaymentRef = doc(
         collection(db, "subscriptions-payment")
       );
-      const subscriptionPaymentData = {
+      const subscriptionPaymentData: any = {
         company: {
           id: company.id || finalCompanyId,
           email: companyEmail || companyData.email || "",
@@ -5457,11 +5550,20 @@ export const processSubscriptionPayment = async (subscriptionData: {
         createdDate: serverTimestamp(),
         createdUserId: currentUser.uid,
       };
+
+      // Add coupon information if provided
+      if (couponCode) {
+        subscriptionPaymentData.couponCode = couponCode;
+      }
+      if (couponData) {
+        subscriptionPaymentData.couponData = couponData;
+      }
+
       transaction.set(subscriptionPaymentRef, subscriptionPaymentData);
 
       // 3. Create order document
       const orderRef = doc(collection(db, "orders"));
-      const orderData = {
+      const orderData: any = {
         companyUid: currentUser.uid,
         createdUserId: currentUser.uid,
         orderDate: serverTimestamp(),
@@ -5491,6 +5593,12 @@ export const processSubscriptionPayment = async (subscriptionData: {
         status: "completed",
         subscriptionPaymentId: subscriptionPaymentRef.id,
       };
+
+      // Add coupon information to order if provided
+      if (couponCode) {
+        orderData.couponCode = couponCode;
+      }
+
       transaction.set(orderRef, orderData);
 
       // 4. Update company's balance, selectedSubscription, and maxCarNumber in one update
@@ -9710,7 +9818,7 @@ const uploadFileToStorage = async (
  * @param googleMapsLink - Google Maps URL
  * @returns Object with lat and lng, or null if parsing fails
  */
-const parseGoogleMapsLink = (
+export const parseGoogleMapsLink = (
   googleMapsLink: string
 ): { lat: number; lng: number } | null => {
   try {
@@ -12582,6 +12690,114 @@ export const fetchCompanyById = async (companyId: string) => {
 };
 
 /**
+ * Find a company by phone number
+ * @param phoneNumber - The phone number to search for (can include spaces, country codes like "+966 56 190 4021")
+ * @returns Promise with company data if found, null if not found
+ */
+export const findCompanyByPhoneNumber = async (
+  phoneNumber: string
+): Promise<{
+  id: string;
+  name: string;
+  email: string;
+  uid: string;
+  phoneNumber: string;
+} | null> => {
+  try {
+    if (!phoneNumber || phoneNumber.trim().length < 8) {
+      return null;
+    }
+
+    const companiesRef = collection(db, "companies");
+    let snapshot: any;
+
+    // First, try searching with the exact format as entered (with spaces and +)
+    // This matches Firestore format like "+966 56 190 4021"
+    const exactFormat = phoneNumber.trim();
+    console.log("🔍 Searching for company with exact format:", exactFormat);
+
+    let q = query(companiesRef, where("phoneNumber", "==", exactFormat));
+    snapshot = await getDocs(q);
+
+    // If not found, try searching by phone field
+    if (snapshot.empty) {
+      q = query(companiesRef, where("phone", "==", exactFormat));
+      snapshot = await getDocs(q);
+    }
+
+    // If user entered partial number like "56 190 402", try adding +966 prefix
+    if (snapshot.empty && !exactFormat.startsWith("+")) {
+      const withPrefix = `+966 ${exactFormat}`.trim();
+      console.log("🔍 Trying with +966 prefix:", withPrefix);
+      
+      q = query(companiesRef, where("phoneNumber", "==", withPrefix));
+      snapshot = await getDocs(q);
+      
+      if (snapshot.empty) {
+        q = query(companiesRef, where("phone", "==", withPrefix));
+        snapshot = await getDocs(q);
+      }
+    }
+
+    // If still not found, try with cleaned format (no spaces)
+    if (snapshot.empty) {
+      const cleanPhone = phoneNumber.replace(/[\s\+\-\(\)]/g, "");
+      console.log("🔍 Trying with cleaned format:", cleanPhone);
+      
+      q = query(companiesRef, where("phoneNumber", "==", cleanPhone));
+      snapshot = await getDocs(q);
+      
+      if (snapshot.empty) {
+        q = query(companiesRef, where("phone", "==", cleanPhone));
+        snapshot = await getDocs(q);
+      }
+    }
+
+    // For Saudi numbers, try without leading 0
+    if (snapshot.empty) {
+      const cleanPhone = phoneNumber.replace(/[\s\+\-\(\)]/g, "");
+      if (cleanPhone.startsWith("966")) {
+        const withoutCountryCode = cleanPhone.substring(3);
+        if (withoutCountryCode.startsWith("0")) {
+          const withoutZero = withoutCountryCode.substring(1);
+          console.log("🔍 Trying without leading 0:", withoutZero);
+          
+          q = query(companiesRef, where("phoneNumber", "==", withoutZero));
+          snapshot = await getDocs(q);
+          
+          if (snapshot.empty) {
+            q = query(companiesRef, where("phone", "==", withoutZero));
+            snapshot = await getDocs(q);
+          }
+        }
+      }
+    }
+
+    if (snapshot.empty) {
+      console.log("❌ Company not found with phone:", phoneNumber);
+      return null;
+    }
+
+    const companyDoc = snapshot.docs[0];
+    const companyData = companyDoc.data();
+
+    const company = {
+      id: companyDoc.id,
+      name: companyData.name || companyData.brandName || "",
+      email: companyData.email || "",
+      uid: companyData.uId || companyData.uid || companyDoc.id,
+      phoneNumber: companyData.phoneNumber || companyData.phone || phoneNumber,
+    };
+
+    console.log("✅ Company found:", company.name);
+    return company;
+  } catch (error) {
+    console.error("❌ Error searching for company by phone:", error);
+    return null;
+  }
+};
+
+/**
  * Interface for fuel station data
  */
 export interface FuelStation {
@@ -12865,6 +13081,117 @@ export const fetchUserFuelStations = async (): Promise<FuelStation[]> => {
     return fuelStations;
   } catch (error) {
     console.error("❌ Error fetching user fuel stations:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch fuel stations filtered by provider email/UID
+ * Stations can be linked to provider by:
+ * - Station's createdUserId matching provider's email or uId
+ * - Station's uId matching provider's uId or email
+ * @param providerEmail - The email of the provider
+ * @param providerUId - The UID of the provider (optional)
+ * @returns Promise with array of provider's fuel stations
+ */
+export const fetchFuelStationsByProvider = async (
+  providerEmail: string,
+  providerUId?: string
+): Promise<FuelStation[]> => {
+  try {
+    console.log(
+      `📍 Fetching fuel stations for provider: email=${providerEmail}, uId=${providerUId}`
+    );
+
+    if (!providerEmail && !providerUId) {
+      console.log("⚠️ No provider identifier provided");
+      return [];
+    }
+
+    // Fetch all carstations documents (same approach as fetchProviderStations)
+    // This is necessary because stations can have identifier in createdUserId, uId, or uid fields
+    const carStationsRef = collection(db, "carstations");
+    const querySnapshot = await getDocs(carStationsRef);
+    const fuelStations: FuelStation[] = [];
+
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+
+      // Get station identifiers
+      const stationCreatedUserId = data.createdUserId;
+      const stationUId = data.uId || data.uid;
+
+      // Match stations: station's createdUserId should match provider's email or uId
+      // OR station's uId should match provider's uId or email
+      const matchesByCreatedUserId =
+        stationCreatedUserId &&
+        (stationCreatedUserId === providerEmail ||
+          (providerUId && stationCreatedUserId === providerUId));
+      
+      const matchesByUId =
+        stationUId &&
+        ((providerUId && stationUId === providerUId) ||
+          stationUId === providerEmail);
+
+      // Only include stations that belong to this provider
+      if (!matchesByCreatedUserId && !matchesByUId) {
+        return; // Skip this station
+      }
+
+      // Extract location data from formattedLocation or direct fields
+      const formattedLocation = data.formattedLocation || {};
+      const stationName =
+        data.name || data.email || formattedLocation.name || "Unknown Station";
+      const cityName =
+        formattedLocation.address?.city ||
+        data.address?.city ||
+        data.city ||
+        "Unknown City";
+      const latitude = formattedLocation.lat || data.latitude || 0;
+      const longitude = formattedLocation.lng || data.longitude || 0;
+
+      console.log(`Station ${doc.id}:`, {
+        name: stationName,
+        city: cityName,
+        lat: latitude,
+        lng: longitude,
+        hasFormattedLocation: !!data.formattedLocation,
+        phoneNumber: data.phoneNumber,
+        isActive: data.isActive,
+        createdUserId: data.createdUserId,
+        uId: data.uId,
+      });
+
+      // Include stations regardless of coordinates (different from fetchUserFuelStations)
+      fuelStations.push({
+        id: doc.id,
+        stationName,
+        cityName,
+        latitude,
+        longitude,
+        formattedLocation: data.formattedLocation,
+        // Include all additional fields from the document
+        name: data.name,
+        email: data.email,
+        phoneNumber: data.phoneNumber,
+        address: data.address,
+        isActive: data.isActive,
+        type: data.type,
+        options: data.options,
+        balance: data.balance,
+        uId: data.uId,
+        createdDate: data.createdDate,
+        createdUserId: data.createdUserId,
+      });
+    });
+
+    console.log(
+      `✅ Fetched ${fuelStations.length} fuel stations for provider email=${providerEmail}, uId=${providerUId}`
+    );
+
+    return fuelStations;
+  } catch (error) {
+    console.error("❌ Error fetching provider fuel stations:", error);
     throw error;
   }
 };
@@ -17943,6 +18270,575 @@ export const approveWalletChargeRequest = async (
   }
 };
 
+// ============================================================================
+// COMPANY-TO-COMPANY TRANSFER MANAGEMENT
+// ============================================================================
+
+/**
+ * Submit a company-to-company transfer request
+ * Deducts money from sender's balance immediately and creates pending request
+ * @param transferData - Transfer data including recipient phone, amount
+ * @returns Promise with created transfer request ID
+ */
+export const submitCompanyTransferRequest = async (transferData: {
+  recipientPhoneNumber: string;
+  recipientName: string;
+  amount: number;
+}): Promise<string> => {
+  try {
+    console.log("\n💸 ========================================");
+    console.log("📝 SUBMITTING COMPANY TRANSFER REQUEST");
+    console.log("========================================");
+
+    // Validate user authentication
+    const currentUser = auth.currentUser;
+    if (!currentUser || !currentUser.email) {
+      throw new Error("User not authenticated");
+    }
+    console.log("👤 User:", currentUser.email);
+
+    // Validate amount
+    if (transferData.amount <= 0) {
+      throw new Error("Transfer amount must be greater than 0");
+    }
+    console.log("💵 Amount:", transferData.amount);
+
+    // Find recipient company by phone number
+    const recipientCompany = await findCompanyByPhoneNumber(
+      transferData.recipientPhoneNumber
+    );
+    if (!recipientCompany) {
+      throw new Error("الشركة المستقبلة غير موجودة. يرجى التحقق من رقم الجوال");
+    }
+    console.log("🏢 Recipient Company:", recipientCompany.name);
+
+    // Get sender company data
+    const senderCompany = await fetchCurrentCompany();
+    if (!senderCompany) {
+      throw new Error("Company not found");
+    }
+    console.log("🏢 Sender Company:", senderCompany.name);
+    console.log("💰 Current Balance:", senderCompany.balance || 0);
+
+    // Validate sufficient balance
+    if ((senderCompany.balance || 0) < transferData.amount) {
+      throw new Error(
+        `رصيد غير كافٍ. الرصيد الحالي: ${senderCompany.balance || 0} ر.س`
+      );
+    }
+
+    // Find sender company document ID
+    const companiesRef = collection(db, "companies");
+    let senderCompanyDocId: string;
+
+    // Try to find by email (document ID is usually email)
+    const senderCompanyDocRef = doc(db, "companies", senderCompany.email);
+    const senderCompanyDoc = await getDoc(senderCompanyDocRef);
+
+    if (senderCompanyDoc.exists()) {
+      senderCompanyDocId = senderCompanyDoc.id;
+    } else {
+      // Try by UID
+      const qByUid = query(companiesRef, where("uId", "==", currentUser.uid));
+      const snapshot = await getDocs(qByUid);
+      if (!snapshot.empty) {
+        senderCompanyDocId = snapshot.docs[0].id;
+      } else {
+        // Try by email field
+        const qByEmail = query(
+          companiesRef,
+          where("email", "==", currentUser.email)
+        );
+        const emailSnapshot = await getDocs(qByEmail);
+        if (!emailSnapshot.empty) {
+          senderCompanyDocId = emailSnapshot.docs[0].id;
+        } else {
+          throw new Error("Sender company document not found");
+        }
+      }
+    }
+
+    // Find recipient company document ID
+    const recipientCompanyDocRef = doc(db, "companies", recipientCompany.id);
+    const recipientCompanyDoc = await getDoc(recipientCompanyDocRef);
+    if (!recipientCompanyDoc.exists()) {
+      throw new Error("Recipient company document not found");
+    }
+    const recipientCompanyDocId = recipientCompanyDoc.id;
+
+    // Use atomic transaction to deduct from sender, add to recipient, and create transfer record
+    const result = await runTransaction(db, async (transaction) => {
+      // Re-read sender company to get latest balance
+      const senderDocRef = doc(db, "companies", senderCompanyDocId);
+      const senderDoc = await transaction.get(senderDocRef);
+
+      if (!senderDoc.exists()) {
+        throw new Error("Sender company not found");
+      }
+
+      const senderData = senderDoc.data();
+      const currentSenderBalance = senderData.balance || 0;
+
+      // Validate balance again inside transaction
+      if (currentSenderBalance < transferData.amount) {
+        throw new Error(
+          `رصيد غير كافٍ. الرصيد الحالي: ${currentSenderBalance} ر.س`
+        );
+      }
+
+      // Re-read recipient company to get latest balance
+      const recipientDocRef = doc(db, "companies", recipientCompanyDocId);
+      const recipientDoc = await transaction.get(recipientDocRef);
+
+      if (!recipientDoc.exists()) {
+        throw new Error("Recipient company not found");
+      }
+
+      const recipientData = recipientDoc.data();
+      const currentRecipientBalance = recipientData.balance || 0;
+
+      const newSenderBalance = currentSenderBalance - transferData.amount;
+      const newRecipientBalance = currentRecipientBalance + transferData.amount;
+
+      console.log("💰 Sender Current Balance:", currentSenderBalance);
+      console.log("➖ Deducting from sender:", transferData.amount);
+      console.log("💰 Sender New Balance:", newSenderBalance);
+      console.log("💰 Recipient Current Balance:", currentRecipientBalance);
+      console.log("➕ Adding to recipient:", transferData.amount);
+      console.log("💰 Recipient New Balance:", newRecipientBalance);
+
+      // Deduct from sender balance
+      transaction.update(senderDocRef, {
+        balance: newSenderBalance,
+      });
+
+      // Add to recipient balance
+      transaction.update(recipientDocRef, {
+        balance: newRecipientBalance,
+      });
+
+      // Create transfer record with completed status
+      const transfersRef = collection(db, "companies-transfers");
+      const transferDocRef = doc(transfersRef);
+
+      const transferRequest = {
+        type: "company-to-company",
+        fromCompany: {
+          id: senderCompanyDocId,
+          name: senderCompany.name || senderData.name || senderData.brandName,
+          email: senderCompany.email || senderData.email,
+          uid: senderCompany.uid || senderData.uId || currentUser.uid,
+        },
+        toCompany: {
+          id: recipientCompanyDocId,
+          name: recipientCompany.name,
+          email: recipientCompany.email,
+          phoneNumber: recipientCompany.phoneNumber,
+        },
+        amount: transferData.amount,
+        status: "completed", // Changed from "pending" to "completed"
+        requestDate: serverTimestamp(),
+        completedAt: serverTimestamp(), // Add completion timestamp
+        createdUserId: currentUser.email,
+        companyId: senderCompanyDocId, // For easy lookup
+        recipientCompanyId: recipientCompanyDocId,
+      };
+
+      transaction.set(transferDocRef, transferRequest);
+
+      console.log("✅ Transfer completed with ID:", transferDocRef.id);
+      return transferDocRef.id;
+    });
+
+    // Send notification to recipient (outside transaction)
+    try {
+      await sendTransferNotification(
+        recipientCompanyDocId,
+        senderCompany.name || "شركة",
+        transferData.amount
+      );
+      console.log("✅ Notification sent to recipient");
+    } catch (notifError) {
+      console.error("⚠️ Failed to send notification:", notifError);
+      // Don't throw - transfer is already completed
+    }
+
+    console.log("========================================\n");
+    return result;
+  } catch (error: any) {
+    console.error("❌ Error submitting company transfer request:", error);
+    throw error;
+  }
+};
+
+/**
+ * Approve company-to-company transfer request
+ * Adds money to recipient balance and sends notification
+ * @param requestId - Transfer request document ID
+ * @param adminUser - Admin processing the request
+ * @returns Promise with success boolean
+ */
+export const approveCompanyTransferRequest = async (
+  requestId: string,
+  adminUser: { uid: string; email: string; name: string }
+): Promise<boolean> => {
+  try {
+    console.log("\n✅ ========================================");
+    console.log("📝 APPROVING COMPANY TRANSFER REQUEST");
+    console.log("========================================");
+    console.log("📋 Request ID:", requestId);
+    console.log("👤 Admin:", adminUser.email);
+
+    const requestRef = doc(db, "companies-transfers", requestId);
+    const requestSnap = await getDoc(requestRef);
+
+    if (!requestSnap.exists()) {
+      throw new Error("Transfer request not found");
+    }
+
+    const initialRequestData = requestSnap.data();
+
+    if (initialRequestData.status !== "pending") {
+      throw new Error(`Request already ${initialRequestData.status}`);
+    }
+
+    console.log("💵 Transfer Amount:", initialRequestData.amount);
+    console.log("🏢 From Company:", initialRequestData.fromCompany.name);
+    console.log("🏢 To Company:", initialRequestData.toCompany.name);
+
+    // Store data for notification (before transaction)
+    const recipientCompanyId = initialRequestData.recipientCompanyId;
+    const fromCompanyName = initialRequestData.fromCompany.name;
+    const transferAmount = initialRequestData.amount;
+
+    // Use atomic transaction to add balance and update request
+    const result = await runTransaction(db, async (transaction) => {
+      // Re-read request inside transaction
+      const requestSnap = await transaction.get(requestRef);
+      if (!requestSnap.exists()) {
+        throw new Error("Transfer request not found");
+      }
+
+      const requestData = requestSnap.data();
+
+      // Validate status again
+      if (requestData.status !== "pending") {
+        throw new Error(`Request already ${requestData.status}`);
+      }
+
+      // Get recipient company document
+      const recipientCompanyDocRef = doc(
+        db,
+        "companies",
+        requestData.recipientCompanyId
+      );
+      const recipientCompanySnap = await transaction.get(recipientCompanyDocRef);
+
+      if (!recipientCompanySnap.exists()) {
+        throw new Error("Recipient company not found");
+      }
+
+      const recipientCompanyData = recipientCompanySnap.data();
+      const currentBalance = recipientCompanyData.balance || 0;
+      const newBalance = currentBalance + requestData.amount;
+
+      console.log("💰 Recipient Current Balance:", currentBalance);
+      console.log("➕ Adding:", requestData.amount);
+      console.log("💰 Recipient New Balance:", newBalance);
+
+      // Update request status
+      transaction.update(requestRef, {
+        status: "approved",
+        processedAt: serverTimestamp(),
+        processedBy: adminUser,
+      });
+
+      // Add to recipient balance
+      transaction.update(recipientCompanyDocRef, {
+        balance: newBalance,
+      });
+
+      console.log("✅ Transaction completed successfully");
+      return true;
+    });
+
+    // Send notification to recipient company (outside transaction)
+    try {
+      await sendTransferNotification(
+        recipientCompanyId,
+        fromCompanyName,
+        transferAmount
+      );
+      console.log("✅ Notification sent to recipient");
+    } catch (notifError) {
+      console.error("⚠️ Failed to send notification:", notifError);
+      // Don't throw - notification failure shouldn't fail the approval
+    }
+
+    console.log("========================================\n");
+    return result;
+  } catch (error: any) {
+    console.error("❌ Error approving company transfer:", error);
+    throw error;
+  }
+};
+
+/**
+ * Reject company-to-company transfer request
+ * Refunds money back to sender and updates request status
+ * @param requestId - Transfer request document ID
+ * @param adminUser - Admin processing the request
+ * @param reason - Optional rejection reason
+ * @returns Promise with success boolean
+ */
+export const rejectCompanyTransferRequest = async (
+  requestId: string,
+  adminUser: { uid: string; email: string; name: string },
+  reason?: string
+): Promise<boolean> => {
+  try {
+    console.log("\n❌ ========================================");
+    console.log("📝 REJECTING COMPANY TRANSFER REQUEST");
+    console.log("========================================");
+    console.log("📋 Request ID:", requestId);
+    console.log("👤 Admin:", adminUser.email);
+    if (reason) console.log("📝 Reason:", reason);
+
+    const requestRef = doc(db, "companies-transfers", requestId);
+    const requestSnap = await getDoc(requestRef);
+
+    if (!requestSnap.exists()) {
+      throw new Error("Transfer request not found");
+    }
+
+    const requestData = requestSnap.data();
+
+    if (requestData.status !== "pending") {
+      throw new Error(`Request already ${requestData.status}`);
+    }
+
+    console.log("💵 Transfer Amount:", requestData.amount);
+    console.log("🏢 From Company:", requestData.fromCompany.name);
+    console.log("🏢 To Company:", requestData.toCompany.name);
+
+    // Use atomic transaction to refund balance and update request
+    const result = await runTransaction(db, async (transaction) => {
+      // Re-read request inside transaction
+      const requestSnap = await transaction.get(requestRef);
+      if (!requestSnap.exists()) {
+        throw new Error("Transfer request not found");
+      }
+
+      const requestData = requestSnap.data();
+
+      // Validate status again
+      if (requestData.status !== "pending") {
+        throw new Error(`Request already ${requestData.status}`);
+      }
+
+      // Get sender company document to refund the money
+      const senderCompanyDocRef = doc(db, "companies", requestData.companyId);
+      const senderCompanySnap = await transaction.get(senderCompanyDocRef);
+
+      if (!senderCompanySnap.exists()) {
+        throw new Error("Sender company not found");
+      }
+
+      const senderCompanyData = senderCompanySnap.data();
+      const currentBalance = senderCompanyData.balance || 0;
+      const refundAmount = requestData.amount;
+      const newBalance = currentBalance + refundAmount;
+
+      console.log("💰 Sender Current Balance:", currentBalance);
+      console.log("➕ Refunding:", refundAmount);
+      console.log("💰 Sender New Balance:", newBalance);
+
+      // Update request status
+      transaction.update(requestRef, {
+        status: "rejected",
+        processedAt: serverTimestamp(),
+        processedBy: adminUser,
+        rejectionReason: reason || "لم يتم تحديد سبب",
+      });
+
+      // Refund to sender balance
+      transaction.update(senderCompanyDocRef, {
+        balance: newBalance,
+      });
+
+      console.log("✅ Transaction completed successfully");
+      return true;
+    });
+
+    console.log("========================================\n");
+    return result;
+  } catch (error: any) {
+    console.error("❌ Error rejecting company transfer:", error);
+    throw error;
+  }
+};
+
+/**
+ * Send transfer notification to recipient company
+ * @param recipientCompanyId - Company document ID
+ * @param fromCompanyName - Name of sending company
+ * @param amount - Transfer amount
+ * @returns Promise with notification ID
+ */
+export const sendTransferNotification = async (
+  recipientCompanyId: string,
+  fromCompanyName: string,
+  amount: number
+): Promise<string> => {
+  try {
+    // Get recipient company email for notification targeting
+    const recipientCompanyDoc = await getDoc(
+      doc(db, "companies", recipientCompanyId)
+    );
+    if (!recipientCompanyDoc.exists()) {
+      throw new Error("Recipient company not found");
+    }
+
+    const recipientCompanyData = recipientCompanyDoc.data();
+    const recipientEmail = recipientCompanyData.email;
+
+    if (!recipientEmail) {
+      throw new Error("Recipient company email not found");
+    }
+
+    // Create notification using notificationService
+    const { createNotification } = await import("./notificationService");
+    const notificationId = await createNotification({
+      title: "تحويل أموال",
+      body: `تم استلام ${amount} ر.س من شركة ${fromCompanyName}`,
+      targetedUsers: {
+        companies: [recipientEmail], // Target specific company by email
+      },
+    });
+
+    console.log("✅ Transfer notification created:", notificationId);
+    return notificationId;
+  } catch (error) {
+    console.error("❌ Error sending transfer notification:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all company-to-company transfer requests
+ * @returns Promise with array of transfer requests
+ */
+export const fetchCompanyTransferRequests = async (): Promise<any[]> => {
+  try {
+    console.log("🔍 Fetching company transfer requests...");
+
+    const transfersRef = collection(db, "companies-transfers");
+    const q = query(transfersRef, orderBy("requestDate", "desc"));
+    const querySnapshot = await getDocs(q);
+
+    const transfers: any[] = [];
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      transfers.push({
+        id: doc.id,
+        type: data.type || "company-to-company",
+        fromCompany: data.fromCompany,
+        toCompany: data.toCompany,
+        amount: data.amount,
+        status: data.status || "pending",
+        requestDate: data.requestDate,
+        processedAt: data.processedAt,
+        processedBy: data.processedBy,
+        createdUserId: data.createdUserId,
+        companyId: data.companyId,
+        recipientCompanyId: data.recipientCompanyId,
+      });
+    });
+
+    console.log(`✅ Found ${transfers.length} company transfer requests`);
+    return transfers;
+  } catch (error: any) {
+    console.error("❌ Error fetching company transfer requests:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch company transfers for a specific company (both sent and received)
+ * @param companyId - The company document ID
+ * @param companyEmail - The company email (optional, for fallback lookup)
+ * @returns Promise with array of transfer requests
+ */
+export const fetchCompanyTransfersForCompany = async (
+  companyId?: string,
+  companyEmail?: string
+): Promise<any[]> => {
+  try {
+    console.log("🔍 Fetching company transfers for company...");
+    console.log("Company ID:", companyId);
+    console.log("Company Email:", companyEmail);
+
+    const transfersRef = collection(db, "companies-transfers");
+    const querySnapshot = await getDocs(transfersRef);
+
+    const transfers: any[] = [];
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      transfers.push({
+        id: doc.id,
+        type: data.type || "company-to-company",
+        fromCompany: data.fromCompany,
+        toCompany: data.toCompany,
+        amount: data.amount,
+        status: data.status || "pending",
+        requestDate: data.requestDate,
+        processedAt: data.processedAt,
+        processedBy: data.processedBy,
+        createdUserId: data.createdUserId,
+        companyId: data.companyId,
+        recipientCompanyId: data.recipientCompanyId,
+      });
+    });
+
+    // Filter transfers where company is either sender or recipient
+    const filteredTransfers = transfers.filter((transfer) => {
+      const isSender = 
+        transfer.companyId === companyId ||
+        transfer.fromCompany?.id === companyId ||
+        transfer.fromCompany?.email === companyEmail ||
+        transfer.createdUserId === companyEmail;
+      
+      const isRecipient =
+        transfer.recipientCompanyId === companyId ||
+        transfer.toCompany?.id === companyId ||
+        transfer.toCompany?.email === companyEmail;
+
+      return isSender || isRecipient;
+    });
+
+    // Sort by date descending
+    filteredTransfers.sort((a, b) => {
+      const dateA = a.requestDate?.toDate
+        ? a.requestDate.toDate()
+        : a.requestDate
+        ? new Date(a.requestDate)
+        : new Date(0);
+      const dateB = b.requestDate?.toDate
+        ? b.requestDate.toDate()
+        : b.requestDate
+        ? new Date(b.requestDate)
+        : new Date(0);
+      return dateB.getTime() - dateA.getTime();
+    });
+
+    console.log(`✅ Found ${filteredTransfers.length} transfers for company`);
+    return filteredTransfers;
+  } catch (error: any) {
+    console.error("❌ Error fetching company transfers:", error);
+    throw error;
+  }
+};
+
 /**
  * Reject wallet charge request
  * SECURITY: Only updates request status, does NOT modify balance
@@ -18538,7 +19434,7 @@ export const uploadBanksToFirestore = async (
     const newBanks = banks.filter((bank) => {
       const arabic = bank.arabic.trim();
       const english = bank.english.trim();
-      
+
       if (!arabic && !english) {
         skipped++;
         return false;
@@ -18624,6 +19520,145 @@ export const fetchBanksFromFirestore = async (): Promise<
 };
 
 // ============================================================================
+// WALLET BANK ACCOUNTS MANAGEMENT
+// ============================================================================
+
+/**
+ * Fetch all bank accounts from Firestore wallet-bank-accounts collection
+ * @returns Promise with array of bank account objects
+ */
+export const fetchBankAccountsFromFirestore = async (): Promise<
+  Array<{
+    id: string;
+    bankName: { ar: string; en?: string };
+    accountNumber: string;
+    ibanNumber: string;
+    logoUrl: string;
+    order: number;
+    isActive: boolean;
+  }>
+> => {
+  try {
+    const bankAccountsRef = collection(db, "wallet-bank-accounts");
+    const q = query(bankAccountsRef, orderBy("order", "asc"));
+    const querySnapshot = await getDocs(q);
+
+    const bankAccounts: Array<{
+      id: string;
+      bankName: { ar: string; en?: string };
+      accountNumber: string;
+      ibanNumber: string;
+      logoUrl: string;
+      order: number;
+      isActive: boolean;
+    }> = [];
+
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      bankAccounts.push({
+        id: doc.id,
+        bankName: data.bankName || { ar: "", en: "" },
+        accountNumber: data.accountNumber || "",
+        ibanNumber: data.ibanNumber || "",
+        logoUrl: data.logoUrl || "",
+        order: data.order || 0,
+        isActive: data.isActive !== undefined ? data.isActive : true,
+      });
+    });
+
+    return bankAccounts;
+  } catch (error: any) {
+    console.error("❌ Error fetching bank accounts:", error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new bank account in Firestore wallet-bank-accounts collection
+ * @param bankAccountData - Bank account data to create
+ * @returns Promise with the created bank account document ID
+ */
+export const createBankAccount = async (bankAccountData: {
+  bankName: { ar: string; en?: string };
+  accountNumber: string;
+  ibanNumber: string;
+  logoUrl: string;
+  order: number;
+  isActive?: boolean;
+}): Promise<string> => {
+  try {
+    const currentUser = auth.currentUser;
+    const bankAccountsRef = collection(db, "wallet-bank-accounts");
+
+    const bankAccountDocument = {
+      bankName: bankAccountData.bankName,
+      accountNumber: bankAccountData.accountNumber,
+      ibanNumber: bankAccountData.ibanNumber,
+      logoUrl: bankAccountData.logoUrl,
+      order: bankAccountData.order,
+      isActive: bankAccountData.isActive !== undefined ? bankAccountData.isActive : true,
+      createdDate: serverTimestamp(),
+      createdUserId: currentUser?.email || currentUser?.uid || null,
+    };
+
+    const docRef = await addDoc(bankAccountsRef, bankAccountDocument);
+    console.log("✅ Bank account created successfully with ID:", docRef.id);
+    return docRef.id;
+  } catch (error: any) {
+    console.error("❌ Error creating bank account:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update an existing bank account in Firestore wallet-bank-accounts collection
+ * @param bankAccountId - Bank account document ID
+ * @param bankAccountData - Updated bank account data
+ * @returns Promise<void>
+ */
+export const updateBankAccount = async (
+  bankAccountId: string,
+  bankAccountData: {
+    bankName?: { ar: string; en?: string };
+    accountNumber?: string;
+    ibanNumber?: string;
+    logoUrl?: string;
+    order?: number;
+    isActive?: boolean;
+  }
+): Promise<void> => {
+  try {
+    const bankAccountRef = doc(db, "wallet-bank-accounts", bankAccountId);
+    const updateData: any = {};
+
+    if (bankAccountData.bankName !== undefined) {
+      updateData.bankName = bankAccountData.bankName;
+    }
+    if (bankAccountData.accountNumber !== undefined) {
+      updateData.accountNumber = bankAccountData.accountNumber;
+    }
+    if (bankAccountData.ibanNumber !== undefined) {
+      updateData.ibanNumber = bankAccountData.ibanNumber;
+    }
+    if (bankAccountData.logoUrl !== undefined) {
+      updateData.logoUrl = bankAccountData.logoUrl;
+    }
+    if (bankAccountData.order !== undefined) {
+      updateData.order = bankAccountData.order;
+    }
+    if (bankAccountData.isActive !== undefined) {
+      updateData.isActive = bankAccountData.isActive;
+    }
+
+    await updateDoc(bankAccountRef, updateData);
+    console.log("✅ Bank account updated successfully:", bankAccountId);
+  } catch (error: any) {
+    console.error("❌ Error updating bank account:", error);
+    throw error;
+  }
+};
+
+// ============================================================================
 // PETROLIFE AGENTS MANAGEMENT
 // ============================================================================
 
@@ -18632,7 +19667,9 @@ export const fetchBanksFromFirestore = async (): Promise<
  * @param phone - Phone number to check
  * @returns Promise with boolean indicating if phone exists
  */
-export const checkAgentPhoneExists = async (phone: string): Promise<boolean> => {
+export const checkAgentPhoneExists = async (
+  phone: string
+): Promise<boolean> => {
   try {
     const agentsRef = collection(db, "petrolife-agents");
     const q = query(agentsRef, where("phone", "==", phone));
@@ -18670,7 +19707,9 @@ export const addPetrolifeAgent = async (agentData: AddPetrolifeAgentData) => {
     // 3. Upload profile image if provided
     let imageUrl = "";
     if (agentData.imageFile) {
-      const fileName = `petrolife-agents/profiles/${Date.now()}_${agentData.imageFile.name}`;
+      const fileName = `petrolife-agents/profiles/${Date.now()}_${
+        agentData.imageFile.name
+      }`;
       const storageRef = ref(storage, fileName);
       await uploadBytes(storageRef, agentData.imageFile);
       imageUrl = await getDownloadURL(storageRef);
@@ -18781,7 +19820,9 @@ export const getAllPetrolifeAgents = async (): Promise<PetrolifeAgent[]> => {
  * @param agentId - Agent document ID
  * @returns Promise with agent data including associated companies
  */
-export const getPetrolifeAgentById = async (agentId: string): Promise<PetrolifeAgent | null> => {
+export const getPetrolifeAgentById = async (
+  agentId: string
+): Promise<PetrolifeAgent | null> => {
   try {
     const agentRef = doc(db, "petrolife-agents", agentId);
     const agentSnap = await getDoc(agentRef);
@@ -18806,10 +19847,13 @@ export const getPetrolifeAgentById = async (agentId: string): Promise<PetrolifeA
  * @param companyId - Company document ID
  * @returns Promise<void>
  */
-export const addCompanyToAgent = async (agentId: string, companyId: string): Promise<void> => {
+export const addCompanyToAgent = async (
+  agentId: string,
+  companyId: string
+): Promise<void> => {
   try {
     const agentRef = doc(db, "petrolife-agents", agentId);
-    
+
     // Check if company already exists in agent's companies array
     const agentSnap = await getDoc(agentRef);
     if (!agentSnap.exists()) {
@@ -18840,7 +19884,10 @@ export const addCompanyToAgent = async (agentId: string, companyId: string): Pro
  * @param companyId - Company document ID
  * @returns Promise<void>
  */
-export const removeCompanyFromAgent = async (agentId: string, companyId: string): Promise<void> => {
+export const removeCompanyFromAgent = async (
+  agentId: string,
+  companyId: string
+): Promise<void> => {
   try {
     const agentRef = doc(db, "petrolife-agents", agentId);
     await updateDoc(agentRef, {
