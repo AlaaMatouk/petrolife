@@ -89,12 +89,14 @@ export const RequestHistorySection = (): JSX.Element => {
         // Transform to request format
         const transformedRequests = data.map((request) => {
           const statusInfo = getStatusText(request.status);
+          // Handle both withdrawaAmount (typo) and withdrawalAmount field names
+          const withdrawalAmount = request.withdrawalAmount || request.withdrawaAmount || 0;
 
           return {
             id: request.id || "-",
             status: statusInfo.text,
             statusType: statusInfo.type,
-            amount: String(request.withdrawalAmount || 0),
+            amount: String(withdrawalAmount),
             date: formatDate(request.requestDate || request.createdDate),
             rawDate: request.requestDate || request.createdDate,
           };

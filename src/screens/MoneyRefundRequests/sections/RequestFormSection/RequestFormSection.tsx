@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { submitWalletWithdrawalRequest } from "../../../../services/firestore";
 import { useToast } from "../../../../hooks/useToast";
 import { useGlobalState } from "../../../../hooks/useGlobalState";
+import { RefundConfirmationModal } from "./RefundConfirmationModal";
 
 export const RequestFormSection = (): JSX.Element => {
   const navigate = useNavigate();
@@ -22,6 +23,7 @@ export const RequestFormSection = (): JSX.Element => {
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({
@@ -38,48 +40,64 @@ export const RequestFormSection = (): JSX.Element => {
     }));
   };
 
-  const handleSubmit = async () => {
+  // Validate form data
+  const validateForm = (): boolean => {
+    const withdrawalAmount = parseFloat(formData.withdrawalAmount);
+
+    if (!formData.companyIban || formData.companyIban.trim() === "") {
+      addToast({
+        type: "error",
+        message: "يرجى إدخال Company IBAN",
+        duration: 3000,
+      });
+      return false;
+    }
+
+    if (withdrawalAmount <= 0) {
+      addToast({
+        type: "error",
+        message: "يرجى إدخال مبلغ صحيح",
+        duration: 3000,
+      });
+      return false;
+    }
+
+    if (withdrawalAmount > companyBalance) {
+      addToast({
+        type: "error",
+        message: `رصيد غير كافٍ. الرصيد الحالي: ${companyBalance} ر.س`,
+        duration: 3000,
+      });
+      return false;
+    }
+
+    if (!formData.bankName || formData.bankName.trim() === "") {
+      addToast({
+        type: "error",
+        message: "يرجى اختيار البنك",
+        duration: 3000,
+      });
+      return false;
+    }
+
+    return true;
+  };
+
+  // Show confirmation modal
+  const handleSubmit = () => {
+    if (!validateForm()) {
+      return;
+    }
+    setShowConfirmationModal(true);
+  };
+
+  // Actually submit the request
+  const handleConfirm = async () => {
     try {
       setIsSubmitting(true);
+      setShowConfirmationModal(false);
 
-      // Validation
       const withdrawalAmount = parseFloat(formData.withdrawalAmount);
-
-      if (!formData.companyIban || formData.companyIban.trim() === "") {
-        addToast({
-          type: "error",
-          message: "يرجى إدخال Company IBAN",
-          duration: 3000,
-        });
-        return;
-      }
-
-      if (withdrawalAmount <= 0) {
-        addToast({
-          type: "error",
-          message: "يرجى إدخال مبلغ صحيح",
-          duration: 3000,
-        });
-        return;
-      }
-
-      if (withdrawalAmount > companyBalance) {
-        addToast({
-          type: "error",
-          message: `رصيد غير كافٍ. الرصيد الحالي: ${companyBalance} ر.س`,
-          duration: 3000,
-        });
-        return;
-      }
-
-      if (!formData.bankName || formData.bankName.trim() === "") {
-        addToast({
-          type: "error",
-          message: "يرجى اختيار البنك",
-          duration: 3000,
-        });
-        return;
-      }
 
       // Submit withdrawal request
       await submitWalletWithdrawalRequest({
@@ -123,6 +141,11 @@ export const RequestFormSection = (): JSX.Element => {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Cancel confirmation modal
+  const handleCancel = () => {
+    setShowConfirmationModal(false);
   };
 
   return (
