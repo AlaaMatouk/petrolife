@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { 
   Wallet, 
   TrendingUp, 
@@ -24,6 +24,23 @@ import { ExportButton } from "../../../shared/ExportButton/ExportButton";
 import { LoadingSpinner } from "../../../shared/Spinner/LoadingSpinner";
 import { DateInput } from "../../../shared/DateInput/DateInput";
 import { Select } from "../../../shared/Form/Select";
+import { TransferModal } from "./TransferModal";
+import { ReceiptModal } from "./ReceiptModal";
+import { useToast } from "../../../../context/ToastContext";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { doc, updateDoc, getDoc } from "firebase/firestore";
+import { storage, db } from "../../../../config/firebase";
+import {
+  fetchStationsCompanyData,
+  calculateStationsCompanyBalance,
+  fetchServiceDistributerTransfers,
+  fetchAllServiceDistributerTransfers,
+  calculateTotalSubscriptionRevenue,
+  calculateTotalCommissionsForAllProviders,
+  calculateMonthlyRevenueData,
+  ServiceDistributerTransferRequest,
+  type ServiceProviderData,
+} from "../../../../services/firestore";
 
 // Data interfaces
 interface ServiceProviderWallet {
@@ -36,6 +53,7 @@ interface ServiceProviderWallet {
   transferStatus: 'in-progress' | 'completed';
   transferProof?: string;
   transferMechanism?: string;
+  receiptImageUrl?: string; // Store the receipt image URL from transfer
 }
 
 interface RevenueData {
@@ -63,6 +81,7 @@ interface FinancialTransaction {
   receiptUrl?: string;
   imageUrl?: string;
   hasImage: boolean;
+  transferId?: string; // Store the transfer ID for receipt modal
 }
 
 // Mock data - replace with actual API calls
@@ -252,6 +271,39 @@ export const MainWallet: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const itemsPerPage = 5;
 
+  // Real data states
+  const [serviceProviderWallets, setServiceProviderWallets] = useState<ServiceProviderWallet[]>([]);
+  const [isLoadingWallets, setIsLoadingWallets] = useState(true);
+  const [revenueData, setRevenueData] = useState<RevenueData>({
+    totalRevenues: 0,
+    subscriptionRevenues: 0,
+    fuelServiceCommissions: 0,
+    monthlyData: {
+      labels: ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"],
+      subscriptions: new Array(12).fill(0),
+      commissions: new Array(12).fill(0),
+    },
+  });
+  const [isLoadingRevenue, setIsLoadingRevenue] = useState(true);
+  const [financialTransactions, setFinancialTransactions] = useState<FinancialTransaction[]>([]);
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
+  
+  // Transfer modal state
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [selectedWallet, setSelectedWallet] = useState<ServiceProviderWallet | null>(null);
+  const [selectedTransferRequestId, setSelectedTransferRequestId] = useState<string | undefined>();
+  
+  // Receipt modal state
+  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
+  const [selectedReceiptTransactionId, setSelectedReceiptTransactionId] = useState<string | null>(null);
+  
+  // Image upload state
+  const { addToast } = useToast();
+  const [uploadingTransactionId, setUploadingTransactionId] = useState<string | null>(null);
+  const [uploadingWalletId, setUploadingWalletId] = useState<string | null>(null);
+  const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
+  const walletFileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
+
   // Transactions log view states
   const [transactionsSearchQuery, setTransactionsSearchQuery] = useState("");
   const [transactionsCurrentPage, setTransactionsCurrentPage] = useState(1);
@@ -265,7 +317,7 @@ export const MainWallet: React.FC = () => {
   
   // Service provider options for filter
   const serviceProviderOptions = useMemo(() => {
-    const providers = mockServiceProviderWallets.map(wallet => ({
+    const providers = serviceProviderWallets.map(wallet => ({
       value: wallet.providerName,
       label: wallet.providerName,
     }));
@@ -273,25 +325,32 @@ export const MainWallet: React.FC = () => {
       { value: "جميع المزودين", label: "جميع المزودين" },
       ...providers,
     ];
-  }, []);
+  }, [serviceProviderWallets]);
 
   // Format number with thousands separator
   const formatNumber = (num: number) => {
     return new Intl.NumberFormat("ar-SA").format(num);
   };
 
-  // Filter service provider wallets based on search
+  // Filter service provider wallets - only show wallets that need transfer
+  // (balance >= 3000 OR have a pending transfer request)
   const filteredWallets = useMemo(() => {
-    if (!searchQuery) return mockServiceProviderWallets;
+    // First filter: wallets with balance >= 3000 OR have pending transfer (transferStatus === 'in-progress')
+    const walletsNeedingTransfer = serviceProviderWallets.filter(
+      (wallet) => wallet.availableBalance >= 3000 || wallet.transferStatus === 'in-progress'
+    );
+    
+    // Second filter: apply search query if provided
+    if (!searchQuery) return walletsNeedingTransfer;
     
     const query = searchQuery.toLowerCase();
-    return mockServiceProviderWallets.filter(
+    return walletsNeedingTransfer.filter(
       (wallet) =>
         wallet.providerName.toLowerCase().includes(query) ||
         wallet.providerId.toLowerCase().includes(query) ||
         wallet.walletNumber.toLowerCase().includes(query)
     );
-  }, [searchQuery]);
+  }, [searchQuery, serviceProviderWallets]);
 
   // Paginate wallets
   const paginatedWallets = useMemo(() => {
@@ -305,17 +364,17 @@ export const MainWallet: React.FC = () => {
   const chartData = useMemo(() => {
     if (selectedPeriod === "شهري") {
       return {
-        labels: mockRevenueData.monthlyData.labels,
+        labels: revenueData.monthlyData.labels,
         datasets: [
           {
             label: "الاشتراكات",
             color: "rgb(34, 197, 94)", // green
-            data: mockRevenueData.monthlyData.subscriptions,
+            data: revenueData.monthlyData.subscriptions,
           },
           {
             label: "العمولات",
             color: "rgb(168, 85, 247)", // purple
-            data: mockRevenueData.monthlyData.commissions,
+            data: revenueData.monthlyData.commissions,
           },
         ],
       };
@@ -336,7 +395,7 @@ export const MainWallet: React.FC = () => {
         },
       ],
     };
-  }, [selectedPeriod]);
+  }, [selectedPeriod, revenueData]);
 
   // Table columns
   const tableColumns = [
@@ -353,6 +412,11 @@ export const MainWallet: React.FC = () => {
           </button>
           {row.transferStatus === "in-progress" && (
             <button
+              onClick={() => {
+                setSelectedWallet(row);
+                setSelectedTransferRequestId(row.transferProof);
+                setIsTransferModalOpen(true);
+              }}
               className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
               aria-label="تحويل مستحقات"
             >
@@ -372,27 +436,67 @@ export const MainWallet: React.FC = () => {
     {
       key: "transferProof",
       label: "إثبات التحويل",
-      render: (_: any, row: ServiceProviderWallet) => (
-        <div>
-          {row.transferStatus === "completed" && row.transferProof ? (
-            <button
-              className="flex items-center gap-2 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors text-sm font-medium"
-              aria-label="عرض الصورة"
-            >
-              <Eye className="w-4 h-4" />
-              عرض الصورة
-            </button>
-          ) : (
-            <button
-              className="flex items-center gap-2 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium"
-              aria-label="رفع الصورة"
-            >
-              <Upload className="w-4 h-4" />
-              رفع الصورة
-            </button>
-          )}
-        </div>
-      ),
+      render: (_: any, row: ServiceProviderWallet) => {
+        const transferRequestId = row.transferProof || "";
+        const hasTransferRequest = !!transferRequestId;
+        const hasReceiptImage = !!row.receiptImageUrl;
+        
+        return (
+          <div>
+            {hasTransferRequest ? (
+              hasReceiptImage ? (
+                <button
+                  onClick={() => {
+                    if (row.receiptImageUrl) {
+                      window.open(row.receiptImageUrl, "_blank");
+                    }
+                  }}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors text-sm font-medium"
+                  aria-label="عرض الصورة"
+                >
+                  <Eye className="w-4 h-4" />
+                  عرض الصورة
+                </button>
+              ) : (
+                <>
+                  <input
+                    ref={(el) => {
+                      walletFileInputRefs.current[row.id] = el;
+                    }}
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => handleWalletFileInputChange(e, row.id, transferRequestId)}
+                    className="hidden"
+                    id={`wallet-receipt-upload-${row.id}`}
+                  />
+                  <label
+                    htmlFor={`wallet-receipt-upload-${row.id}`}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors text-sm font-medium cursor-pointer ${
+                      uploadingWalletId === row.id
+                        ? "bg-gray-100 text-gray-500 cursor-not-allowed"
+                        : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                    }`}
+                  >
+                    {uploadingWalletId === row.id ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-gray-500 border-t-transparent rounded-full animate-spin" />
+                        جاري الرفع...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-4 h-4" />
+                        رفع الصورة
+                      </>
+                    )}
+                  </label>
+                </>
+              )
+            ) : (
+              <span className="text-gray-400 text-sm">لا يوجد طلب تحويل</span>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: "transferStatus",
@@ -459,9 +563,215 @@ export const MainWallet: React.FC = () => {
     setTransactionsSearchQuery("");
   };
 
+  // Transform service provider data to wallet format
+  const transformProviderToWallet = (
+    provider: ServiceProviderData & { balance?: number },
+    transfers: ServiceDistributerTransferRequest[]
+  ): ServiceProviderWallet => {
+    // Get balance from provider data (should be pre-calculated)
+    const balance = provider.balance ?? 0;
+    
+    // Check for pending or recent transfers (for this provider)
+    const providerTransfers = transfers.filter(t => 
+      t.stationsCompanyEmail === provider.email?.toLowerCase()
+    );
+    
+    // Find pending transfer first, otherwise find the most recent transfer
+    const pendingTransfer = providerTransfers.find(t => t.status === "pending");
+    const recentTransfer = pendingTransfer || providerTransfers.sort((a, b) => {
+      const aDate = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
+      const bDate = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
+      return bDate.getTime() - aDate.getTime();
+    })[0];
+    
+    const transferStatus: 'in-progress' | 'completed' = pendingTransfer ? 'in-progress' : 'completed';
+    
+    // Get receipt image URL from transfer if available
+    const receiptImageUrl = (recentTransfer as any)?.bankReceiptImageUrl;
+    
+    // Generate wallet number (use provider ID or generate from email)
+    let walletNumber = "SA-XXXX-XXXX-XXXX";
+    if (provider.id && provider.id.length >= 12) {
+      walletNumber = `SA-${provider.id.slice(0, 4)}-${provider.id.slice(4, 8)}-${provider.id.slice(8, 12)}`;
+    } else if (provider.id) {
+      // Pad ID if too short
+      const paddedId = provider.id.padEnd(12, '0');
+      walletNumber = `SA-${paddedId.slice(0, 4)}-${paddedId.slice(4, 8)}-${paddedId.slice(8, 12)}`;
+    } else if (provider.email) {
+      const emailHash = provider.email.slice(0, 12).toUpperCase().replace(/[^A-Z0-9]/g, '').padEnd(12, 'X');
+      walletNumber = `SA-${emailHash.slice(0, 4)}-${emailHash.slice(4, 8)}-${emailHash.slice(8, 12)}`;
+    }
+    
+    return {
+      id: provider.id,
+      providerName: provider.providerName || "",
+      providerId: provider.clientCode || provider.id || "",
+      profilePicture: (provider as any).logo || (provider as any).profileImage,
+      walletNumber,
+      availableBalance: balance,
+      transferStatus,
+      transferProof: recentTransfer?.id,
+      receiptImageUrl,
+    };
+  };
+
+  // Transform transfer to financial transaction
+  const transformTransferToTransaction = (
+    transfer: ServiceDistributerTransferRequest,
+    provider: ServiceProviderData | null
+  ): FinancialTransaction => {
+    const transferDate = transfer.createdAt?.toDate 
+      ? transfer.createdAt.toDate()
+      : transfer.transferredAt?.toDate
+      ? transfer.transferredAt.toDate()
+      : new Date();
+
+    // Generate transaction number from transfer number or ID
+    const transactionNumber = transfer.transferNumber 
+      ? `#${transfer.transferNumber.replace('TRF-', 'TRX-')}`
+      : `#TRX-${new Date(transferDate).getFullYear()}-${transfer.id.slice(0, 6).toUpperCase()}`;
+
+    let walletNumber = "SA-XXXX-XXXX-XXXX";
+    if (provider?.id) {
+      if (provider.id.length >= 12) {
+        walletNumber = `SA-${provider.id.slice(0, 4)}-${provider.id.slice(4, 8)}-${provider.id.slice(8, 12)}`;
+      } else {
+        const paddedId = provider.id.padEnd(12, '0');
+        walletNumber = `SA-${paddedId.slice(0, 4)}-${paddedId.slice(4, 8)}-${paddedId.slice(8, 12)}`;
+      }
+    } else if (transfer.stationsCompanyEmail) {
+      const emailHash = transfer.stationsCompanyEmail.slice(0, 12).toUpperCase().replace(/[^A-Z0-9]/g, '').padEnd(12, 'X');
+      walletNumber = `SA-${emailHash.slice(0, 4)}-${emailHash.slice(4, 8)}-${emailHash.slice(8, 12)}`;
+    }
+
+    return {
+      id: transfer.id,
+      transactionNumber,
+      serviceProvider: {
+        name: provider?.providerName || transfer.stationsCompanyEmail || "",
+        id: provider?.clientCode || provider?.id || "",
+        profilePicture: (provider as any)?.logo || (provider as any)?.profileImage,
+      },
+      walletNumber,
+      dateTime: transferDate,
+      amount: transfer.transferAmount || 0,
+      receiptUrl: undefined,
+      imageUrl: (transfer as any).bankReceiptImageUrl,
+      hasImage: !!(transfer as any).bankReceiptImageUrl,
+      transferId: transfer.id, // Store transfer ID for receipt modal
+    };
+  };
+
+  // Fetch service provider wallets data
+  useEffect(() => {
+    const loadProviderWallets = async () => {
+      try {
+        setIsLoadingWallets(true);
+        const providers = await fetchStationsCompanyData();
+        
+        // Fetch all transfers and balances in parallel
+        const [allTransfers, balances] = await Promise.all([
+          fetchAllServiceDistributerTransfers(),
+          Promise.all(
+            providers.map(provider => 
+              calculateStationsCompanyBalance(provider.email || "").catch(() => 0)
+            )
+          ),
+        ]);
+
+        // Transform providers to wallets with balances
+        const wallets = await Promise.all(
+          providers.map((provider, index) => {
+            const providerWithBalance = { ...provider, balance: balances[index] };
+            return transformProviderToWallet(providerWithBalance, allTransfers);
+          })
+        );
+
+        console.log("📊 Loaded wallets:", wallets);
+        console.log("📊 Wallets with balance >= 3000:", wallets.filter(w => w.availableBalance >= 3000).length);
+        console.log("📊 Wallets with pending transfers:", wallets.filter(w => w.transferStatus === 'in-progress').length);
+        console.log("📊 All transfers:", allTransfers.map(t => ({ email: t.stationsCompanyEmail, status: t.status })));
+
+        setServiceProviderWallets(wallets);
+      } catch (error) {
+        console.error("Error loading provider wallets:", error);
+        setServiceProviderWallets([]);
+      } finally {
+        setIsLoadingWallets(false);
+      }
+    };
+
+    if (viewMode === "default") {
+      loadProviderWallets();
+    }
+  }, [viewMode]);
+
+  // Fetch revenue data
+  useEffect(() => {
+    const loadRevenueData = async () => {
+      try {
+        setIsLoadingRevenue(true);
+        const [subscriptionRevenue, commissions, monthlyData] = await Promise.all([
+          calculateTotalSubscriptionRevenue(),
+          calculateTotalCommissionsForAllProviders(),
+          calculateMonthlyRevenueData(),
+        ]);
+
+        setRevenueData({
+          totalRevenues: subscriptionRevenue + commissions,
+          subscriptionRevenues: subscriptionRevenue,
+          fuelServiceCommissions: commissions,
+          monthlyData,
+        });
+      } catch (error) {
+        console.error("Error loading revenue data:", error);
+      } finally {
+        setIsLoadingRevenue(false);
+      }
+    };
+
+    if (viewMode === "default") {
+      loadRevenueData();
+    }
+  }, [viewMode]);
+
+  // Fetch financial transactions
+  useEffect(() => {
+    const loadTransactions = async () => {
+      try {
+        setIsLoadingTransactions(true);
+        const [transfers, providers] = await Promise.all([
+          fetchAllServiceDistributerTransfers(),
+          fetchStationsCompanyData(),
+        ]);
+
+        // Transform transfers to transactions
+        const transactions = transfers
+          .filter(t => t.status === "transferred") // Only show completed transfers
+          .map(transfer => {
+            const provider = providers.find(
+              p => p.email?.toLowerCase() === transfer.stationsCompanyEmail?.toLowerCase()
+            );
+            return transformTransferToTransaction(transfer, provider || null);
+          });
+
+        setFinancialTransactions(transactions);
+      } catch (error) {
+        console.error("Error loading transactions:", error);
+        setFinancialTransactions([]);
+      } finally {
+        setIsLoadingTransactions(false);
+      }
+    };
+
+    if (viewMode === "transactions-log") {
+      loadTransactions();
+    }
+  }, [viewMode]);
+
   // Filter and search transactions
   const filteredTransactions = useMemo(() => {
-    let filtered = [...mockFinancialTransactions];
+    let filtered = [...financialTransactions];
 
     // Filter by service provider
     if (selectedServiceProvider !== "جميع المزودين") {
@@ -510,7 +820,7 @@ export const MainWallet: React.FC = () => {
     filtered.sort((a, b) => b.dateTime.getTime() - a.dateTime.getTime());
 
     return filtered;
-  }, [selectedServiceProvider, fromDate, toDate, transactionsSearchQuery]);
+  }, [financialTransactions, selectedServiceProvider, fromDate, toDate, transactionsSearchQuery]);
 
   // Paginate transactions
   const paginatedTransactions = useMemo(() => {
@@ -526,6 +836,210 @@ export const MainWallet: React.FC = () => {
     setFromDate("");
     setToDate("");
     setTransactionsCurrentPage(1);
+  };
+
+  // Handle image upload for receipt
+  const handleUploadReceiptImage = async (transactionId: string, transferId: string, file: File) => {
+    try {
+      setUploadingTransactionId(transactionId);
+
+      // Validate file size
+      if (file.size > 5 * 1024 * 1024) {
+        addToast({
+          type: "error",
+          message: "حجم الملف يجب أن يكون أقل من 5 ميجابايت",
+          duration: 3000,
+        });
+        return;
+      }
+
+      // Upload to Firebase Storage
+      const timestamp = Date.now();
+      const fileName = `transfer-receipts/${transferId}/${timestamp}-${file.name}`;
+      const storageRef = ref(storage, fileName);
+      await uploadBytes(storageRef, file);
+      const imageUrl = await getDownloadURL(storageRef);
+
+      // Update transfer document
+      const transferRef = doc(db, "service-distributer-transfers", transferId);
+      await updateDoc(transferRef, {
+        bankReceiptImageUrl: imageUrl,
+      });
+
+      addToast({
+        type: "success",
+        message: "تم رفع الصورة بنجاح",
+        duration: 3000,
+      });
+
+      // Reload transactions AND wallets to show updated image everywhere
+      const reloadAllData = async () => {
+        try {
+          setIsLoadingWallets(true);
+          setIsLoadingTransactions(true);
+          
+          const [providers, allTransfers] = await Promise.all([
+            fetchStationsCompanyData(),
+            fetchAllServiceDistributerTransfers(),
+          ]);
+          
+          const balances = await Promise.all(
+            providers.map(provider => 
+              calculateStationsCompanyBalance(provider.email || "").catch(() => 0)
+            )
+          );
+
+          // Reload wallets
+          const wallets = await Promise.all(
+            providers.map((provider, index) => {
+              const providerWithBalance = { ...provider, balance: balances[index] };
+              return transformProviderToWallet(providerWithBalance, allTransfers);
+            })
+          );
+          setServiceProviderWallets(wallets);
+
+          // Reload transactions
+          const transactions = allTransfers
+            .filter(t => t.status === "transferred")
+            .map(transfer => {
+              const provider = providers.find(
+                p => p.email?.toLowerCase() === transfer.stationsCompanyEmail?.toLowerCase()
+              );
+              return transformTransferToTransaction(transfer, provider || null);
+            });
+          setFinancialTransactions(transactions);
+        } catch (error) {
+          console.error("Error reloading data:", error);
+        } finally {
+          setIsLoadingWallets(false);
+          setIsLoadingTransactions(false);
+        }
+      };
+      reloadAllData();
+    } catch (error: any) {
+      console.error("Error uploading receipt image:", error);
+      addToast({
+        type: "error",
+        message: error.message || "حدث خطأ أثناء رفع الصورة",
+        duration: 3000,
+      });
+    } finally {
+      setUploadingTransactionId(null);
+    }
+  };
+
+  // Handle file input change
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>, transactionId: string, transferId: string) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleUploadReceiptImage(transactionId, transferId, file);
+    }
+    // Reset input value to allow selecting the same file again
+    if (fileInputRefs.current[transactionId]) {
+      fileInputRefs.current[transactionId]!.value = "";
+    }
+  };
+
+  // Handle wallet receipt image upload
+  const handleUploadWalletReceiptImage = async (walletId: string, transferRequestId: string, file: File) => {
+    try {
+      setUploadingWalletId(walletId);
+
+      // Validate file size
+      if (file.size > 5 * 1024 * 1024) {
+        addToast({
+          type: "error",
+          message: "حجم الملف يجب أن يكون أقل من 5 ميجابايت",
+          duration: 3000,
+        });
+        return;
+      }
+
+      // Upload to Firebase Storage
+      const timestamp = Date.now();
+      const fileName = `transfer-receipts/${transferRequestId}/${timestamp}-${file.name}`;
+      const storageRef = ref(storage, fileName);
+      await uploadBytes(storageRef, file);
+      const imageUrl = await getDownloadURL(storageRef);
+
+      // Update transfer document
+      const transferRef = doc(db, "service-distributer-transfers", transferRequestId);
+      await updateDoc(transferRef, {
+        bankReceiptImageUrl: imageUrl,
+      });
+
+      addToast({
+        type: "success",
+        message: "تم رفع الصورة بنجاح",
+        duration: 3000,
+      });
+
+      // Reload wallets AND transactions to show updated status everywhere
+      const reloadAllData = async () => {
+        try {
+          setIsLoadingWallets(true);
+          setIsLoadingTransactions(true);
+          
+          const [providers, allTransfers] = await Promise.all([
+            fetchStationsCompanyData(),
+            fetchAllServiceDistributerTransfers(),
+          ]);
+          
+          const balances = await Promise.all(
+            providers.map(provider => 
+              calculateStationsCompanyBalance(provider.email || "").catch(() => 0)
+            )
+          );
+
+          // Reload wallets
+          const wallets = await Promise.all(
+            providers.map((provider, index) => {
+              const providerWithBalance = { ...provider, balance: balances[index] };
+              return transformProviderToWallet(providerWithBalance, allTransfers);
+            })
+          );
+          setServiceProviderWallets(wallets);
+
+          // Reload transactions
+          const transactions = allTransfers
+            .filter(t => t.status === "transferred")
+            .map(transfer => {
+              const provider = providers.find(
+                p => p.email?.toLowerCase() === transfer.stationsCompanyEmail?.toLowerCase()
+              );
+              return transformTransferToTransaction(transfer, provider || null);
+            });
+          setFinancialTransactions(transactions);
+        } catch (error) {
+          console.error("Error reloading data:", error);
+        } finally {
+          setIsLoadingWallets(false);
+          setIsLoadingTransactions(false);
+        }
+      };
+      reloadAllData();
+    } catch (error: any) {
+      console.error("Error uploading wallet receipt image:", error);
+      addToast({
+        type: "error",
+        message: error.message || "حدث خطأ أثناء رفع الصورة",
+        duration: 3000,
+      });
+    } finally {
+      setUploadingWalletId(null);
+    }
+  };
+
+  // Handle wallet file input change
+  const handleWalletFileInputChange = (e: React.ChangeEvent<HTMLInputElement>, walletId: string, transferRequestId: string) => {
+    const file = e.target.files?.[0];
+    if (file && transferRequestId) {
+      handleUploadWalletReceiptImage(walletId, transferRequestId, file);
+    }
+    // Reset input value to allow selecting the same file again
+    if (walletFileInputRefs.current[walletId]) {
+      walletFileInputRefs.current[walletId]!.value = "";
+    }
   };
 
   // Format date and time in Arabic
@@ -550,6 +1064,10 @@ export const MainWallet: React.FC = () => {
       render: (_: any, row: FinancialTransaction) => (
         <div className="flex items-center gap-2">
           <button
+            onClick={() => {
+              setSelectedReceiptTransactionId(row.transferId || row.id);
+              setIsReceiptModalOpen(true);
+            }}
             className="flex items-center gap-2 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium"
             aria-label="الإيصال"
           >
@@ -558,6 +1076,11 @@ export const MainWallet: React.FC = () => {
           </button>
           {row.hasImage ? (
             <button
+              onClick={() => {
+                if (row.imageUrl) {
+                  window.open(row.imageUrl, "_blank");
+                }
+              }}
               className="flex items-center gap-2 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium"
               aria-label="عرض الصورة"
             >
@@ -565,13 +1088,38 @@ export const MainWallet: React.FC = () => {
               عرض الصورة
             </button>
           ) : (
-            <button
-              className="flex items-center gap-2 px-3 py-1.5 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 transition-colors text-sm font-medium"
-              aria-label="رفع الصورة"
-            >
-              <Upload className="w-4 h-4" />
-              رفع الصورة
-            </button>
+            <>
+              <input
+                ref={(el) => {
+                  fileInputRefs.current[row.id] = el;
+                }}
+                type="file"
+                accept="image/*,.pdf"
+                onChange={(e) => handleFileInputChange(e, row.id, row.transferId || row.id)}
+                className="hidden"
+                id={`receipt-upload-${row.id}`}
+              />
+              <label
+                htmlFor={`receipt-upload-${row.id}`}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors text-sm font-medium cursor-pointer ${
+                  uploadingTransactionId === row.id
+                    ? "bg-gray-100 text-gray-500 cursor-not-allowed"
+                    : "bg-orange-100 text-orange-700 hover:bg-orange-200"
+                }`}
+              >
+                {uploadingTransactionId === row.id ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-gray-500 border-t-transparent rounded-full animate-spin" />
+                    جاري الرفع...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4" />
+                    رفع الصورة
+                  </>
+                )}
+              </label>
+            </>
           )}
         </div>
       ),
@@ -629,7 +1177,10 @@ export const MainWallet: React.FC = () => {
     // Implement export logic here
   };
 
-  if (isLoading) {
+  // Combine loading states
+  const isLoadingData = isLoading || (viewMode === "default" && (isLoadingWallets || isLoadingRevenue)) || (viewMode === "transactions-log" && isLoadingTransactions);
+
+  if (isLoadingData) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <LoadingSpinner message="جاري تحميل بيانات المحفظة الرئيسية..." />
@@ -658,7 +1209,7 @@ export const MainWallet: React.FC = () => {
             سجل التحويلات المالية
           </button>
           {viewMode === "default" && (
-            <ExportButton onExport={handleExport} buttonText="تصدير التقرير" />
+          <ExportButton onExport={handleExport} buttonText="تصدير التقرير" />
           )}
         </div>
       </div>
@@ -805,7 +1356,7 @@ export const MainWallet: React.FC = () => {
           <div className="mt-8">
             <p className="text-white/80 text-sm mb-2">إجمالي الإيرادات</p>
             <p className="text-3xl font-bold text-white">
-              {formatNumber(mockRevenueData.totalRevenues)} ر.س
+              {formatNumber(revenueData.totalRevenues)} ر.س
             </p>
           </div>
         </div>
@@ -818,12 +1369,16 @@ export const MainWallet: React.FC = () => {
           <div className="mt-8">
             <p className="text-gray-600 text-sm mb-2">إيرادات الاشتراكات</p>
             <p className="text-3xl font-bold text-gray-900">
-              {formatNumber(mockRevenueData.subscriptionRevenues)} ر.س
+              {formatNumber(revenueData.subscriptionRevenues)} ر.س
             </p>
             <div className="mt-4 w-full bg-gray-200 rounded-full h-2">
               <div
                 className="bg-green-500 h-2 rounded-full"
-                style={{ width: "75%" }}
+                style={{ 
+                  width: revenueData.totalRevenues > 0 
+                    ? `${(revenueData.subscriptionRevenues / revenueData.totalRevenues) * 100}%` 
+                    : "0%" 
+                }}
               />
             </div>
           </div>
@@ -837,12 +1392,16 @@ export const MainWallet: React.FC = () => {
           <div className="mt-8">
             <p className="text-gray-600 text-sm mb-2">عمولات الوقود والخدمات</p>
             <p className="text-3xl font-bold text-gray-900">
-              {formatNumber(mockRevenueData.fuelServiceCommissions)} ر.س
+              {formatNumber(revenueData.fuelServiceCommissions)} ر.س
             </p>
             <div className="mt-4 w-full bg-gray-200 rounded-full h-2">
               <div
                 className="bg-purple-500 h-2 rounded-full"
-                style={{ width: "45%" }}
+                style={{ 
+                  width: revenueData.totalRevenues > 0 
+                    ? `${(revenueData.fuelServiceCommissions / revenueData.totalRevenues) * 100}%` 
+                    : "0%" 
+                }}
               />
             </div>
           </div>
@@ -999,6 +1558,75 @@ export const MainWallet: React.FC = () => {
       </div>
         </>
       )}
+      
+      {/* Transfer Modal */}
+      <TransferModal
+        open={isTransferModalOpen}
+        wallet={selectedWallet}
+        transferRequestId={selectedTransferRequestId}
+        onClose={() => {
+          setIsTransferModalOpen(false);
+          setSelectedWallet(null);
+          setSelectedTransferRequestId(undefined);
+        }}
+        onSuccess={() => {
+          // Reload all data (wallets and transactions) after successful transfer
+          const reloadAllData = async () => {
+            try {
+              setIsLoadingWallets(true);
+              setIsLoadingTransactions(true);
+              
+              const [providers, allTransfers] = await Promise.all([
+                fetchStationsCompanyData(),
+                fetchAllServiceDistributerTransfers(),
+              ]);
+              
+              const balances = await Promise.all(
+                providers.map(provider => 
+                  calculateStationsCompanyBalance(provider.email || "").catch(() => 0)
+                )
+              );
+
+              // Reload wallets
+              const wallets = await Promise.all(
+                providers.map((provider, index) => {
+                  const providerWithBalance = { ...provider, balance: balances[index] };
+                  return transformProviderToWallet(providerWithBalance, allTransfers);
+                })
+              );
+              setServiceProviderWallets(wallets);
+
+              // Reload transactions
+              const transactions = allTransfers
+                .filter(t => t.status === "transferred")
+                .map(transfer => {
+                  const provider = providers.find(
+                    p => p.email?.toLowerCase() === transfer.stationsCompanyEmail?.toLowerCase()
+                  );
+                  return transformTransferToTransaction(transfer, provider || null);
+                });
+              setFinancialTransactions(transactions);
+            } catch (error) {
+              console.error("Error reloading data:", error);
+            } finally {
+              setIsLoadingWallets(false);
+              setIsLoadingTransactions(false);
+            }
+          };
+          reloadAllData();
+        }}
+      />
+      
+      {/* Receipt Modal */}
+      <ReceiptModal
+        open={isReceiptModalOpen}
+        transactionId={selectedReceiptTransactionId || ""}
+        transfer={null}
+        onClose={() => {
+          setIsReceiptModalOpen(false);
+          setSelectedReceiptTransactionId(null);
+        }}
+      />
     </div>
   );
 };

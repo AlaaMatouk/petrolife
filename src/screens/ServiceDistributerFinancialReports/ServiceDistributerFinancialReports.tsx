@@ -35,8 +35,9 @@ import { ROUTES } from "../../constants/routes";
 import { useToast } from "../../context/ToastContext";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../../config/firebase";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, updateDoc, collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../../config/firebase";
+import { jsPDF } from "jspdf";
 
 // Operation interface
 interface Operation {
@@ -338,33 +339,82 @@ function ServiceDistributerFinancialReports() {
     loadBalanceChange();
   }, [addToast]);
 
-  // Fetch transfers data on component mount
+  // Fetch transfers data on component mount and set up real-time listener
   useEffect(() => {
-    const loadTransfers = async () => {
+    let unsubscribe: (() => void) | null = null;
+
+    const setupRealtimeListener = async () => {
       try {
         setIsLoadingTransfers(true);
         const currentUser = await waitForAuthState();
         if (!currentUser || !currentUser.email) {
           setTransfers([]);
+          setIsLoadingTransfers(false);
           return;
         }
 
-        const fetchedTransfers = await fetchServiceDistributerTransfers(currentUser.email);
-        setTransfers(fetchedTransfers);
+        // Set up real-time listener for transfers
+        // Using query without orderBy to avoid composite index requirement, sorting client-side
+        const transfersRef = collection(db, "service-distributer-transfers");
+        const q = query(
+          transfersRef,
+          where("stationsCompanyEmail", "==", currentUser.email.toLowerCase())
+        );
+
+        unsubscribe = onSnapshot(
+          q,
+          (querySnapshot) => {
+            const transfersData: ServiceDistributerTransferRequest[] = [];
+            querySnapshot.forEach((doc) => {
+              transfersData.push({
+                id: doc.id,
+                ...doc.data(),
+              } as ServiceDistributerTransferRequest);
+            });
+            
+            // Sort by createdAt descending (client-side to avoid composite index requirement)
+            transfersData.sort((a, b) => {
+              const aDate = a.createdAt?.toDate
+                ? a.createdAt.toDate()
+                : new Date(a.createdAt || 0);
+              const bDate = b.createdAt?.toDate
+                ? b.createdAt.toDate()
+                : new Date(b.createdAt || 0);
+              return bDate.getTime() - aDate.getTime();
+            });
+            
+            setTransfers(transfersData);
+            setIsLoadingTransfers(false);
+          },
+          (error) => {
+            console.error("Error in transfers listener:", error);
+            setIsLoadingTransfers(false);
+            addToast({
+              title: "خطأ",
+              message: "فشل في تحميل بيانات التحويلات",
+              type: "error",
+            });
+          }
+        );
       } catch (error) {
-        console.error("Error loading transfers:", error);
-        setTransfers([]);
+        console.error("Error setting up transfers listener:", error);
+        setIsLoadingTransfers(false);
         addToast({
           title: "خطأ",
           message: "فشل في تحميل بيانات التحويلات",
           type: "error",
         });
-      } finally {
-        setIsLoadingTransfers(false);
       }
     };
 
-    loadTransfers();
+    setupRealtimeListener();
+
+    // Cleanup listener on unmount
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, [addToast]);
 
   // Fetch operations data on component mount
@@ -648,7 +698,7 @@ function ServiceDistributerFinancialReports() {
         transferDate: transferDate,
         transferValue: transfer.transferAmount,
         status: transfer.status,
-        receiptUrl: transfer.receiptUrl,
+        receiptUrl: (transfer as any).bankReceiptImageUrl || (transfer as any).receiptUrl,
       };
     });
 
@@ -1018,25 +1068,127 @@ function ServiceDistributerFinancialReports() {
       key: "receipt",
       label: "إيصال التحويل",
       width: "w-40 min-w-[160px]",
-      render: (_: any, row: Payment) => (
-        <div className="flex items-center justify-center">
-          {row.receiptUrl ? (
-            <button
-              onClick={() => window.open(row.receiptUrl, "_blank")}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-              aria-label="تحميل الإيصال"
-            >
-              <Download className="w-4 h-4" />
-              <span className="text-sm font-medium">تحميل الإيصال</span>
-            </button>
-          ) : (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 text-gray-500">
-              <Download className="w-4 h-4" />
-              <span className="text-sm font-medium">غير متاح</span>
-            </div>
-          )}
-        </div>
-      ),
+      render: (_: any, row: Payment) => {
+        const handleDownloadReceipt = async () => {
+          if (!row.receiptUrl) return;
+          
+          try {
+            // Fetch the image
+            const response = await fetch(row.receiptUrl);
+            const blob = await response.blob();
+            
+            // Determine file extension from content type or URL
+            let fileName = `receipt-${row.transferNumber}.pdf`;
+            const contentType = response.headers.get('content-type');
+            
+            // If it's already a PDF, download as is
+            if (contentType === 'application/pdf' || row.receiptUrl.toLowerCase().endsWith('.pdf')) {
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = fileName;
+              document.body.appendChild(a);
+              a.click();
+              window.URL.revokeObjectURL(url);
+              document.body.removeChild(a);
+            } else {
+              // Convert image to PDF using jsPDF
+              const img = new Image();
+              img.crossOrigin = 'anonymous';
+              
+              img.onload = () => {
+                try {
+                  // Calculate PDF dimensions (A4 ratio)
+                  const pdfWidth = 210; // A4 width in mm
+                  const pdfHeight = (img.height / img.width) * pdfWidth;
+                  
+                  // Create canvas to convert image to base64
+                  const canvas = document.createElement('canvas');
+                  canvas.width = img.width;
+                  canvas.height = img.height;
+                  const ctx = canvas.getContext('2d');
+                  
+                  if (!ctx) {
+                    throw new Error('Could not get canvas context');
+                  }
+                  
+                  // Draw image on canvas
+                  ctx.drawImage(img, 0, 0);
+                  
+                  // Convert canvas to base64 data URL
+                  const imgData = canvas.toDataURL('image/jpeg', 0.95);
+                  
+                  // Create PDF
+                  const pdf = new jsPDF({
+                    orientation: pdfHeight > pdfWidth ? 'portrait' : 'landscape',
+                    unit: 'mm',
+                    format: [pdfWidth, pdfHeight]
+                  });
+                  
+                  // Add image to PDF
+                  pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+                  
+                  // Save PDF
+                  pdf.save(fileName);
+                } catch (error) {
+                  console.error('Error creating PDF:', error);
+                  // Fallback: download original file
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = fileName.replace('.pdf', row.receiptUrl.split('.').pop() || 'jpg');
+                  document.body.appendChild(a);
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                  document.body.removeChild(a);
+                }
+              };
+              
+              img.onerror = () => {
+                // Fallback: download original file
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName.replace('.pdf', row.receiptUrl.split('.').pop() || 'jpg');
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+              };
+              
+              // Set image source after setting up event handlers
+              img.src = row.receiptUrl;
+            }
+          } catch (error) {
+            console.error("Error downloading receipt:", error);
+            addToast({
+              title: "خطأ",
+              message: "فشل في تحميل الإيصال",
+              type: "error",
+            });
+          }
+        };
+        
+        return (
+          <div className="flex items-center justify-center">
+            {row.receiptUrl ? (
+              <button
+                onClick={handleDownloadReceipt}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                aria-label="تحميل الإيصال"
+              >
+                <Download className="w-4 h-4" />
+                <span className="text-sm font-medium">تحميل الإيصال</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 text-gray-500">
+                <Download className="w-4 h-4" />
+                <span className="text-sm font-medium">غير متاح</span>
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: "status",

@@ -2440,10 +2440,40 @@ export const checkAndCreateTransferRequest = async (
       return null;
     }
 
-    // Fetch current balance
-    const currentBalance = await calculateStationsCompanyBalance(companyEmail);
-
-    console.log(`💰 Current balance: ${currentBalance.toFixed(2)}`);
+    // Fetch current balance from stored document first (accounts for transfers)
+    // Only fall back to calculation if document doesn't have balance field
+    let currentBalance = 0;
+    try {
+      const qRef = query(
+        collection(db, "stationscompany"),
+        where("email", "==", companyEmail.toLowerCase())
+      );
+      const snapshot = await getDocs(qRef);
+      
+      if (!snapshot.empty) {
+        const docData = snapshot.docs[0].data();
+        const storedBalance = docData.balance;
+        
+        if (storedBalance !== undefined && storedBalance !== null) {
+          // Use stored balance which accounts for transfers
+          currentBalance = storedBalance;
+          console.log(`💰 Current balance from document (accounts for transfers): ${currentBalance.toFixed(2)}`);
+        } else {
+          // Fall back to calculation if balance field doesn't exist
+          currentBalance = await calculateStationsCompanyBalance(companyEmail);
+          console.log(`💰 Current balance (calculated, no stored balance): ${currentBalance.toFixed(2)}`);
+        }
+      } else {
+        // No document found, calculate from orders
+        currentBalance = await calculateStationsCompanyBalance(companyEmail);
+        console.log(`💰 Current balance (calculated, no document): ${currentBalance.toFixed(2)}`);
+      }
+    } catch (error) {
+      // Fall back to calculation on error
+      console.warn("⚠️ Error fetching stored balance, calculating from orders:", error);
+      currentBalance = await calculateStationsCompanyBalance(companyEmail);
+      console.log(`💰 Current balance (calculated, fallback): ${currentBalance.toFixed(2)}`);
+    }
 
     // Check if balance >= 3000
     if (currentBalance < 3000) {
@@ -2556,6 +2586,70 @@ export const fetchServiceDistributerTransfers = async (
       `❌ Error fetching transfer requests for ${companyEmail}:`,
       error
     );
+    throw error;
+  }
+};
+
+/**
+ * Fetch all service distributer transfers (for admin view)
+ * @returns Promise with array of all transfer requests
+ */
+export const fetchAllServiceDistributerTransfers = async (): Promise<ServiceDistributerTransferRequest[]> => {
+  try {
+    console.log("📊 Fetching all service distributer transfers for admin...");
+
+    const transfersRef = collection(db, "service-distributer-transfers");
+    const querySnapshot = await getDocs(transfersRef);
+
+    const transfers: ServiceDistributerTransferRequest[] = [];
+    querySnapshot.forEach((doc) => {
+      transfers.push({
+        id: doc.id,
+        ...doc.data(),
+      } as ServiceDistributerTransferRequest);
+    });
+
+    // Sort by createdAt descending (client-side to avoid composite index requirement)
+    transfers.sort((a, b) => {
+      const aDate = a.createdAt?.toDate
+        ? a.createdAt.toDate()
+        : new Date(a.createdAt || 0);
+      const bDate = b.createdAt?.toDate
+        ? b.createdAt.toDate()
+        : new Date(b.createdAt || 0);
+      return bDate.getTime() - aDate.getTime();
+    });
+
+    console.log(`✅ Found ${transfers.length} total transfer requests`);
+    return transfers;
+  } catch (error) {
+    console.error("❌ Error fetching all transfer requests:", error);
+    throw error;
+  }
+};
+
+/**
+ * Calculate total commissions for all service providers (admin view)
+ * @returns Promise with total commission amount
+ */
+export const calculateTotalCommissionsForAllProviders = async (): Promise<number> => {
+  try {
+    console.log("💰 Calculating total commissions for all providers...");
+
+    const commissionsRef = collection(db, "commissions");
+    const querySnapshot = await getDocs(commissionsRef);
+
+    let totalCommissions = 0;
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      const commissionAmount = data.commissionAmount || 0;
+      totalCommissions += commissionAmount;
+    });
+
+    console.log(`✅ Total commissions for all providers: ${totalCommissions.toFixed(2)}`);
+    return totalCommissions;
+  } catch (error) {
+    console.error("❌ Error calculating total commissions:", error);
     throw error;
   }
 };
@@ -3219,8 +3313,8 @@ export const updateStationsCompanyBalance = async (
       // Continue with balance calculation even if commission processing fails
     }
 
-    // Calculate the balance (which now deducts commission)
-    const balance = await calculateStationsCompanyBalance(companyEmail);
+    // Calculate the balance from orders (which now deducts commission)
+    const calculatedBalance = await calculateStationsCompanyBalance(companyEmail);
 
     // Find stationscompany document by email
     const qRef = query(
@@ -3244,21 +3338,73 @@ export const updateStationsCompanyBalance = async (
     // Update the document with balance field
     const docSnap = snapshot.docs[0];
     const docRef = doc(db, "stationscompany", docSnap.id);
+    const currentDocData = docSnap.data();
+    const currentStoredBalance = currentDocData.balance || 0;
 
-    await updateDoc(docRef, {
-      balance: balance,
-    });
-
-    console.log(
-      `✅ Updated balance for stationscompany ${companyEmail}: ${balance.toFixed(
-        2
-      )}`
-    );
+    // CRITICAL: If stored balance is LOWER than calculated balance, it means transfers have been made
+    // We should use the stored balance (after transfers) instead of recalculating from orders
+    // This prevents overwriting the balance after a transfer is completed
+    let balanceToUse = calculatedBalance;
+    if (currentStoredBalance < calculatedBalance) {
+      console.log(
+        `⚠️ Stored balance (${currentStoredBalance.toFixed(2)}) is lower than calculated balance (${calculatedBalance.toFixed(2)})`
+      );
+      console.log(`   This indicates transfers have been made. Using stored balance.`);
+      balanceToUse = currentStoredBalance;
+      
+      // Don't update the balance if it's already lower (transfers deducted)
+      // Only update if calculated balance is less than stored (new orders added)
+      if (calculatedBalance < currentStoredBalance) {
+        balanceToUse = calculatedBalance;
+        await updateDoc(docRef, {
+          balance: balanceToUse,
+        });
+        console.log(
+          `✅ Updated balance for stationscompany ${companyEmail}: ${balanceToUse.toFixed(2)}`
+        );
+      } else {
+        console.log(
+          `✅ Keeping stored balance (transfers already deducted): ${balanceToUse.toFixed(2)}`
+        );
+      }
+    } else {
+      // Normal case: no transfers made, update with calculated balance
+      await updateDoc(docRef, {
+        balance: balanceToUse,
+      });
+      console.log(
+        `✅ Updated balance for stationscompany ${companyEmail}: ${balanceToUse.toFixed(2)}`
+      );
+    }
 
     // Auto-check and create transfer request if balance >= 3000
+    // Use the balance that accounts for transfers (balanceToUse, not calculatedBalance)
     // This is non-blocking - don't fail balance update if transfer creation fails
     try {
-      await checkAndCreateTransferRequest(companyEmail);
+      // Temporarily update the balance in the document for the check
+      // The check uses calculateStationsCompanyBalance which doesn't account for transfers
+      // So we need to pass the correct balance
+      const finalBalance = balanceToUse;
+      
+      // Only check for transfer request if we're using the calculated balance
+      // OR if the stored balance (after transfers) is still >= 3000
+      if (finalBalance >= 3000) {
+        // Check if there's already a pending transfer request
+        const transfersRef = collection(db, "service-distributer-transfers");
+        const transferQ = query(
+          transfersRef,
+          where("stationsCompanyEmail", "==", companyEmail.toLowerCase()),
+          where("status", "==", "pending")
+        );
+        const transferSnapshot = await getDocs(transferQ);
+
+        if (transferSnapshot.empty) {
+          // Only create if no pending transfer exists
+          await checkAndCreateTransferRequest(companyEmail);
+        } else {
+          console.log("⚠️ Pending transfer request already exists, skipping creation");
+        }
+      }
     } catch (error) {
       console.error(
         `⚠️ Error checking/creating transfer request (non-critical):`,
@@ -7794,6 +7940,103 @@ export const fetchAllSubscriptionPayments = async (): Promise<any[]> => {
   } catch (error) {
     console.error("❌ Error fetching subscription payments:", error);
     throw error;
+  }
+};
+
+/**
+ * Calculate total subscription revenue from all subscription payments
+ * @returns Promise with total subscription revenue amount
+ */
+export const calculateTotalSubscriptionRevenue = async (): Promise<number> => {
+  try {
+    console.log("💰 Calculating total subscription revenue...");
+
+    const subscriptionPayments = await fetchAllSubscriptionPayments();
+    
+    let totalRevenue = 0;
+    subscriptionPayments.forEach((payment) => {
+      const amount = payment.amount || payment.price || payment.totalAmount || 0;
+      totalRevenue += amount;
+    });
+
+    console.log(`✅ Total subscription revenue: ${totalRevenue.toFixed(2)}`);
+    return totalRevenue;
+  } catch (error) {
+    console.error("❌ Error calculating total subscription revenue:", error);
+    throw error;
+  }
+};
+
+/**
+ * Calculate monthly revenue data (subscriptions and commissions grouped by month)
+ * @returns Promise with monthly revenue data for chart
+ */
+export const calculateMonthlyRevenueData = async (): Promise<{
+  labels: string[];
+  subscriptions: number[];
+  commissions: number[];
+}> => {
+  try {
+    console.log("📊 Calculating monthly revenue data...");
+
+    const monthLabels = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+    
+    // Initialize monthly totals
+    const subscriptionTotals: number[] = new Array(12).fill(0);
+    const commissionTotals: number[] = new Array(12).fill(0);
+
+    // Fetch subscriptions and group by month
+    const subscriptionPayments = await fetchAllSubscriptionPayments();
+    subscriptionPayments.forEach((payment) => {
+      const paymentDate = payment.createdDate?.toDate 
+        ? payment.createdDate.toDate()
+        : payment.createdDate instanceof Date 
+        ? payment.createdDate
+        : payment.paymentDate?.toDate
+        ? payment.paymentDate.toDate()
+        : null;
+
+      if (paymentDate) {
+        const month = paymentDate.getMonth(); // 0-11
+        const amount = payment.amount || payment.price || payment.totalAmount || 0;
+        subscriptionTotals[month] += amount;
+      }
+    });
+
+    // Fetch commissions and group by month
+    const commissionsRef = collection(db, "commissions");
+    const commissionsSnapshot = await getDocs(commissionsRef);
+    
+    commissionsSnapshot.forEach((doc) => {
+      const data = doc.data();
+      const commissionDate = data.createdAt?.toDate
+        ? data.createdAt.toDate()
+        : data.createdDate?.toDate
+        ? data.createdDate.toDate()
+        : null;
+
+      if (commissionDate) {
+        const month = commissionDate.getMonth(); // 0-11
+        const commissionAmount = data.commissionAmount || 0;
+        commissionTotals[month] += commissionAmount;
+      }
+    });
+
+    console.log("✅ Monthly revenue data calculated");
+    return {
+      labels: monthLabels,
+      subscriptions: subscriptionTotals,
+      commissions: commissionTotals,
+    };
+  } catch (error) {
+    console.error("❌ Error calculating monthly revenue data:", error);
+    // Return empty data on error
+    const monthLabels = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+    return {
+      labels: monthLabels,
+      subscriptions: new Array(12).fill(0),
+      commissions: new Array(12).fill(0),
+    };
   }
 };
 
