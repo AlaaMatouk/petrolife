@@ -10,7 +10,11 @@ import {
   MoreVertical,
   ArrowRightLeft,
   CheckCircle2,
-  Clock
+  Clock,
+  FileText,
+  RotateCcw,
+  List,
+  ChevronDown
 } from "lucide-react";
 import { LegendHighlightBarChart } from "../../../shared/charts";
 import { Table } from "../../../shared/Table/Table";
@@ -18,6 +22,8 @@ import { Pagination } from "../../../shared/Pagination/Pagination";
 import { SearchBar } from "../../../shared/SearchBar/SearchBar";
 import { ExportButton } from "../../../shared/ExportButton/ExportButton";
 import { LoadingSpinner } from "../../../shared/Spinner/LoadingSpinner";
+import { DateInput } from "../../../shared/DateInput/DateInput";
+import { Select } from "../../../shared/Form/Select";
 
 // Data interfaces
 interface ServiceProviderWallet {
@@ -41,6 +47,22 @@ interface RevenueData {
     subscriptions: number[];
     commissions: number[];
   };
+}
+
+interface FinancialTransaction {
+  id: string;
+  transactionNumber: string;
+  serviceProvider: {
+    name: string;
+    id: string;
+    profilePicture?: string;
+  };
+  walletNumber: string;
+  dateTime: Date;
+  amount: number;
+  receiptUrl?: string;
+  imageUrl?: string;
+  hasImage: boolean;
 }
 
 // Mock data - replace with actual API calls
@@ -106,12 +128,152 @@ const mockServiceProviderWallets: ServiceProviderWallet[] = [
   },
 ];
 
+// Mock financial transactions data
+const mockFinancialTransactions: FinancialTransaction[] = [
+  {
+    id: "1",
+    transactionNumber: "#TRX-2024-001",
+    serviceProvider: {
+      name: "مجموعة الطاقة المتحدة",
+      id: "UEG-2024-002",
+    },
+    walletNumber: "SA-7821-3456-9087",
+    dateTime: new Date(2024, 0, 15, 10, 30),
+    amount: 124800,
+    receiptUrl: "/receipts/trx-001.pdf",
+    imageUrl: "/images/trx-001.jpg",
+    hasImage: true,
+  },
+  {
+    id: "2",
+    transactionNumber: "#TRX-2024-002",
+    serviceProvider: {
+      name: "شركة البترول الوطنية",
+      id: "NPC-2024-001",
+    },
+    walletNumber: "SA-4532-8976-1234",
+    dateTime: new Date(2024, 0, 14, 14, 15),
+    amount: 92300,
+    receiptUrl: "/receipts/trx-002.pdf",
+    hasImage: false,
+  },
+  {
+    id: "3",
+    transactionNumber: "#TRX-2024-003",
+    serviceProvider: {
+      name: "شركة الوقود السريع",
+      id: "QFC-2024-003",
+    },
+    walletNumber: "SA-6789-4532-7890",
+    dateTime: new Date(2024, 0, 13, 16, 45),
+    amount: 156500,
+    receiptUrl: "/receipts/trx-003.pdf",
+    imageUrl: "/images/trx-003.jpg",
+    hasImage: true,
+  },
+  {
+    id: "4",
+    transactionNumber: "#TRX-2024-004",
+    serviceProvider: {
+      name: "شركة النقل البترولي",
+      id: "PTC-2024-004",
+    },
+    walletNumber: "SA-2341-7654-3210",
+    dateTime: new Date(2024, 0, 12, 11, 20),
+    amount: 78450,
+    receiptUrl: "/receipts/trx-004.pdf",
+    imageUrl: "/images/trx-004.jpg",
+    hasImage: true,
+  },
+  {
+    id: "5",
+    transactionNumber: "#TRX-2024-005",
+    serviceProvider: {
+      name: "مؤسسة الطاقة الخضراء",
+      id: "GEF-2024-005",
+    },
+    walletNumber: "SA-5678-1234-5678",
+    dateTime: new Date(2024, 0, 11, 8, 40),
+    amount: 65200,
+    receiptUrl: "/receipts/trx-005.pdf",
+    hasImage: false,
+  },
+  {
+    id: "6",
+    transactionNumber: "#TRX-2024-006",
+    serviceProvider: {
+      name: "شركة المحروقات الذهبية",
+      id: "GFC-2024-006",
+    },
+    walletNumber: "SA-9876-5432-1098",
+    dateTime: new Date(2024, 0, 10, 5, 15),
+    amount: 189700,
+    receiptUrl: "/receipts/trx-006.pdf",
+    imageUrl: "/images/trx-006.jpg",
+    hasImage: true,
+  },
+  {
+    id: "7",
+    transactionNumber: "#TRX-2024-007",
+    serviceProvider: {
+      name: "مجموعة الخليج للوقود",
+      id: "GFG-2024-007",
+    },
+    walletNumber: "SA-3456-7890-2345",
+    dateTime: new Date(2024, 0, 9, 13, 50),
+    amount: 143900,
+    receiptUrl: "/receipts/trx-007.pdf",
+    imageUrl: "/images/trx-007.jpg",
+    hasImage: true,
+  },
+  {
+    id: "8",
+    transactionNumber: "#TRX-2024-008",
+    serviceProvider: {
+      name: "شركة الوقود المطور",
+      id: "AFC-2024-008",
+    },
+    walletNumber: "SA-8765-4321-6789",
+    dateTime: new Date(2024, 0, 8, 17, 25),
+    amount: 54600,
+    receiptUrl: "/receipts/trx-008.pdf",
+    hasImage: false,
+  },
+];
+
 export const MainWallet: React.FC = () => {
+  // View mode state
+  const [viewMode, setViewMode] = useState<"default" | "transactions-log">("default");
+  
+  // Default view states
   const [selectedPeriod, setSelectedPeriod] = useState<"يومي" | "أسبوعي" | "شهري">("شهري");
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const itemsPerPage = 5;
+
+  // Transactions log view states
+  const [transactionsSearchQuery, setTransactionsSearchQuery] = useState("");
+  const [transactionsCurrentPage, setTransactionsCurrentPage] = useState(1);
+  const [transactionsItemsPerPage] = useState(8);
+  const [isFiltersOpen, setIsFiltersOpen] = useState(true);
+  
+  // Filter states
+  const [selectedServiceProvider, setSelectedServiceProvider] = useState<string>("جميع المزودين");
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
+  
+  // Service provider options for filter
+  const serviceProviderOptions = useMemo(() => {
+    const providers = mockServiceProviderWallets.map(wallet => ({
+      value: wallet.providerName,
+      label: wallet.providerName,
+    }));
+    return [
+      { value: "جميع المزودين", label: "جميع المزودين" },
+      ...providers,
+    ];
+  }, []);
 
   // Format number with thousands separator
   const formatNumber = (num: number) => {
@@ -291,8 +453,180 @@ export const MainWallet: React.FC = () => {
   };
 
   const handleFinancialTransfersLog = () => {
-    console.log("Opening financial transfers log");
-    // Navigate to transfers log page
+    setViewMode(viewMode === "default" ? "transactions-log" : "default");
+    // Reset to first page when switching views
+    setTransactionsCurrentPage(1);
+    setTransactionsSearchQuery("");
+  };
+
+  // Filter and search transactions
+  const filteredTransactions = useMemo(() => {
+    let filtered = [...mockFinancialTransactions];
+
+    // Filter by service provider
+    if (selectedServiceProvider !== "جميع المزودين") {
+      filtered = filtered.filter(
+        (transaction) => transaction.serviceProvider.name === selectedServiceProvider
+      );
+    }
+
+    // Filter by date range
+    if (fromDate) {
+      // Parse mm/dd/yyyy format
+      const [month, day, year] = fromDate.split("/").map(Number);
+      const from = new Date(year, month - 1, day);
+      from.setHours(0, 0, 0, 0);
+      filtered = filtered.filter((transaction) => {
+        const txDate = new Date(transaction.dateTime);
+        txDate.setHours(0, 0, 0, 0);
+        return txDate >= from;
+      });
+    }
+
+    if (toDate) {
+      // Parse mm/dd/yyyy format
+      const [month, day, year] = toDate.split("/").map(Number);
+      const to = new Date(year, month - 1, day);
+      to.setHours(23, 59, 59, 999);
+      filtered = filtered.filter((transaction) => {
+        const txDate = new Date(transaction.dateTime);
+        return txDate <= to;
+      });
+    }
+
+    // Filter by search query
+    if (transactionsSearchQuery) {
+      const query = transactionsSearchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (transaction) =>
+          transaction.transactionNumber.toLowerCase().includes(query) ||
+          transaction.serviceProvider.name.toLowerCase().includes(query) ||
+          transaction.serviceProvider.id.toLowerCase().includes(query) ||
+          transaction.walletNumber.toLowerCase().includes(query)
+      );
+    }
+
+    // Sort by date (newest first)
+    filtered.sort((a, b) => b.dateTime.getTime() - a.dateTime.getTime());
+
+    return filtered;
+  }, [selectedServiceProvider, fromDate, toDate, transactionsSearchQuery]);
+
+  // Paginate transactions
+  const paginatedTransactions = useMemo(() => {
+    const startIndex = (transactionsCurrentPage - 1) * transactionsItemsPerPage;
+    return filteredTransactions.slice(startIndex, startIndex + transactionsItemsPerPage);
+  }, [filteredTransactions, transactionsCurrentPage, transactionsItemsPerPage]);
+
+  const transactionsTotalPages = Math.ceil(filteredTransactions.length / transactionsItemsPerPage);
+
+  // Handle filter reset
+  const handleResetFilters = () => {
+    setSelectedServiceProvider("جميع المزودين");
+    setFromDate("");
+    setToDate("");
+    setTransactionsCurrentPage(1);
+  };
+
+  // Format date and time in Arabic
+  const formatDateTime = (date: Date): string => {
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    const period = hours >= 12 ? "مساءً" : "صباحاً";
+    const displayHours = hours > 12 ? hours - 12 : hours === 0 ? 12 : hours;
+    const formattedDate = date.toLocaleDateString("ar-SA", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    return `${formattedDate} ${displayHours}:${String(minutes).padStart(2, "0")} ${period}`;
+  };
+
+  // Transactions table columns
+  const transactionsTableColumns = [
+    {
+      key: "actions",
+      label: "الإجراءات",
+      render: (_: any, row: FinancialTransaction) => (
+        <div className="flex items-center gap-2">
+          <button
+            className="flex items-center gap-2 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium"
+            aria-label="الإيصال"
+          >
+            <FileText className="w-4 h-4" />
+            الإيصال
+          </button>
+          {row.hasImage ? (
+            <button
+              className="flex items-center gap-2 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium"
+              aria-label="عرض الصورة"
+            >
+              <Eye className="w-4 h-4" />
+              عرض الصورة
+            </button>
+          ) : (
+            <button
+              className="flex items-center gap-2 px-3 py-1.5 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 transition-colors text-sm font-medium"
+              aria-label="رفع الصورة"
+            >
+              <Upload className="w-4 h-4" />
+              رفع الصورة
+            </button>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "amount",
+      label: "المبلغ المحول",
+      render: (_: any, row: FinancialTransaction) => (
+        <span className="text-green-600 font-semibold">
+          {formatNumber(row.amount)} ر.س
+        </span>
+      ),
+    },
+    {
+      key: "dateTime",
+      label: "التاريخ والوقت",
+      render: (_: any, row: FinancialTransaction) => (
+        <span className="text-gray-700">{formatDateTime(row.dateTime)}</span>
+      ),
+    },
+    {
+      key: "walletNumber",
+      label: "رقم المحفظة",
+      render: (_: any, row: FinancialTransaction) => (
+        <span className="text-gray-700 font-medium">{row.walletNumber}</span>
+      ),
+    },
+    {
+      key: "serviceProvider",
+      label: "مزود الخدمة",
+      render: (_: any, row: FinancialTransaction) => (
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold">
+            {row.serviceProvider.name.charAt(0)}
+          </div>
+          <div className="flex flex-col">
+            <span className="text-gray-900 font-medium">{row.serviceProvider.name}</span>
+            <span className="text-gray-500 text-sm">{row.serviceProvider.id}</span>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "transactionNumber",
+      label: "رقم العملية",
+      render: (_: any, row: FinancialTransaction) => (
+        <span className="text-gray-700 font-medium">{row.transactionNumber}</span>
+      ),
+    },
+  ];
+
+  // Handle transactions export
+  const handleTransactionsExport = (format: string) => {
+    console.log(`Exporting transactions as ${format}`);
+    // Implement export logic here
   };
 
   if (isLoading) {
@@ -314,14 +648,152 @@ export const MainWallet: React.FC = () => {
         <div className="flex items-center gap-4">
           <button
             onClick={handleFinancialTransfersLog}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-700"
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm font-medium ${
+              viewMode === "transactions-log"
+                ? "bg-[#5A66C1] text-white hover:bg-[#4a56b1]"
+                : "bg-white border border-gray-300 hover:bg-gray-50 text-gray-700"
+            }`}
           >
-            <Wallet className="w-4 h-4" />
+            <List className="w-4 h-4" />
             سجل التحويلات المالية
           </button>
-          <ExportButton onExport={handleExport} buttonText="تصدير التقرير" />
+          {viewMode === "default" && (
+            <ExportButton onExport={handleExport} buttonText="تصدير التقرير" />
+          )}
         </div>
       </div>
+
+      {viewMode === "transactions-log" ? (
+        /* Financial Transactions Log View */
+        <div className="space-y-6">
+          {/* Filters Section */}
+          <div className="bg-white rounded-xl" style={{ border: '1px solid #e5e7eb' }}>
+            <div className="flex items-center justify-between p-4">
+              <button
+                onClick={() => setIsFiltersOpen(!isFiltersOpen)}
+                className="flex items-center gap-2 hover:bg-gray-50 transition-colors -m-2 p-2 rounded"
+              >
+                <span className="text-lg font-semibold text-gray-900">فلاتر البحث والتصفية</span>
+                <ChevronDown
+                  className={`w-5 h-5 text-gray-500 transition-transform ${
+                    isFiltersOpen ? "transform rotate-180" : ""
+                  }`}
+                />
+              </button>
+              <button
+                onClick={handleResetFilters}
+                className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:text-gray-900 transition-colors text-sm font-medium"
+              >
+                <RotateCcw className="w-4 h-4" />
+                إعادة تعيين
+              </button>
+            </div>
+            {isFiltersOpen && (
+              <div className="px-4 pb-4 border-t border-gray-200">
+                <div className="flex items-end justify-between gap-4 pt-4">
+                  {/* Filters - Left side */}
+                  <div className="flex items-end gap-4 flex-1 justify-start">
+                    {/* Service Provider Filter */}
+                    <div className="w-64">
+                      <Select
+                        label="مزود الخدمة"
+                        value={selectedServiceProvider}
+                        onChange={setSelectedServiceProvider}
+                        options={serviceProviderOptions}
+                      />
+                    </div>
+
+                    {/* From Date */}
+                    <div className="w-48">
+                      <DateInput
+                        label="من تاريخ"
+                        value={fromDate}
+                        onChange={setFromDate}
+                        placeholder="mm/dd/yyyy"
+                      />
+                    </div>
+
+                    {/* To Date */}
+                    <div className="w-48">
+                      <DateInput
+                        label="إلى تاريخ"
+                        value={toDate}
+                        onChange={setToDate}
+                        placeholder="mm/dd/yyyy"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Filter Actions - Right side */}
+                  <div className="flex items-center gap-4">
+                    <button
+                      onClick={() => setTransactionsCurrentPage(1)}
+                      className="flex items-center gap-2 px-4 py-2 bg-[#5A66C1] text-white rounded-lg hover:bg-[#4a56b1] transition-colors text-sm font-medium"
+                    >
+                      <Search className="w-4 h-4" />
+                      بحث
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Transactions Table Section */}
+          <div className="bg-white rounded-xl p-6" style={{ border: '1px solid #e5e7eb' }}>
+            {/* Table Header */}
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">جميع التحويلات المالية</h2>
+                <p className="text-gray-600 text-sm mt-1">عرض تفصيلي لجميع عمليات التحويل</p>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="w-64">
+                  <SearchBar
+                    placeholder="البحث في الجدول..."
+                    onSearch={setTransactionsSearchQuery}
+                    className="w-full"
+                  />
+                </div>
+                <ExportButton
+                  onExport={handleTransactionsExport}
+                  buttonText="تصدير Excel"
+                  showExcel={true}
+                  showPDF={false}
+                  showCSV={false}
+                />
+              </div>
+            </div>
+            
+            <div className="mb-6">
+              <Table
+                columns={transactionsTableColumns}
+                data={paginatedTransactions}
+                className="w-full"
+                headerClassName="bg-gray-50"
+                rowClassName="hover:bg-gray-50"
+                cellClassName="text-right"
+              />
+            </div>
+
+            {/* Pagination */}
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-gray-600">
+                عرض {paginatedTransactions.length > 0 ? (transactionsCurrentPage - 1) * transactionsItemsPerPage + 1 : 0} إلى{" "}
+                {(transactionsCurrentPage - 1) * transactionsItemsPerPage + paginatedTransactions.length} من{" "}
+                {filteredTransactions.length} نتيجة
+              </div>
+              <Pagination
+                currentPage={transactionsCurrentPage}
+                totalPages={transactionsTotalPages}
+                onPageChange={setTransactionsCurrentPage}
+              />
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Default View */
+        <>
 
       {/* Financial Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -525,6 +997,8 @@ export const MainWallet: React.FC = () => {
           />
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 };
