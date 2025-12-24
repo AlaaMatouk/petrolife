@@ -6454,7 +6454,7 @@ export const fetchWalletChargeRequests = async () => {
       const companiesRef = collection(db, "companies-wallets-requests");
       const q = query(companiesRef, orderBy("createdDate", "desc"));
       const snapshot = await getDocs(q);
-      
+
       snapshot.forEach((doc) => {
         allRequestsData.push({
           id: doc.id,
@@ -6470,7 +6470,7 @@ export const fetchWalletChargeRequests = async () => {
       const walletsRef = collection(db, "wallets-requests");
       const q = query(walletsRef, orderBy("createdDate", "desc"));
       const snapshot = await getDocs(q);
-      
+
       snapshot.forEach((doc) => {
         allRequestsData.push({
           id: doc.id,
@@ -6762,7 +6762,9 @@ export const fetchAllAdminWalletRequests = async () => {
 
       // Ensure we have at least basic data before adding
       if (!data.requestedUser && !data.value) {
-        console.warn(`⚠️ Skipping document ${doc.id} from ${source} - missing required fields`);
+        console.warn(
+          `⚠️ Skipping document ${doc.id} from ${source} - missing required fields`
+        );
         return null;
       }
 
@@ -6786,7 +6788,7 @@ export const fetchAllAdminWalletRequests = async () => {
       console.log("📦 Fetching from companies-wallets-requests...");
       const companiesRef = collection(db, "companies-wallets-requests");
       const companiesSnapshot = await getDocs(companiesRef);
-      
+
       companiesSnapshot.forEach((doc) => {
         const processed = processDocument(doc, "company");
         if (processed) {
@@ -6804,14 +6806,16 @@ export const fetchAllAdminWalletRequests = async () => {
       console.log("📦 Fetching from wallets-requests...");
       const walletsRef = collection(db, "wallets-requests");
       const walletsSnapshot = await getDocs(walletsRef);
-      
+
       walletsSnapshot.forEach((doc) => {
         const processed = processDocument(doc, "client");
         if (processed) {
           allRequestsData.push(processed);
         }
       });
-      console.log(`✅ Found ${walletsSnapshot.size} client/individual requests`);
+      console.log(
+        `✅ Found ${walletsSnapshot.size} client/individual requests`
+      );
     } catch (error) {
       console.warn("⚠️ wallets-requests collection not found or error:", error);
       // Continue if collection doesn't exist
@@ -6886,7 +6890,11 @@ export const addRefidToExistingWalletRequests = async (): Promise<number> => {
     );
 
     let totalUpdatedCount = 0;
-    const requestsToUpdate: Array<{ docRef: any; refid: string; collection: string }> = [];
+    const requestsToUpdate: Array<{
+      docRef: any;
+      refid: string;
+      collection: string;
+    }> = [];
 
     // Helper function to check if refid exists in both collections
     const checkRefidUniqueness = async (refid: string): Promise<boolean> => {
@@ -6900,7 +6908,7 @@ export const addRefidToExistingWalletRequests = async (): Promise<number> => {
         const walletsRefCheck = collection(db, "wallets-requests");
         const qWallets = query(walletsRefCheck, where("refid", "==", refid));
         const walletsSnapshot = await getDocs(qWallets);
-        
+
         return companiesSnapshot.empty && walletsSnapshot.empty;
       } catch (error) {
         // If wallets-requests doesn't exist, just check companies
@@ -6913,7 +6921,9 @@ export const addRefidToExistingWalletRequests = async (): Promise<number> => {
       console.log(`📦 Processing ${collectionName}...`);
       const requestsRef = collection(db, collectionName);
       const requestsSnapshot = await getDocs(requestsRef);
-      console.log(`📦 Found ${requestsSnapshot.size} requests in ${collectionName}`);
+      console.log(
+        `📦 Found ${requestsSnapshot.size} requests in ${collectionName}`
+      );
 
       let collectionUpdatedCount = 0;
 
@@ -6985,7 +6995,7 @@ export const addRefidToExistingWalletRequests = async (): Promise<number> => {
     console.log(
       `📝 Updating ${requestsToUpdate.length} wallet requests with refid...`
     );
-    
+
     // Update all requests
     for (const { docRef, refid, collection } of requestsToUpdate) {
       try {
@@ -6995,10 +7005,13 @@ export const addRefidToExistingWalletRequests = async (): Promise<number> => {
           `✅ Updated request ${docRef.id} in ${collection} with refid: ${refid}`
         );
       } catch (error) {
-        console.error(`❌ Error updating request ${docRef.id} in ${collection}:`, error);
+        console.error(
+          `❌ Error updating request ${docRef.id} in ${collection}:`,
+          error
+        );
       }
     }
-    
+
     console.log(
       `✅ Migration completed: ${totalUpdatedCount} wallet requests updated with refid`
     );
@@ -7533,10 +7546,7 @@ export const fetchCurrentClient = async (): Promise<any> => {
 
     // If not found by email, try by id field
     if (querySnapshot.empty && currentUser.uid) {
-      const qById = query(
-        clientsRef,
-        where("id", "==", currentUser.uid)
-      );
+      const qById = query(clientsRef, where("id", "==", currentUser.uid));
       querySnapshot = await getDocs(qById);
     }
 
@@ -13012,10 +13022,10 @@ export const findCompanyByPhoneNumber = async (
     if (snapshot.empty && !exactFormat.startsWith("+")) {
       const withPrefix = `+966 ${exactFormat}`.trim();
       console.log("🔍 Trying with +966 prefix:", withPrefix);
-      
+
       q = query(companiesRef, where("phoneNumber", "==", withPrefix));
       snapshot = await getDocs(q);
-      
+
       if (snapshot.empty) {
         q = query(companiesRef, where("phone", "==", withPrefix));
         snapshot = await getDocs(q);
@@ -13026,10 +13036,10 @@ export const findCompanyByPhoneNumber = async (
     if (snapshot.empty) {
       const cleanPhone = phoneNumber.replace(/[\s\+\-\(\)]/g, "");
       console.log("🔍 Trying with cleaned format:", cleanPhone);
-      
+
       q = query(companiesRef, where("phoneNumber", "==", cleanPhone));
       snapshot = await getDocs(q);
-      
+
       if (snapshot.empty) {
         q = query(companiesRef, where("phone", "==", cleanPhone));
         snapshot = await getDocs(q);
@@ -13044,10 +13054,10 @@ export const findCompanyByPhoneNumber = async (
         if (withoutCountryCode.startsWith("0")) {
           const withoutZero = withoutCountryCode.substring(1);
           console.log("🔍 Trying without leading 0:", withoutZero);
-          
+
           q = query(companiesRef, where("phoneNumber", "==", withoutZero));
           snapshot = await getDocs(q);
-          
+
           if (snapshot.empty) {
             q = query(companiesRef, where("phone", "==", withoutZero));
             snapshot = await getDocs(q);
@@ -13410,7 +13420,7 @@ export const fetchFuelStationsByProvider = async (
         stationCreatedUserId &&
         (stationCreatedUserId === providerEmail ||
           (providerUId && stationCreatedUserId === providerUId));
-      
+
       const matchesByUId =
         stationUId &&
         ((providerUId && stationUId === providerUId) ||
@@ -18470,7 +18480,10 @@ export const approveWalletChargeRequest = async (
 
     console.log("💵 Request Amount:", requestData.value);
     console.log("📦 Collection:", collectionName);
-    console.log("👤 User Type:", isClientRequest ? "Client/Individual" : "Company");
+    console.log(
+      "👤 User Type:",
+      isClientRequest ? "Client/Individual" : "Company"
+    );
 
     // STEP 2: Find the user document (company or client)
     let userDocId: string;
@@ -18486,7 +18499,11 @@ export const approveWalletChargeRequest = async (
       // Try by UID
       let qByUid = query(
         clientsRef,
-        where("uid", "==", requestData.requestedUser?.uid || requestData.requestedUser?.id)
+        where(
+          "uid",
+          "==",
+          requestData.requestedUser?.uid || requestData.requestedUser?.id
+        )
       );
       let clientSnapshot = await getDocs(qByUid);
 
@@ -18510,7 +18527,7 @@ export const approveWalletChargeRequest = async (
     } else {
       // For companies-wallets-requests, find in companies collection
       userCollection = "companies";
-      
+
       if (requestData.companyId) {
         // New requests: Use stored company ID
         console.log("🏢 Using stored Company ID:", requestData.companyId);
@@ -18554,7 +18571,7 @@ export const approveWalletChargeRequest = async (
         userDocId = companySnapshot.docs[0].id;
         console.log("✓ Found Company ID:", userDocId);
       }
-      
+
       userDocRef = doc(db, "companies", userDocId);
     }
 
@@ -18876,7 +18893,9 @@ export const approveCompanyTransferRequest = async (
         "companies",
         requestData.recipientCompanyId
       );
-      const recipientCompanySnap = await transaction.get(recipientCompanyDocRef);
+      const recipientCompanySnap = await transaction.get(
+        recipientCompanyDocRef
+      );
 
       if (!recipientCompanySnap.exists()) {
         throw new Error("Recipient company not found");
@@ -19146,12 +19165,12 @@ export const fetchCompanyTransfersForCompany = async (
 
     // Filter transfers where company is either sender or recipient
     const filteredTransfers = transfers.filter((transfer) => {
-      const isSender = 
+      const isSender =
         transfer.companyId === companyId ||
         transfer.fromCompany?.id === companyId ||
         transfer.fromCompany?.email === companyEmail ||
         transfer.createdUserId === companyEmail;
-      
+
       const isRecipient =
         transfer.recipientCompanyId === companyId ||
         transfer.toCompany?.id === companyId ||
@@ -19358,7 +19377,9 @@ export const submitWalletWithdrawalRequest = async (requestData: {
       // Try to get client data
       client = await fetchCurrentClient();
       if (!client) {
-        throw new Error("User not found. Neither company nor client data exists.");
+        throw new Error(
+          "User not found. Neither company nor client data exists."
+        );
       }
       isClientRequest = true;
       console.log("👤 Client:", client.name);
@@ -19455,20 +19476,21 @@ export const approveWalletWithdrawalRequest = async (
     }
 
     const requestData = requestSnap.data();
-    
+
     // Handle both withdrawaAmount (typo) and withdrawalAmount field names
-    const withdrawalAmount = requestData.withdrawalAmount || requestData.withdrawaAmount;
+    const withdrawalAmount =
+      requestData.withdrawalAmount || requestData.withdrawaAmount;
     console.log("💵 Withdrawal Amount:", withdrawalAmount);
-    
+
     // Validate request data structure
     if (!requestData.requestedUser) {
       throw new Error("Request data is missing requestedUser information");
     }
-    
+
     if (!withdrawalAmount || withdrawalAmount <= 0) {
       throw new Error("Invalid withdrawal amount");
     }
-    
+
     console.log("📋 Request data:", {
       hasCompanyId: !!requestData.companyId,
       companyId: requestData.companyId,
@@ -19517,13 +19539,16 @@ export const approveWalletWithdrawalRequest = async (
     // If companyId not set or invalid, search for company or client
     if (!userDocId) {
       console.log("🔍 Searching for user (company or client) by UID/email...");
-      
+
       // Try to find in companies first
       const companiesRef = collection(db, "companies");
       let companySnapshot: any = null;
 
       if (requestData.requestedUser?.uid) {
-        console.log("🔍 Trying to find company by UID:", requestData.requestedUser.uid);
+        console.log(
+          "🔍 Trying to find company by UID:",
+          requestData.requestedUser.uid
+        );
         const qByUid = query(
           companiesRef,
           where("uid", "==", requestData.requestedUser.uid)
@@ -19535,8 +19560,14 @@ export const approveWalletWithdrawalRequest = async (
       }
 
       // If not found in companies, try by email
-      if ((!companySnapshot || companySnapshot.empty) && requestData.requestedUser?.email) {
-        console.log("🔍 Not found by UID, trying company by email:", requestData.requestedUser.email);
+      if (
+        (!companySnapshot || companySnapshot.empty) &&
+        requestData.requestedUser?.email
+      ) {
+        console.log(
+          "🔍 Not found by UID, trying company by email:",
+          requestData.requestedUser.email
+        );
         const qByEmail = query(
           companiesRef,
           where("email", "==", requestData.requestedUser.email)
@@ -19548,8 +19579,14 @@ export const approveWalletWithdrawalRequest = async (
       }
 
       // If still not found, try by createdUserId
-      if ((!companySnapshot || companySnapshot.empty) && requestData.requestedUser?.email) {
-        console.log("🔍 Not found by email, trying company by createdUserId:", requestData.requestedUser.email);
+      if (
+        (!companySnapshot || companySnapshot.empty) &&
+        requestData.requestedUser?.email
+      ) {
+        console.log(
+          "🔍 Not found by email, trying company by createdUserId:",
+          requestData.requestedUser.email
+        );
         const qByCreatedUserId = query(
           companiesRef,
           where("createdUserId", "==", requestData.requestedUser.email)
@@ -19561,8 +19598,14 @@ export const approveWalletWithdrawalRequest = async (
       }
 
       // If still not found, try by uId (case variation)
-      if ((!companySnapshot || companySnapshot.empty) && requestData.requestedUser?.uid) {
-        console.log("🔍 Not found, trying company by uId (lowercase):", requestData.requestedUser.uid);
+      if (
+        (!companySnapshot || companySnapshot.empty) &&
+        requestData.requestedUser?.uid
+      ) {
+        console.log(
+          "🔍 Not found, trying company by uId (lowercase):",
+          requestData.requestedUser.uid
+        );
         const qByUId = query(
           companiesRef,
           where("uId", "==", requestData.requestedUser.uid)
@@ -19594,7 +19637,10 @@ export const approveWalletWithdrawalRequest = async (
 
         // Try by UID
         if (requestData.requestedUser?.uid) {
-          console.log("🔍 Trying to find client by UID:", requestData.requestedUser.uid);
+          console.log(
+            "🔍 Trying to find client by UID:",
+            requestData.requestedUser.uid
+          );
           const qByUid = query(
             clientsRef,
             where("uid", "==", requestData.requestedUser.uid)
@@ -19606,8 +19652,14 @@ export const approveWalletWithdrawalRequest = async (
         }
 
         // Try by email
-        if ((!clientSnapshot || clientSnapshot.empty) && requestData.requestedUser?.email) {
-          console.log("🔍 Not found by UID, trying client by email:", requestData.requestedUser.email);
+        if (
+          (!clientSnapshot || clientSnapshot.empty) &&
+          requestData.requestedUser?.email
+        ) {
+          console.log(
+            "🔍 Not found by UID, trying client by email:",
+            requestData.requestedUser.email
+          );
           const qByEmail = query(
             clientsRef,
             where("email", "==", requestData.requestedUser.email)
@@ -19619,8 +19671,14 @@ export const approveWalletWithdrawalRequest = async (
         }
 
         // Try by id field
-        if ((!clientSnapshot || clientSnapshot.empty) && requestData.requestedUser?.uid) {
-          console.log("🔍 Not found, trying client by id field:", requestData.requestedUser.uid);
+        if (
+          (!clientSnapshot || clientSnapshot.empty) &&
+          requestData.requestedUser?.uid
+        ) {
+          console.log(
+            "🔍 Not found, trying client by id field:",
+            requestData.requestedUser.uid
+          );
           const qById = query(
             clientsRef,
             where("id", "==", requestData.requestedUser.uid)
@@ -19632,10 +19690,20 @@ export const approveWalletWithdrawalRequest = async (
         }
 
         // Try by document ID directly (uid might be the document ID)
-        if ((!clientSnapshot || clientSnapshot.empty) && requestData.requestedUser?.uid) {
-          console.log("🔍 Not found, trying client by document ID (uid as doc ID):", requestData.requestedUser.uid);
+        if (
+          (!clientSnapshot || clientSnapshot.empty) &&
+          requestData.requestedUser?.uid
+        ) {
+          console.log(
+            "🔍 Not found, trying client by document ID (uid as doc ID):",
+            requestData.requestedUser.uid
+          );
           try {
-            const clientDocRef = doc(db, "clients", requestData.requestedUser.uid);
+            const clientDocRef = doc(
+              db,
+              "clients",
+              requestData.requestedUser.uid
+            );
             const clientDoc = await getDoc(clientDocRef);
             if (clientDoc.exists()) {
               console.log("✅ Found client by document ID");
@@ -19664,15 +19732,28 @@ export const approveWalletWithdrawalRequest = async (
             uid: clientData.uid || clientData.id,
           });
         } else {
-          console.error("❌ User not found in companies or clients collections");
-          console.error("📋 Full request data:", JSON.stringify({
-            id: requestSnap.id,
-            companyId: requestData.companyId,
-            requestedUser: requestData.requestedUser,
-            withdrawalAmount: withdrawalAmount,
-          }, null, 2));
+          console.error(
+            "❌ User not found in companies or clients collections"
+          );
+          console.error(
+            "📋 Full request data:",
+            JSON.stringify(
+              {
+                id: requestSnap.id,
+                companyId: requestData.companyId,
+                requestedUser: requestData.requestedUser,
+                withdrawalAmount: withdrawalAmount,
+              },
+              null,
+              2
+            )
+          );
           throw new Error(
-            `User not found. Requested user: ${requestData.requestedUser?.email || requestData.requestedUser?.uid || "unknown"}. Please ensure the user exists in the companies or clients collection.`
+            `User not found. Requested user: ${
+              requestData.requestedUser?.email ||
+              requestData.requestedUser?.uid ||
+              "unknown"
+            }. Please ensure the user exists in the companies or clients collection.`
           );
         }
       }
@@ -19680,7 +19761,9 @@ export const approveWalletWithdrawalRequest = async (
 
     // Validate that we found a user (company or client)
     if (!userDocId || !userCollection || !userDocRef) {
-      console.error("❌ Failed to find user (company or client) for withdrawal request");
+      console.error(
+        "❌ Failed to find user (company or client) for withdrawal request"
+      );
       console.error("📋 Request data:", {
         id: requestSnap.id,
         companyId: requestData.companyId,
@@ -19688,7 +19771,11 @@ export const approveWalletWithdrawalRequest = async (
         withdrawalAmount: withdrawalAmount,
       });
       throw new Error(
-        `User not found. Requested user: ${requestData.requestedUser?.email || requestData.requestedUser?.uid || "unknown"}. Please ensure the user exists in the companies or clients collection.`
+        `User not found. Requested user: ${
+          requestData.requestedUser?.email ||
+          requestData.requestedUser?.uid ||
+          "unknown"
+        }. Please ensure the user exists in the companies or clients collection.`
       );
     }
 
@@ -19706,7 +19793,9 @@ export const approveWalletWithdrawalRequest = async (
       const requestData = requestSnap.data();
 
       // Validate request status
-      const currentStatus = String(requestData.status || "pending").toLowerCase();
+      const currentStatus = String(
+        requestData.status || "pending"
+      ).toLowerCase();
       if (currentStatus !== "pending") {
         throw new Error(`Request already ${currentStatus}`);
       }
@@ -19721,10 +19810,11 @@ export const approveWalletWithdrawalRequest = async (
 
       const userData = userSnap.data();
       const currentBalance = userData.balance || 0;
-      
+
       // Handle both withdrawaAmount (typo) and withdrawalAmount field names
-      const withdrawalAmountValue = requestData.withdrawalAmount || requestData.withdrawaAmount;
-      
+      const withdrawalAmountValue =
+        requestData.withdrawalAmount || requestData.withdrawaAmount;
+
       if (!withdrawalAmountValue || withdrawalAmountValue <= 0) {
         throw new Error("Invalid withdrawal amount");
       }
@@ -19878,7 +19968,8 @@ export const fetchAllAdminWithdrawalRequests = async () => {
         data.processedBy?.name || data.actionUser?.name || "-";
 
       // Handle both withdrawaAmount (typo) and withdrawalAmount field names
-      const withdrawalAmount = data.withdrawalAmount || data.withdrawaAmount || "-";
+      const withdrawalAmount =
+        data.withdrawalAmount || data.withdrawaAmount || "-";
 
       allRequestsData.push({
         id: doc.id,
@@ -20184,7 +20275,10 @@ export const createBankAccount = async (bankAccountData: {
       ibanNumber: bankAccountData.ibanNumber,
       logoUrl: bankAccountData.logoUrl,
       order: bankAccountData.order,
-      isActive: bankAccountData.isActive !== undefined ? bankAccountData.isActive : true,
+      isActive:
+        bankAccountData.isActive !== undefined
+          ? bankAccountData.isActive
+          : true,
       createdDate: serverTimestamp(),
       createdUserId: currentUser?.email || currentUser?.uid || null,
     };

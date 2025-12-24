@@ -1,11 +1,11 @@
 /**
  * Migration Script: Add balance field to existing clients
- * 
+ *
  * This script updates all client documents in the "clients" collection
  * that are missing the balance field by setting it to 0.
- * 
+ *
  * Run this script once to fix existing clients created before the balance field was added.
- * 
+ *
  * Usage:
  *   npx ts-node scripts/migrateClientBalances.ts
  */
@@ -74,31 +74,39 @@ async function migrateClientBalances() {
       }
     });
 
-    console.log(`\n📋 Clients needing balance field: ${clientsToUpdate.length}`);
+    console.log(
+      `\n📋 Clients needing balance field: ${clientsToUpdate.length}`
+    );
     console.log(`✅ Clients already with balance: ${skippedCount}\n`);
 
     if (clientsToUpdate.length === 0) {
-      console.log("✨ All clients already have the balance field. No migration needed!");
+      console.log(
+        "✨ All clients already have the balance field. No migration needed!"
+      );
       return;
     }
 
     // Confirm before proceeding
     console.log("📝 Clients to be updated:");
     clientsToUpdate.slice(0, 5).forEach((client, index) => {
-      console.log(`  ${index + 1}. ${client.name} (${client.email}) - ID: ${client.id}`);
+      console.log(
+        `  ${index + 1}. ${client.name} (${client.email}) - ID: ${client.id}`
+      );
     });
     if (clientsToUpdate.length > 5) {
       console.log(`  ... and ${clientsToUpdate.length - 5} more\n`);
     }
 
-    console.log("⚠️  WARNING: This will add balance: 0 to all clients listed above.");
+    console.log(
+      "⚠️  WARNING: This will add balance: 0 to all clients listed above."
+    );
     console.log("🔄 Starting update process...\n");
 
     // Update clients in batches
     for (const client of clientsToUpdate) {
       try {
         const clientDocRef = doc(db, "clients", client.id);
-        
+
         // Double-check the client still exists
         const clientDoc = await getDoc(clientDocRef);
         if (!clientDoc.exists()) {
@@ -112,7 +120,9 @@ async function migrateClientBalances() {
         });
 
         updatedCount++;
-        console.log(`✅ Updated ${updatedCount}/${clientsToUpdate.length}: ${client.name} (${client.email})`);
+        console.log(
+          `✅ Updated ${updatedCount}/${clientsToUpdate.length}: ${client.name} (${client.email})`
+        );
       } catch (error) {
         errorCount++;
         console.error(`❌ Error updating client ${client.id}:`, error);
@@ -135,9 +145,10 @@ async function migrateClientBalances() {
     }
 
     if (errorCount > 0) {
-      console.log("\n⚠️  Some updates failed. Please check the errors above and retry if needed.");
+      console.log(
+        "\n⚠️  Some updates failed. Please check the errors above and retry if needed."
+      );
     }
-
   } catch (error) {
     console.error("\n❌ Fatal error during migration:", error);
     throw error;
