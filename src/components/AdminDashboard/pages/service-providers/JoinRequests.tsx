@@ -1,4 +1,5 @@
 import { FileText } from "lucide-react";
+import { useState } from "react";
 import { DataTableSection } from "../../../sections/DataTableSection/DataTableSection";
 import { ROUTES } from "../../../../constants/routes";
 import {
@@ -90,6 +91,12 @@ const fetchRegistrationRequests = async (): Promise<RegistrationRequest[]> => {
 };
 
 export const JoinRequests = () => {
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  const handleRefresh = () => {
+    setRefreshTrigger(prev => prev + 1);
+  };
+
   return (
     <div className="w-full">
       <DataTableSection<RegistrationRequest>
@@ -106,6 +113,8 @@ export const JoinRequests = () => {
         itemsPerPage={10}
         showAddButton={true}
         customActionButtons={true}
+        refreshTrigger={refreshTrigger}
+        onRefresh={handleRefresh}
       />
     </div>
   );

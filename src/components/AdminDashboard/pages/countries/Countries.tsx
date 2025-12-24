@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Table, Pagination, ExportButton, LoadingSpinner } from "../../../shared";
 import { Globe, CirclePlus, MoreVertical, Eye, Trash2, MapPin, Building2, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -180,31 +180,31 @@ const Countries = () => {
     }
   };
 
-  useEffect(() => {
-    const load = async () => {
-      setIsLoading(true);
-      setError(null);
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
 
-      try {
-        const [countriesData, citiesData, areasData] = await Promise.all([
-          fetchAllCountries(),
-          fetchAllCities(),
-          fetchAllAreas(),
-        ]);
+    try {
+      const [countriesData, citiesData, areasData] = await Promise.all([
+        fetchAllCountries(),
+        fetchAllCities(),
+        fetchAllAreas(),
+      ]);
 
-        setCountries(countriesData);
-        setCities(citiesData);
-        setAreas(areasData);
-      } catch (err) {
-        console.error("Failed to load countries/cities:", err);
-        setError("فشل في تحميل بيانات الدول.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    load();
+      setCountries(countriesData);
+      setCities(citiesData);
+      setAreas(areasData);
+    } catch (err) {
+      console.error("Failed to load countries/cities:", err);
+      setError("فشل في تحميل بيانات الدول.");
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const columns = useMemo(
     () => [
@@ -516,7 +516,7 @@ const Countries = () => {
       <div className="flex flex-col items-center justify-center w-full py-20 gap-4">
         <div className="text-red-600 text-lg [direction:rtl]">{error}</div>
         <button
-          onClick={() => window.location.reload()}
+          onClick={load}
           className="px-4 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A55AE] text-white"
         >
           إعادة المحاولة

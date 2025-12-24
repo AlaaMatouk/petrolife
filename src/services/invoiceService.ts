@@ -1082,21 +1082,86 @@ export const fetchInvoiceById = async (
   invoiceId: string
 ): Promise<Invoice | null> => {
   try {
+    // First, try to fetch from invoices collection
     const invoiceRef = doc(db, "invoices", invoiceId);
     const invoiceSnap = await getDoc(invoiceRef);
 
-    if (!invoiceSnap.exists()) {
-      return null;
+    if (invoiceSnap.exists()) {
+      const data = invoiceSnap.data();
+      return {
+        id: invoiceSnap.id,
+        ...data,
+        createdAt: data.createdAt?.toDate
+          ? data.createdAt.toDate()
+          : new Date(data.createdAt || Date.now()),
+      } as Invoice;
     }
 
-    const data = invoiceSnap.data();
-    return {
-      id: invoiceSnap.id,
-      ...data,
-      createdAt: data.createdAt?.toDate
-        ? data.createdAt.toDate()
-        : new Date(data.createdAt || Date.now()),
-    } as Invoice;
+    // If not found in invoices collection, check if it's a subscription payment
+    // Import fetchAllSubscriptionPayments dynamically to avoid circular dependencies
+    const { fetchAllSubscriptionPayments } = await import("./firestore");
+    const subscriptionPayments = await fetchAllSubscriptionPayments();
+    const subscriptionPayment = subscriptionPayments.find(sp => sp.id === invoiceId);
+
+    if (subscriptionPayment) {
+      // Helper function to extract text from language objects
+      const extractText = (value: any): string => {
+        if (!value) return "-";
+        if (typeof value === "string") return value;
+        if (typeof value === "object") {
+          if (value.ar && value.ar.trim() !== "") return value.ar;
+          if (value.en && value.en.trim() !== "") return value.en;
+          if (value.name) {
+            if (typeof value.name === "string" && value.name.trim() !== "") return value.name;
+            if (value.name.ar && value.name.ar.trim() !== "") return value.name.ar;
+            if (value.name.en && value.name.en.trim() !== "") return value.name.en;
+          }
+          return "-";
+        }
+        return String(value);
+      };
+
+      const createdAt = subscriptionPayment.createdDate?.toDate 
+        ? subscriptionPayment.createdDate.toDate() 
+        : subscriptionPayment.createdDate instanceof Date 
+        ? subscriptionPayment.createdDate 
+        : new Date();
+
+      // Transform subscription payment to invoice format
+      return {
+        id: subscriptionPayment.id,
+        type: "Subscription",
+        createdAt,
+        companyData: subscriptionPayment.company || {},
+        clientData: null,
+        items: [{
+          product: extractText(subscriptionPayment.selectedSubscription?.title) || "اشتراك",
+          packageName: extractText(subscriptionPayment.selectedSubscription?.title) || "اشتراك",
+          period: extractText(subscriptionPayment.selectedSubscription?.periodName) || "شهري",
+          periodValueInDays: subscriptionPayment.selectedSubscription?.periodValueInDays || 30,
+          startDate: subscriptionPayment.subscriptionStartDate?.toDate 
+            ? subscriptionPayment.subscriptionStartDate.toDate().toLocaleDateString('ar-SA')
+            : subscriptionPayment.subscriptionStartDate instanceof Date
+            ? subscriptionPayment.subscriptionStartDate.toLocaleDateString('ar-SA')
+            : "",
+          endDate: subscriptionPayment.subscriptionEndDate?.toDate 
+            ? subscriptionPayment.subscriptionEndDate.toDate().toLocaleDateString('ar-SA')
+            : subscriptionPayment.subscriptionEndDate instanceof Date
+            ? subscriptionPayment.subscriptionEndDate.toLocaleDateString('ar-SA')
+            : "",
+          description: extractText(subscriptionPayment.selectedSubscription?.description) || "اشتراك نظام إدارة الأسطول",
+        }],
+        subtotal: (subscriptionPayment.totalPrice || 0) - (subscriptionPayment.vat || 0),
+        vatAmount: subscriptionPayment.vat || 0,
+        total: subscriptionPayment.totalPrice || 0,
+        subscriptionPaymentId: subscriptionPayment.id,
+        invoiceNumber: `SUB-${subscriptionPayment.id.substring(0, 8)}`,
+        refId: subscriptionPayment.id,
+      } as Invoice;
+    }
+
+    // If not found in either collection, return null
+    return null;
   } catch (error) {
     console.error("Error fetching invoice by ID:", error);
     throw error;

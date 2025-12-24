@@ -76,9 +76,9 @@ export const signOutUser = async (): Promise<void> => {
   }
 };
 
-// Format phone number to ensure +966 prefix
+// Format phone number to ensure +966 prefix (no length validation)
 export const formatPhoneNumber = (phone: string): string => {
-  // Remove all spaces, dashes, and special characters
+  // Remove all spaces, dashes, and special characters (except +)
   let cleanedPhone = phone.replace(/[\s\-\(\)]/g, "");
 
   // If phone starts with +966, return as is
@@ -91,11 +91,12 @@ export const formatPhoneNumber = (phone: string): string => {
     return `+${cleanedPhone}`;
   }
 
-  // If phone starts with 05 or 5, remove the leading 0 and add +966
+  // If phone starts with 05, remove the leading 0 and add +966
   if (cleanedPhone.startsWith("05")) {
     return `+966${cleanedPhone.substring(1)}`;
   }
 
+  // If phone starts with 5, add +966 prefix
   if (cleanedPhone.startsWith("5")) {
     return `+966${cleanedPhone}`;
   }
@@ -109,7 +110,7 @@ export const registerUserWithPhoneNumber = async (
   phoneNumber: string
 ): Promise<{ success: boolean; message: string; uid?: string }> => {
   try {
-    // Format phone number to ensure +966 prefix
+    // Format phone number to ensure +966 prefix (no length validation)
     const formattedPhone = formatPhoneNumber(phoneNumber);
 
     console.log("Registering user with phone number:", formattedPhone);

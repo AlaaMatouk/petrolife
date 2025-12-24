@@ -1,15 +1,32 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Table, Pagination, ExportButton, LoadingSpinner } from "../../../shared";
 import { FileText, MoreVertical, Trash2, Eye, Download } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { Input, Select } from "../../../shared/Form";
 import { exportDataTable } from "../../../../services/exportService";
 import { exportInvoiceToPDF } from "../../../../services/invoiceExportService";
 import { useToast } from "../../../../context/ToastContext";
 import { fetchInvoices } from "../../../../services/invoiceService";
+import { fetchAllSubscriptionPayments } from "../../../../services/firestore";
 import { Invoice } from "../../../../types/invoice";
+
+// Helper function to extract text from language objects
+const extractText = (value: any): string => {
+  if (!value) return "-";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    if (value.ar && value.ar.trim() !== "") return value.ar;
+    if (value.en && value.en.trim() !== "") return value.en;
+    if (value.name) {
+      if (typeof value.name === "string" && value.name.trim() !== "") return value.name;
+      if (value.name.ar && value.name.ar.trim() !== "") return value.name.ar;
+      if (value.name.en && value.name.en.trim() !== "") return value.name.en;
+    }
+    return "-";
+  }
+  return String(value);
+};
 
 // Action Menu Component for each row
 interface ActionMenuProps {
@@ -39,11 +56,13 @@ const ActionMenu = ({ item }: ActionMenuProps) => {
 
   const handleAction = async (action: string) => {
     if (action === "view") {
+      // Pass current location as state so we can navigate back
+      const currentPath = location.pathname;
       // Determine route based on invoice type
       if (item.type === "Subscription") {
-        navigate(`/subscription-invoice/${item.id}`);
+        navigate(`/subscription-invoice/${item.id}`, { state: { from: currentPath } });
       } else {
-        navigate(`/fuel-invoice/${item.id}`);
+        navigate(`/fuel-invoice/${item.id}`, { state: { from: currentPath } });
       }
     } else if (action === "download") {
       try {
@@ -177,12 +196,97 @@ const InvoiceReports = () => {
         setIsLoading(true);
       }
       try {
-        const fetchedInvoices = await fetchInvoices();
+        // Fetch both invoices and subscription payments
+        const [fetchedInvoices, subscriptionPayments] = await Promise.all([
+          fetchInvoices(), // This includes subscription invoices from invoices collection
+          fetchAllSubscriptionPayments(), // This gets subscription payments from subscriptions-payment collection
+        ]);
+        
+        console.log("📊 Invoice Reports - Fetched invoices:", fetchedInvoices.length);
+        console.log("📊 Invoice Reports - Fetched subscription payments:", subscriptionPayments.length);
+        
+        // Get subscription payment IDs that already have invoices in the invoices collection
+        const subscriptionPaymentIdsWithInvoices = new Set(
+          fetchedInvoices
+            .filter(inv => inv.type === "Subscription" && inv.subscriptionPaymentId)
+            .map(inv => inv.subscriptionPaymentId)
+        );
+        
+        console.log("📊 Invoice Reports - Subscription payments with existing invoices:", subscriptionPaymentIdsWithInvoices.size);
+        
+        // Transform subscription payments to invoice format (only those without existing invoices)
+        // This ensures we show all subscription payments, even if they don't have invoices yet
+        const subscriptionInvoices: Invoice[] = subscriptionPayments
+          .filter(payment => !subscriptionPaymentIdsWithInvoices.has(payment.id))
+          .map((payment) => {
+          const createdAt = payment.createdDate?.toDate 
+            ? payment.createdDate.toDate() 
+            : payment.createdDate instanceof Date 
+            ? payment.createdDate 
+            : new Date();
+          
+          return {
+            id: payment.id,
+            type: "Subscription",
+            createdAt,
+            companyData: payment.company || {},
+            clientData: null,
+            items: [{
+              product: extractText(payment.selectedSubscription?.title) || "اشتراك",
+              packageName: extractText(payment.selectedSubscription?.title) || "اشتراك",
+              period: extractText(payment.selectedSubscription?.periodName) || "شهري",
+              periodValueInDays: payment.selectedSubscription?.periodValueInDays || 30,
+              startDate: payment.subscriptionStartDate?.toDate 
+                ? payment.subscriptionStartDate.toDate().toLocaleDateString('ar-SA')
+                : payment.subscriptionStartDate instanceof Date
+                ? payment.subscriptionStartDate.toLocaleDateString('ar-SA')
+                : "",
+              endDate: payment.subscriptionEndDate?.toDate 
+                ? payment.subscriptionEndDate.toDate().toLocaleDateString('ar-SA')
+                : payment.subscriptionEndDate instanceof Date
+                ? payment.subscriptionEndDate.toLocaleDateString('ar-SA')
+                : "",
+              description: extractText(payment.selectedSubscription?.description) || "اشتراك نظام إدارة الأسطول",
+            }],
+            subtotal: payment.totalPrice - (payment.vat || 0),
+            vatAmount: payment.vat || 0,
+            total: payment.totalPrice || 0,
+            subscriptionPaymentId: payment.id,
+            invoiceNumber: `SUB-${payment.id.substring(0, 8)}`,
+            refId: payment.id,
+          } as Invoice;
+        });
+        
+        // Combine invoices and subscription invoices
+        const allInvoices = [...fetchedInvoices, ...subscriptionInvoices];
+        
+        // Sort by date (descending - newest first)
+        allInvoices.sort((a, b) => {
+          const dateA = a.createdAt instanceof Date 
+            ? a.createdAt.getTime() 
+            : a.createdAt?.toDate 
+            ? a.createdAt.toDate().getTime() 
+            : typeof a.createdAt === "string" 
+            ? new Date(a.createdAt).getTime() 
+            : 0;
+          const dateB = b.createdAt instanceof Date 
+            ? b.createdAt.getTime() 
+            : b.createdAt?.toDate 
+            ? b.createdAt.toDate().getTime() 
+            : typeof b.createdAt === "string" 
+            ? new Date(b.createdAt).getTime() 
+            : 0;
+          return dateB - dateA; // Descending order (newest first)
+        });
+        
+        console.log("📊 Total invoices (including subscriptions, sorted by date desc):", allInvoices.length);
+        console.log("📊 Subscription invoices added:", subscriptionInvoices.length);
+        
         // Only update state if component is still mounted
         if (isMounted) {
-          setInvoices(fetchedInvoices);
+          setInvoices(allInvoices);
           // Cache the data (convert dates to strings for storage)
-          const dataToCache = fetchedInvoices.map((inv) => ({
+          const dataToCache = allInvoices.map((inv) => ({
             ...inv,
             createdAt: inv.createdAt instanceof Date 
               ? inv.createdAt.toISOString() 

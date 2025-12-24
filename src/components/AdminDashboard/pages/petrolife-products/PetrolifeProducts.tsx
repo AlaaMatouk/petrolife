@@ -267,8 +267,7 @@ const PetrolifeProducts = () => {
       });
       // Reload products data
       await fetchDataWithState(setRawProductsData, setProductsData);
-      // Reload the page to refresh the table
-      window.location.reload();
+      // Data already refreshed above, no need to reload
     } catch (error: any) {
       console.error("Error migrating products:", error);
       addToast({

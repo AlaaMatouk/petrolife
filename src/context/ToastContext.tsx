@@ -17,9 +17,12 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastCounterRef = React.useRef(0);
 
   const addToast = useCallback((toast: Omit<Toast, 'id'>) => {
-    const id = Date.now().toString();
+    // Generate unique ID using timestamp + counter + random number
+    toastCounterRef.current += 1;
+    const id = `${Date.now()}-${toastCounterRef.current}-${Math.random().toString(36).substr(2, 9)}`;
     const newToast = { ...toast, id };
     
     setToasts(prev => [...prev, newToast]);

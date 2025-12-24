@@ -4,7 +4,7 @@ import { Table, ExportButton, LoadingSpinner } from "../../../../components/shar
 import { fetchWalletChargeRequests, addRefidToExistingWalletRequests } from "../../../../services/firestore";
 import { exportDataTable } from "../../../../services/exportService";
 import { useToast } from "../../../../context/ToastContext";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "../../../../config/firebase";
 
 interface TableRow {
@@ -181,27 +181,68 @@ export const ContentSection = ({ currentPage, setTotalPages, selectedTimeFilter,
     checkMigration();
   }, []);
 
-  // Fetch wallet charge requests on mount
+  // Load requests function
+  const loadRequests = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const firestoreRequests = await fetchWalletChargeRequests();
+      const convertedRequests = convertRequestsToTableData(firestoreRequests);
+      setRequests(convertedRequests);
+    } catch (err) {
+      console.error('Error loading wallet charge requests:', err);
+      setError('فشل في تحميل طلبات الشحن');
+      setRequests([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Set up real-time listeners for wallet charge requests
   useEffect(() => {
-    const loadRequests = async () => {
-      setIsLoading(true);
-      setError(null);
-      
-      try {
-        const firestoreRequests = await fetchWalletChargeRequests();
-        const convertedRequests = convertRequestsToTableData(firestoreRequests);
-        setRequests(convertedRequests);
-      } catch (err) {
-        console.error('Error loading wallet charge requests:', err);
-        setError('فشل في تحميل طلبات الشحن');
-        setRequests([]);
-      } finally {
-        setIsLoading(false);
+    // Listen to companies-wallets-requests
+    const companiesRef = collection(db, "companies-wallets-requests");
+    const companiesQuery = query(companiesRef, orderBy("createdDate", "desc"));
+    const unsubscribeCompanies = onSnapshot(
+      companiesQuery,
+      () => {
+        loadRequests();
+      },
+      (error) => {
+        console.error("Error listening to companies-wallets-requests:", error);
+      }
+    );
+
+    // Listen to wallets-requests
+    let unsubscribeWallets: (() => void) | null = null;
+    try {
+      const walletsRef = collection(db, "wallets-requests");
+      const walletsQuery = query(walletsRef, orderBy("createdDate", "desc"));
+      unsubscribeWallets = onSnapshot(
+        walletsQuery,
+        () => {
+          loadRequests();
+        },
+        (error) => {
+          console.warn("Error listening to wallets-requests:", error);
+        }
+      );
+    } catch (error) {
+      console.warn("wallets-requests collection may not exist:", error);
+    }
+
+    // Initial load
+    loadRequests();
+
+    // Cleanup
+    return () => {
+      unsubscribeCompanies();
+      if (unsubscribeWallets) {
+        unsubscribeWallets();
       }
     };
-    
-    loadRequests();
-  }, []);
+  }, [loadRequests]);
 
   // Handle migration: Add refid to existing wallet charge requests
   const handleAddRefidToExisting = async () => {

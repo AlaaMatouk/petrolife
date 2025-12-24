@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Table, Pagination, ExportButton, LoadingSpinner } from "../../../shared";
 import { Car, CirclePlus, MoreVertical, Eye, Trash2, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -256,60 +256,61 @@ const Vehicles = () => {
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const itemsPerPage = 10;
 
+  // Load data function
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const carTypes = await fetchCarTypes();
+
+      // Fetch creator names for all car types
+      const vehiclesWithCreators = await Promise.all(
+        carTypes.map(async (carType, index) => {
+          const creatorEmail = carType.createdUserId;
+          let creatorName = "غير محدد";
+
+          if (creatorEmail) {
+            try {
+              const name = await fetchUserDisplayNameByEmail(creatorEmail);
+              creatorName = name || creatorEmail;
+            } catch (err) {
+              console.error(
+                `Error fetching creator name for ${creatorEmail}:`,
+                err
+              );
+              creatorName = creatorEmail;
+            }
+          }
+
+          return {
+            id: carType.docId || carType.id || String(index + 1),
+            refid: String(index + 1).padStart(8, "0"),
+            logo: carType.carModel?.carModelImageUrl || null,
+            brand: formatValue(carType.carModel?.name?.ar),
+            model: formatValue(carType.name?.ar),
+            year: formatValue(carType.year),
+            creator: {
+              name: creatorName,
+            },
+            creationDate: formatDateValue(carType.createdDate),
+          } as CarTypeRow;
+        })
+      );
+
+      setVehicles(vehiclesWithCreators);
+    } catch (err) {
+      console.error("Error loading car types:", err);
+      setError("فشل في تحميل بيانات المركبات.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   // Fetch data on component mount
   useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      setError(null);
-
-      try {
-        const carTypes = await fetchCarTypes();
-
-        // Fetch creator names for all car types
-        const vehiclesWithCreators = await Promise.all(
-          carTypes.map(async (carType, index) => {
-            const creatorEmail = carType.createdUserId;
-            let creatorName = "غير محدد";
-
-            if (creatorEmail) {
-              try {
-                const name = await fetchUserDisplayNameByEmail(creatorEmail);
-                creatorName = name || creatorEmail;
-              } catch (err) {
-                console.error(
-                  `Error fetching creator name for ${creatorEmail}:`,
-                  err
-                );
-                creatorName = creatorEmail;
-              }
-            }
-
-            return {
-              id: carType.docId || carType.id || String(index + 1),
-              refid: String(index + 1).padStart(8, "0"),
-              logo: carType.carModel?.carModelImageUrl || null,
-              brand: formatValue(carType.carModel?.name?.ar),
-              model: formatValue(carType.name?.ar),
-              year: formatValue(carType.year),
-              creator: {
-                name: creatorName,
-              },
-              creationDate: formatDateValue(carType.createdDate),
-            } as CarTypeRow;
-          })
-        );
-
-        setVehicles(vehiclesWithCreators);
-      } catch (err) {
-        console.error("Error loading car types:", err);
-        setError("فشل في تحميل بيانات المركبات.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     loadData();
-  }, []);
+  }, [loadData]);
 
   const columns = useMemo(
     () => [
@@ -517,7 +518,7 @@ const Vehicles = () => {
       <div className="flex flex-col items-center justify-center w-full py-20 gap-4">
         <div className="text-red-600 text-lg [direction:rtl]">{error}</div>
         <button
-          onClick={() => window.location.reload()}
+          onClick={loadData}
           className="px-4 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white"
         >
           إعادة المحاولة

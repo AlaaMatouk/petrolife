@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 // Global flag to prevent multiple initializations
 declare global {
@@ -18,7 +18,7 @@ const ZaiaChatWidget = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
 
-  useEffect(() => {
+  const initializeWidget = useCallback(async () => {
     // Guard: Prevent duplicate initialization
     if (window.__ZAIA_INITIALIZED__ || initializingRef.current) {
       setIsLoading(false);
@@ -26,59 +26,61 @@ const ZaiaChatWidget = () => {
     }
 
     initializingRef.current = true;
+    setIsLoading(true);
+    setHasError(false);
 
-    const initializeWidget = async () => {
-      try {
-        // Check if script already exists
-        let script = document.querySelector(
-          'script[src="https://chatbot.zaiasystems.com/widget/zaia-chat.js"]'
-        ) as HTMLScriptElement;
+    try {
+      // Check if script already exists
+      let script = document.querySelector(
+        'script[src="https://chatbot.zaiasystems.com/widget/zaia-chat.js"]'
+      ) as HTMLScriptElement;
 
-        if (!script) {
-          // Create script only if it doesn't exist
-          script = document.createElement("script");
-          script.src = "https://chatbot.zaiasystems.com/widget/zaia-chat.js";
-          script.setAttribute(
-            "data-bot-id",
-            "931448e3-41ae-4919-8289-ab529085bcdd"
-          );
-          script.async = true;
+      if (!script) {
+        // Create script only if it doesn't exist
+        script = document.createElement("script");
+        script.src = "https://chatbot.zaiasystems.com/widget/zaia-chat.js";
+        script.setAttribute(
+          "data-bot-id",
+          "931448e3-41ae-4919-8289-ab529085bcdd"
+        );
+        script.async = true;
 
-          // Wait for script to load
-          await new Promise<void>((resolve, reject) => {
-            script.onerror = () => {
-              console.error("Failed to load ZAIA chatbot widget");
-              reject(new Error("Script load failed"));
-            };
-            script.onload = () => resolve();
-            document.body.appendChild(script);
-          });
-        }
-
-        // Wait for widget to render in DOM
-        await waitForWidget();
-
-        // Embed the widget into our container
-        embedWidget();
-
-        // Mark as initialized globally
-        window.__ZAIA_INITIALIZED__ = true;
-        setIsLoading(false);
-      } catch (error) {
-        console.error("Widget initialization failed:", error);
-        setHasError(true);
-        setIsLoading(false);
-        initializingRef.current = false;
+        // Wait for script to load
+        await new Promise<void>((resolve, reject) => {
+          script.onerror = () => {
+            console.error("Failed to load ZAIA chatbot widget");
+            reject(new Error("Script load failed"));
+          };
+          script.onload = () => resolve();
+          document.body.appendChild(script);
+        });
       }
-    };
 
+      // Wait for widget to render in DOM
+      await waitForWidget();
+
+      // Embed the widget into our container
+      embedWidget();
+
+      // Mark as initialized globally
+      window.__ZAIA_INITIALIZED__ = true;
+      setIsLoading(false);
+    } catch (error) {
+      console.error("Widget initialization failed:", error);
+      setHasError(true);
+      setIsLoading(false);
+      initializingRef.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
     initializeWidget();
 
     // Cleanup only on unmount (not on re-render)
     return () => {
       // Intentionally minimal - don't cleanup global state on re-render
     };
-  }, []); // Empty deps - run once only
+  }, [initializeWidget]); // Empty deps - run once only
 
   const waitForWidget = (): Promise<void> => {
     return new Promise((resolve) => {
@@ -196,7 +198,12 @@ const ZaiaChatWidget = () => {
           </p>
         </div>
         <button
-          onClick={() => window.location.reload()}
+          onClick={() => {
+            // Reset state and retry initialization
+            window.__ZAIA_INITIALIZED__ = false;
+            initializingRef.current = false;
+            initializeWidget();
+          }}
           className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
         >
           إعادة المحاولة

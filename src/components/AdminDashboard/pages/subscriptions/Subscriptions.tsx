@@ -6,7 +6,7 @@ import {
   fetchSubscriptions,
   deleteSubscription,
 } from "../../../../services/firestore";
-import { LoadingSpinner, ToggleButton } from "../../../shared";
+import { LoadingSpinner } from "../../../shared";
 import { useToast } from "../../../../context/ToastContext";
 
 const Subscriptions = () => {
@@ -157,8 +157,18 @@ const Subscriptions = () => {
     setSelectedCardId(null);
   };
 
-  const getBadgeColorClass = (status: string) => {
-    const statusLower = status.toLowerCase().trim();
+  const getBadgeColorClass = (status: string | any) => {
+    // Ensure we have a string value
+    let statusStr = "";
+    if (typeof status === "string") {
+      statusStr = status;
+    } else if (status && typeof status === "object") {
+      statusStr = status.ar || status.en || String(status) || "";
+    } else {
+      statusStr = String(status || "");
+    }
+    
+    const statusLower = statusStr.toLowerCase().trim();
 
     // موصى به → برتقالي
     if (statusLower.includes("موصى") || statusLower.includes("recommended")) {
@@ -223,17 +233,34 @@ const Subscriptions = () => {
       </div>
 
       {/* Subscription Type Toggle */}
-      <div className="w-full flex items-center justify-center gap-4" dir="rtl">
-        <span className="text-gray-700 font-medium">الاشتراكات الشهرية</span>
-        <ToggleButton
-          isOn={subscriptionType === "annual"}
-          onToggle={(isOn) =>
-            handleSubscriptionTypeChange(isOn ? "annual" : "monthly")
-          }
-          color="green"
-          size="md"
-        />
-        <span className="text-gray-700 font-medium">الاشتراكات السنوية</span>
+      <div className="w-full flex items-center justify-center">
+        <div className="flex flex-col gap-3 max-w-md w-full">
+          <label className="text-sm font-medium text-gray-700 text-center">نوع الاشتراك</label>
+          <div className="flex items-center gap-0 bg-gray-100 rounded-xl p-1 w-full">
+            <button
+              type="button"
+              onClick={() => handleSubscriptionTypeChange("annual")}
+              className={`px-6 py-3 rounded-xl font-medium transition-all flex-1 ${
+                subscriptionType === "annual"
+                  ? "bg-green-500 text-white shadow-md"
+                  : "bg-transparent text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              الاشتراكات السنوية
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSubscriptionTypeChange("monthly")}
+              className={`px-6 py-3 rounded-xl font-medium transition-all flex-1 ${
+                subscriptionType === "monthly"
+                  ? "bg-green-500 text-white shadow-md"
+                  : "bg-transparent text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              الاشتراكات الشهرية
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Loading State */}
@@ -307,16 +334,14 @@ const Subscriptions = () => {
                 {subscription.status && (
                   <div
                     className={`absolute top-4 left-4 px-3 py-1 rounded-full text-xs font-medium ${getBadgeColorClass(
-                      subscription.status.ar ||
-                        subscription.status.en ||
-                        subscription.status ||
-                        ""
+                      subscription.status
                     )}`}
                   >
-                    {subscription.status.ar ||
-                      subscription.status.en ||
-                      subscription.status ||
-                      ""}
+                    {typeof subscription.status === "string"
+                      ? subscription.status
+                      : subscription.status.ar ||
+                        subscription.status.en ||
+                        ""}
                   </div>
                 )}
 

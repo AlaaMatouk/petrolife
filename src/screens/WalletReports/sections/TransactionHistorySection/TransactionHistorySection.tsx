@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Table, Pagination, ExportButton, RTLSelect, LoadingSpinner } from "../../../../components/shared";
 import { walletReportsTransactionData } from "../../../../constants/data";
 import { Wallet } from "lucide-react";
-import { fetchCompaniesDriversTransfer, fetchWalletChargeRequests, addRefidToExistingDriverTransfers, addRefidToExistingWalletRequests } from "../../../../services/firestore";
+import { fetchCompaniesDriversTransfer, fetchWalletChargeRequests, addRefidToExistingDriverTransfers, addRefidToExistingWalletRequests, fetchAllSubscriptionPayments } from "../../../../services/firestore";
 import { useToast } from "../../../../context/ToastContext";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../../../config/firebase";
@@ -15,7 +15,7 @@ interface TransactionData {
   date: string;
   balance: string;
   debit: string;
-  sourceType?: 'driver-transfer' | 'wallet-charge';
+  sourceType?: 'driver-transfer' | 'wallet-charge' | 'subscription-payment';
   rawDate?: any; // Store raw date for sorting
 }
 
@@ -174,6 +174,44 @@ const convertWalletChargeToTransactions = (requests: any[]): TransactionData[] =
       
       // Store source type for filtering
       sourceType: 'wallet-charge' as const,
+      
+      // Store raw date for sorting
+      rawDate: rawDate,
+    };
+  });
+};
+
+// Convert subscription payments to transaction format
+const convertSubscriptionPaymentsToTransactions = (subscriptions: any[]): TransactionData[] => {
+  return subscriptions.map((subscription) => {
+    const rawDate = subscription.createdDate || subscription.paymentDate || subscription.date;
+    
+    // Extract subscription plan name
+    const planName = subscription.planName?.ar || subscription.planName?.en || subscription.planName || 'اشتراك';
+    const planType = subscription.planType === 'monthly' ? 'شهري' : subscription.planType === 'yearly' ? 'سنوي' : '';
+    const operationName = planType ? `${planName} ${planType}` : planName;
+    
+    return {
+      // رقم العملية = refid if available, otherwise fall back to id
+      id: subscription.refid || subscription.id || '-',
+      
+      // اسم العملية = subscription plan name
+      operationName: operationName || 'اشتراك',
+      
+      // نوع العملية = "اشتراك" for subscriptions
+      operationType: 'اشتراك',
+      
+      // التاريخ = createdDate or paymentDate
+      date: formatDate(rawDate),
+      
+      // الرصيد = company balance at time of payment
+      balance: formatNumber(subscription.companyBalance || subscription.balance),
+      
+      // مدين = amount or price
+      debit: formatNumber(subscription.amount || subscription.price || subscription.totalAmount),
+      
+      // Store source type for filtering
+      sourceType: 'subscription-payment' as const,
       
       // Store raw date for sorting
       rawDate: rawDate,
@@ -434,18 +472,20 @@ export const TransactionHistorySection = (): JSX.Element => {
       setError(null);
       
       try {
-        // Fetch both data sources
-        const [transfers, walletCharges] = await Promise.all([
+        // Fetch all data sources including subscription payments
+        const [transfers, walletCharges, subscriptionPayments] = await Promise.all([
           fetchCompaniesDriversTransfer(),
-          fetchWalletChargeRequests()
+          fetchWalletChargeRequests(),
+          fetchAllSubscriptionPayments()
         ]);
         
-        // Convert both to transaction format
+        // Convert all to transaction format
         const transferTransactions = convertTransfersToTransactions(transfers);
         const chargeTransactions = convertWalletChargeToTransactions(walletCharges);
+        const subscriptionTransactions = convertSubscriptionPaymentsToTransactions(subscriptionPayments);
         
-        // Combine both arrays
-        const allTransactions = [...transferTransactions, ...chargeTransactions];
+        // Combine all arrays
+        const allTransactions = [...transferTransactions, ...chargeTransactions, ...subscriptionTransactions];
         
         // Sort by raw date (newest first) - descending order
         allTransactions.sort((a, b) => {
@@ -462,6 +502,7 @@ export const TransactionHistorySection = (): JSX.Element => {
         console.log('================================');
         console.log('Driver Transfers:', transferTransactions.length);
         console.log('Wallet Charges:', chargeTransactions.length);
+        console.log('Subscription Payments:', subscriptionTransactions.length);
         console.log('Total Transactions:', allTransactions.length);
         console.log('================================\n');
         

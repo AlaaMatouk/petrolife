@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { DataTableSection } from "../../../sections/DataTableSection/DataTableSection";
 import { FileText } from "lucide-react";
 import { exportFinancialReport, FinancialReportData, FinancialReportFilters, getFilteredFinancialData } from "../../../../services/exportService";
-import { fetchAllOrders } from "../../../../services/firestore";
+import { fetchAllOrders, fetchAllSubscriptionPayments } from "../../../../services/firestore";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
 import { db } from "../../../../config/firebase";
 
@@ -169,28 +169,104 @@ const extractText = (value: any): string => {
 
 // Transform orders data to match table structure
 const transformOrdersData = (orders: any[]) => {
-  return orders.map((order) => ({
-    id: order.id,
-    refId: order.refId || order.id,
-    clientName:
-      extractText(order.client?.name) ||
-      order.assignedDriver?.createdUserId ||
-      "-",
-    driverName: extractText(order.assignedDriver?.name) || "-",
-    carType: extractText(order.assignedDriver?.car?.carType?.name) || "-",
-    carNumber: extractText(order.assignedDriver?.car?.plateNumber) || "-",
-    productName: extractText(order.service?.title) || "-",
-    productNumber: extractText(order.service?.serviceId) || "-",
-    quantity: order.totalLitre || "-",
-    unit: extractText(order.service?.unit) || "-",
-    // Additional fields with correct paths
-    serviceFees: order.selectedOption?.companyPrice || "-",
-    serviceProviderName: extractText(order.carStation?.name) || "-",
-    productType: extractText(order.selectedOption?.category?.name) || "-",
-    productNumberFromCategory:
-      order.selectedOption?.category?.onyxProductId || "-",
-  }));
+  return orders.map((order) => {
+    // Extract date for sorting
+    const orderDate = order.orderDate?.toDate 
+      ? order.orderDate.toDate() 
+      : order.createdDate?.toDate 
+      ? order.createdDate.toDate() 
+      : order.orderDate instanceof Date 
+      ? order.orderDate 
+      : order.createdDate instanceof Date 
+      ? order.createdDate 
+      : new Date(0); // Fallback to epoch if no date
+    
+    return {
+      id: order.id,
+      refId: order.refId || order.id,
+      clientName:
+        extractText(order.client?.name) ||
+        order.assignedDriver?.createdUserId ||
+        "-",
+      driverName: extractText(order.assignedDriver?.name) || "-",
+      carType: extractText(order.assignedDriver?.car?.carType?.name) || "-",
+      carNumber: extractText(order.assignedDriver?.car?.plateNumber) || "-",
+      productName: extractText(order.service?.title) || "-",
+      productNumber: extractText(order.service?.serviceId) || "-",
+      quantity: order.totalLitre || "-",
+      unit: extractText(order.service?.unit) || "-",
+      // Additional fields with correct paths
+      serviceFees: order.selectedOption?.companyPrice || "-",
+      serviceProviderName: extractText(order.carStation?.name) || "-",
+      productType: extractText(order.selectedOption?.category?.name) || "-",
+      productNumberFromCategory:
+        order.selectedOption?.category?.onyxProductId || "-",
+      // Add date field for sorting
+      _sortDate: orderDate,
+    };
+  });
 };
+
+// Transform subscription payments data to match table structure
+const transformSubscriptionPaymentsData = (subscriptionPayments: any[]) => {
+  return subscriptionPayments.map((subscription) => {
+    // Extract date for sorting
+    const subscriptionDate = subscription.createdDate?.toDate 
+      ? subscription.createdDate.toDate() 
+      : subscription.paymentDate?.toDate 
+      ? subscription.paymentDate.toDate() 
+      : subscription.createdDate instanceof Date 
+      ? subscription.createdDate 
+      : subscription.paymentDate instanceof Date 
+      ? subscription.paymentDate 
+      : new Date(0); // Fallback to epoch if no date
+    
+    // Extract plan name
+    const planName = subscription.planName?.ar || 
+                     subscription.planName?.en || 
+                     subscription.planName || 
+                     'اشتراك';
+    
+    // Extract plan type
+    const planType = subscription.planType === 'monthly' 
+      ? 'اشتراك شهري' 
+      : subscription.planType === 'yearly' 
+      ? 'اشتراك سنوي' 
+      : 'اشتراك';
+    
+    // Extract client/company name
+    const clientName = extractText(subscription.company?.name) || 
+                       extractText(subscription.client?.name) ||
+                       extractText(subscription.user?.name) ||
+                       "-";
+    
+    // Extract amount/price
+    const amount = subscription.amount || 
+                   subscription.price || 
+                   subscription.totalAmount || 
+                   "-";
+    
+    return {
+      id: subscription.id,
+      refId: subscription.refid || subscription.refId || subscription.id,
+      clientName: clientName,
+      driverName: "-", // Subscriptions don't have drivers
+      carType: "-", // Subscriptions don't have cars
+      carNumber: "-", // Subscriptions don't have cars
+      productName: planName,
+      productNumber: String(subscription.planId || "-"),
+      quantity: "-", // Subscriptions don't have quantity
+      unit: "-", // Subscriptions don't have units
+      serviceFees: amount,
+      serviceProviderName: "-", // Subscriptions don't have service providers
+      productType: planType,
+      productNumberFromCategory: "-", // Subscriptions don't have category product numbers
+      // Add date field for sorting
+      _sortDate: subscriptionDate,
+    };
+  });
+};
+
 
 // Table columns configuration
 const tableColumns = [
@@ -253,8 +329,35 @@ const tableColumns = [
 // Function to fetch and transform orders data
 const fetchFinancialData = async () => {
   try {
-    const orders = await fetchAllOrders();
-    return transformOrdersData(orders);
+    // Fetch both orders and subscription payments
+    const [orders, subscriptionPayments] = await Promise.all([
+      fetchAllOrders(),
+      fetchAllSubscriptionPayments()
+    ]);
+    
+    console.log("📊 Financial Report - Fetched orders:", orders.length);
+    console.log("📊 Financial Report - Fetched subscription payments:", subscriptionPayments.length);
+    
+    // Transform both
+    const transformedOrders = transformOrdersData(orders);
+    const transformedSubscriptions = transformSubscriptionPaymentsData(subscriptionPayments);
+    
+    console.log("📊 Financial Report - Transformed orders:", transformedOrders.length);
+    console.log("📊 Financial Report - Transformed subscriptions:", transformedSubscriptions.length);
+    
+    // Combine both arrays
+    const allData = [...transformedOrders, ...transformedSubscriptions];
+    
+    // Sort by date (descending - newest first)
+    allData.sort((a, b) => {
+      const dateA = a._sortDate?.getTime() || 0;
+      const dateB = b._sortDate?.getTime() || 0;
+      return dateB - dateA; // Descending order (newest first)
+    });
+    
+    console.log("📊 Financial Report - Total records (sorted by date desc):", allData.length);
+    
+    return allData;
   } catch (error) {
     console.error("Error fetching financial data:", error);
     throw error;
@@ -291,53 +394,86 @@ export const FinancialReport: React.FC = () => {
           {
             label: "اسم المنتج",
             value: "الكل",
-            options: [
-              { value: "الكل", label: "الكل" },
-              ...services
-                .map((service) => ({
-                  value: extractText(service.title),
-                  label: extractText(service.title),
-                }))
-                .filter((option) => option.value !== "-"),
-            ],
+            options: (() => {
+              const allOptions = [
+                { value: "الكل", label: "الكل" },
+                ...services
+                  .map((service) => ({
+                    value: extractText(service.title),
+                    label: extractText(service.title),
+                  }))
+                  .filter((option) => option.value !== "-"),
+              ];
+              // Deduplicate by value, keeping first occurrence
+              const seen = new Set<string>();
+              return allOptions.filter((option) => {
+                if (seen.has(option.value)) {
+                  return false;
+                }
+                seen.add(option.value);
+                return true;
+              });
+            })(),
           },
           {
             label: "اسم العميل",
             value: "الكل",
-            options: [
-              { value: "الكل", label: "الكل" },
-              ...companies
-                .map((company) => ({
-                  value: extractText(company.name),
-                  label: extractText(company.name),
-                }))
-                .filter((option) => option.value !== "-"),
-              ...clients
-                .map((client) => ({
-                  value: extractText(client.name),
-                  label: extractText(client.name),
-                }))
-                .filter((option) => option.value !== "-"),
-            ],
+            options: (() => {
+              const allOptions = [
+                { value: "الكل", label: "الكل" },
+                ...companies
+                  .map((company) => ({
+                    value: extractText(company.name),
+                    label: extractText(company.name),
+                  }))
+                  .filter((option) => option.value !== "-"),
+                ...clients
+                  .map((client) => ({
+                    value: extractText(client.name),
+                    label: extractText(client.name),
+                  }))
+                  .filter((option) => option.value !== "-"),
+              ];
+              // Deduplicate by value, keeping first occurrence
+              const seen = new Set<string>();
+              return allOptions.filter((option) => {
+                if (seen.has(option.value)) {
+                  return false;
+                }
+                seen.add(option.value);
+                return true;
+              });
+            })(),
           },
           {
             label: "كود العميل",
             value: "الكل",
-            options: [
-              { value: "الكل", label: "الكل" },
-              ...companies
-                .map((company) => ({
-                  value: company.refid || company.uId || company.id,
-                  label: company.refid || company.uId || company.id,
-                }))
-                .filter((option) => option.value),
-              ...clients
-                .map((client) => ({
-                  value: client.refid || client.uId || client.id,
-                  label: client.refid || client.uId || client.id,
-                }))
-                .filter((option) => option.value),
-            ],
+            options: (() => {
+              const allOptions = [
+                { value: "الكل", label: "الكل" },
+                ...companies
+                  .map((company) => ({
+                    value: company.refid || company.uId || company.id,
+                    label: company.refid || company.uId || company.id,
+                  }))
+                  .filter((option) => option.value),
+                ...clients
+                  .map((client) => ({
+                    value: client.refid || client.uId || client.id,
+                    label: client.refid || client.uId || client.id,
+                  }))
+                  .filter((option) => option.value),
+              ];
+              // Deduplicate by value, keeping first occurrence
+              const seen = new Set<string>();
+              return allOptions.filter((option) => {
+                if (seen.has(option.value)) {
+                  return false;
+                }
+                seen.add(option.value);
+                return true;
+              });
+            })(),
           },
           {
             label: "نوع التقرير",
@@ -362,34 +498,56 @@ export const FinancialReport: React.FC = () => {
           {
             label: "كود السائق",
             value: "الكل",
-            options: [
-              { value: "الكل", label: "الكل" },
-              ...drivers
-                .map((driver) => ({
-                  value: driver.refid || driver.uId || driver.id,
-                  label: driver.refid || driver.uId || driver.id,
-                }))
-                .filter((option) => option.value),
-            ],
+            options: (() => {
+              const allOptions = [
+                { value: "الكل", label: "الكل" },
+                ...drivers
+                  .map((driver) => ({
+                    value: driver.refid || driver.uId || driver.id,
+                    label: driver.refid || driver.uId || driver.id,
+                  }))
+                  .filter((option) => option.value),
+              ];
+              // Deduplicate by value, keeping first occurrence
+              const seen = new Set<string>();
+              return allOptions.filter((option) => {
+                if (seen.has(option.value)) {
+                  return false;
+                }
+                seen.add(option.value);
+                return true;
+              });
+            })(),
           },
           {
             label: "رقم المركبة",
             value: "الكل",
-            options: [
-              { value: "الكل", label: "الكل" },
-              ...companiesCars
-                .map((car) => ({
-                  value: extractText(car.plateNumber),
-                  label: extractText(car.plateNumber),
-                }))
-                .filter((option) => option.value !== "-"),
-              ...clientCars
-                .map((car) => ({
-                  value: extractText(car.carNumber),
-                  label: extractText(car.carNumber),
-                }))
-                .filter((option) => option.value !== "-"),
-            ],
+            options: (() => {
+              const allOptions = [
+                { value: "الكل", label: "الكل" },
+                ...companiesCars
+                  .map((car) => ({
+                    value: extractText(car.plateNumber),
+                    label: extractText(car.plateNumber),
+                  }))
+                  .filter((option) => option.value !== "-"),
+                ...clientCars
+                  .map((car) => ({
+                    value: extractText(car.carNumber),
+                    label: extractText(car.carNumber),
+                  }))
+                  .filter((option) => option.value !== "-"),
+              ];
+              // Deduplicate by value, keeping first occurrence
+              const seen = new Set<string>();
+              return allOptions.filter((option) => {
+                if (seen.has(option.value)) {
+                  return false;
+                }
+                seen.add(option.value);
+                return true;
+              });
+            })(),
           },
         ];
 
@@ -410,19 +568,25 @@ export const FinancialReport: React.FC = () => {
     filters: Record<string, string>,
     format: "excel" | "pdf"
   ) => {
-    // Fetch all orders for admin (not filtered by company)
-    const orders = await fetchAllOrders();
+    // Fetch all orders and subscription payments for admin (not filtered by company)
+    const [orders, subscriptionPayments] = await Promise.all([
+      fetchAllOrders(),
+      fetchAllSubscriptionPayments()
+    ]);
     
-    // Create a map of order IDs from filtered data
-    const filteredOrderIds = new Set(
+    // Create a map of IDs from filtered data
+    const filteredIds = new Set(
       data.map(item => item.id).filter(Boolean)
     );
     
     // Filter orders to only include those in the current filtered view
-    const filteredOrders = orders.filter(order => filteredOrderIds.has(order.id));
+    const filteredOrders = orders.filter(order => filteredIds.has(order.id));
+    
+    // Filter subscription payments to only include those in the current filtered view
+    const filteredSubscriptions = subscriptionPayments.filter(sub => filteredIds.has(sub.id));
     
     // Transform orders to FinancialReportData format
-    const financialData: FinancialReportData[] = filteredOrders.map((order) => {
+    const ordersFinancialData: FinancialReportData[] = filteredOrders.map((order) => {
       // Extract city from order
       const city = 
         order.document?.carStation?.address ||
@@ -489,6 +653,48 @@ export const FinancialReport: React.FC = () => {
         driverCode: String(driverCode),
         rawDate: date,
       };
+    });
+    
+    // Transform subscription payments to FinancialReportData format
+    const subscriptionsFinancialData: FinancialReportData[] = filteredSubscriptions.map((subscription) => {
+      const planName = subscription.planName?.ar || subscription.planName?.en || subscription.planName || 'اشتراك';
+      const date = subscription.createdDate || subscription.paymentDate || null;
+      
+      return {
+        city: "-", // Subscriptions don't have city
+        stationName: "-", // Subscriptions don't have station
+        date: date ? (date.toDate ? date.toDate().toLocaleString("ar-EG", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        }) : new Date(date).toLocaleString("ar-EG", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })) : "-",
+        operationNumber: String(subscription.refid || subscription.id),
+        quantity: "-", // Subscriptions don't have quantity
+        productName: planName,
+        productNumber: String(subscription.planId || "-"),
+        productType: subscription.planType === 'monthly' ? 'اشتراك شهري' : subscription.planType === 'yearly' ? 'اشتراك سنوي' : 'اشتراك',
+        driverName: "-", // Subscriptions don't have drivers
+        driverCode: "-", // Subscriptions don't have drivers
+        rawDate: date,
+      };
+    });
+    
+    // Combine both arrays
+    const financialData = [...ordersFinancialData, ...subscriptionsFinancialData];
+    
+    // Sort by date (descending - newest first)
+    financialData.sort((a, b) => {
+      const dateA = a.rawDate?.toDate ? a.rawDate.toDate().getTime() : a.rawDate?.getTime() || 0;
+      const dateB = b.rawDate?.toDate ? b.rawDate.toDate().getTime() : b.rawDate?.getTime() || 0;
+      return dateB - dateA;
     });
 
     // Map filters to FinancialReportFilters format
