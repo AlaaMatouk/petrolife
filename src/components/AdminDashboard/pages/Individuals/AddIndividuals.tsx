@@ -75,10 +75,15 @@ export const AddIndividuals = () => {
   };
 
   // Check if phone number already exists
-  const checkPhoneNumberExists = async (phoneNumber: string): Promise<boolean> => {
+  const checkPhoneNumberExists = async (
+    phoneNumber: string
+  ): Promise<boolean> => {
     try {
       const clientsRef = collection(db, "clients");
-      const q = query(clientsRef, where("phoneNumber", "==", phoneNumber.trim()));
+      const q = query(
+        clientsRef,
+        where("phoneNumber", "==", phoneNumber.trim())
+      );
       const querySnapshot = await getDocs(q);
       return !querySnapshot.empty;
     } catch (error) {
@@ -121,7 +126,9 @@ export const AddIndividuals = () => {
     }
 
     // Check if phone number already exists
-    const phoneNumberExists = await checkPhoneNumberExists(formData.phoneNumber);
+    const phoneNumberExists = await checkPhoneNumberExists(
+      formData.phoneNumber
+    );
     if (phoneNumberExists) {
       addToast({
         title: "خطأ في البيانات",
@@ -188,6 +195,9 @@ export const AddIndividuals = () => {
         // Client code (8-digit refid)
         refid: refid,
 
+        // Default balance - CRITICAL for wallet operations
+        balance: 0,
+
         // Default values
         isActive: true,
         type: "individual",
@@ -213,7 +223,9 @@ export const AddIndividuals = () => {
         "Registering user in Firebase Auth with phone:",
         formData.phoneNumber
       );
-      const authResult = await registerUserWithPhoneNumber(formData.phoneNumber);
+      const authResult = await registerUserWithPhoneNumber(
+        formData.phoneNumber
+      );
 
       if (authResult.success) {
         console.log(
