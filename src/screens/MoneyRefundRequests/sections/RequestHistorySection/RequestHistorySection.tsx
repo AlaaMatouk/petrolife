@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, FileChartColumnIncreasing } from "lucide-react";
 import {
@@ -8,7 +8,11 @@ import {
   Pagination,
   LoadingSpinner,
 } from "../../../../components/shared";
-import { fetchUserWithdrawalRequests } from "../../../../services/firestore";
+import { fetchUserWithdrawalRequests, addRefidToExistingWithdrawalRequests } from "../../../../services/firestore";
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
+import { db } from "../../../../config/firebase";
+import { auth } from "../../../../config/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 
 // Helper function to format date
 const formatDate = (date: any): string => {
@@ -70,47 +74,138 @@ const getStatusText = (status: string): { text: string; type: string } => {
   return { text: status, type: "unknown" };
 };
 
-export const RequestHistorySection = (): JSX.Element => {
+interface RequestHistorySectionProps {
+  refreshTrigger?: number;
+}
+
+export const RequestHistorySection = ({ refreshTrigger = 0 }: RequestHistorySectionProps): JSX.Element => {
   const navigate = useNavigate();
   const [selectedTimeFilter, setSelectedTimeFilter] = useState("اخر 12 شهر");
   const [currentPage, setCurrentPage] = useState(1);
   const [requests, setRequests] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasCheckedMigration, setHasCheckedMigration] = useState(false);
 
   const ITEMS_PER_PAGE = 10;
 
-  // Fetch wallet withdrawal requests
+  // Load requests function
+  const loadRequests = useCallback(async () => {
+    // Check if user is authenticated before fetching
+    if (!auth.currentUser) {
+      console.warn("⚠️ User not authenticated, skipping withdrawal requests fetch");
+      setRequests([]);
+      setIsLoading(false);
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      const data = await fetchUserWithdrawalRequests();
+
+      // Transform to request format
+      const transformedRequests = data.map((request) => {
+        const statusInfo = getStatusText(request.status);
+        // Handle both withdrawaAmount (typo) and withdrawalAmount field names
+        const withdrawalAmount = request.withdrawalAmount || request.withdrawaAmount || 0;
+        
+        // Get refid (should be set by migration or when request was created)
+        const refid = request.refid || "-";
+
+        return {
+          id: request.id || "-",
+          refid: refid || "-", // Use refid for display
+          status: statusInfo.text,
+          statusType: statusInfo.type,
+          amount: String(withdrawalAmount),
+          date: formatDate(request.requestDate || request.createdDate),
+          rawDate: request.requestDate || request.createdDate,
+        };
+      });
+
+      setRequests(transformedRequests);
+    } catch (error) {
+      console.error("Error loading withdrawal requests:", error);
+      setRequests([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Check and run migration for existing requests (once, after loadRequests is defined)
   useEffect(() => {
-    const loadRequests = async () => {
-      setIsLoading(true);
+    const runMigrationIfNeeded = async () => {
+      if (hasCheckedMigration || !auth.currentUser) return;
+      
       try {
+        // Check if there are any requests without refid
         const data = await fetchUserWithdrawalRequests();
-
-        // Transform to request format
-        const transformedRequests = data.map((request) => {
-          const statusInfo = getStatusText(request.status);
-
-          return {
-            id: request.id || "-",
-            status: statusInfo.text,
-            statusType: statusInfo.type,
-            amount: String(request.withdrawalAmount || 0),
-            date: formatDate(request.requestDate || request.createdDate),
-            rawDate: request.requestDate || request.createdDate,
-          };
-        });
-
-        setRequests(transformedRequests);
+        const requestsWithoutRefid = data.filter(req => !req.refid);
+        
+        if (requestsWithoutRefid.length > 0) {
+          console.log(`🔄 Found ${requestsWithoutRefid.length} requests without refid, running migration...`);
+          await addRefidToExistingWithdrawalRequests();
+          // Reload requests after migration
+          loadRequests();
+        }
       } catch (error) {
-        console.error("Error loading withdrawal requests:", error);
-        setRequests([]);
+        console.error("Error checking/running migration:", error);
       } finally {
-        setIsLoading(false);
+        setHasCheckedMigration(true);
       }
     };
 
-    loadRequests();
-  }, []);
+    // Wait a bit for auth to be ready, then check migration
+    const timer = setTimeout(() => {
+      runMigrationIfNeeded();
+    }, 2000);
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasCheckedMigration, loadRequests]);
+
+  // Set up real-time listener for withdrawal requests
+  useEffect(() => {
+    let unsubscribeFirestore: (() => void) | null = null;
+
+    // Wait for auth state before setting up listener
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      // Clean up previous Firestore listener if it exists
+      if (unsubscribeFirestore) {
+        unsubscribeFirestore();
+        unsubscribeFirestore = null;
+      }
+
+      if (user) {
+        // User is authenticated, set up Firestore listener
+        const withdrawalsRef = collection(db, "companies-wallets-withdrawals");
+        const withdrawalsQuery = query(withdrawalsRef, orderBy("createdDate", "desc"));
+        unsubscribeFirestore = onSnapshot(
+          withdrawalsQuery,
+          () => {
+            loadRequests();
+          },
+          (error) => {
+            console.error("Error listening to companies-wallets-withdrawals:", error);
+          }
+        );
+
+        // Initial load
+        loadRequests();
+      } else {
+        // User not authenticated, clear requests
+        setRequests([]);
+        setIsLoading(false);
+      }
+    });
+
+    // Cleanup both listeners
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeFirestore) {
+        unsubscribeFirestore();
+      }
+    };
+  }, [loadRequests, refreshTrigger]);
 
   // Apply time filter
   const filteredRequests = requests.filter((request) => {
@@ -185,13 +280,13 @@ export const RequestHistorySection = (): JSX.Element => {
       ),
     },
     {
-      key: "id",
+      key: "refid",
       label: "رقم الطلب",
       width: "min-w-[187px]",
       sortable: false,
-      render: (value: string) => (
+      render: (value: string, row: any) => (
         <div className="relative w-fit mt-[-0.20px] font-body-body-2 font-[number:var(--body-body-2-font-weight)] text-black text-[length:var(--body-body-2-font-size)] tracking-[var(--body-body-2-letter-spacing)] leading-[var(--body-body-2-line-height)] whitespace-nowrap [font-style:var(--body-body-2-font-style)]">
-          {value}
+          {value || row.id || "-"}
         </div>
       ),
     },

@@ -161,8 +161,13 @@ export const AddService = (): JSX.Element => {
         status: editedService.status || "active",
         isActive: editedService.status === "active",
 
-        // Service ID (if provided)
-        ...(editedService.id && { serviceId: String(editedService.id) }),
+        // Service ID (if provided) - convert to number
+        ...(editedService.id && {
+          serviceId:
+            typeof editedService.id === "string"
+              ? parseInt(editedService.id, 10)
+              : Number(editedService.id),
+        }),
 
         // Options (خيارات) - only send if there are options
         ...(serviceOptions.length > 0 && {

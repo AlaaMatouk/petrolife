@@ -1,11 +1,14 @@
-import { Truck, ArrowLeft, MapPin } from "lucide-react";
-import React, { useState, useEffect } from "react";
+import { Truck, ArrowLeft, Fuel, MessageCircle, Mail, Phone } from "lucide-react";
+import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { createPortal } from "react-dom";
 import { DataTableSection } from "../../../sections/DataTableSection";
 import {
-  fetchProviderStations,
+  fetchFuelStationsByProvider,
+  FuelStation,
   updateStationIsActive,
   fetchStationById,
+  calculateStationFuelConsumption,
 } from "../../../../services/firestore";
 import { useToast } from "../../../../context/ToastContext";
 
@@ -13,163 +16,237 @@ interface ServiceProvidersInfoProps {
   providerData: any;
 }
 
-// Mock data type for service provider station locations
-interface StationLocation {
-  id: number;
+// Station interface matching ServiceDistributerStationLocations
+interface Station {
+  id: string;
+  stationCode: string;
   stationName: string;
   address: string;
-  fuel91Consumed: number;
-  fuel95Consumed: number;
-  dieselConsumed: number;
+  refid?: string; // Station reference ID from Firestore
   stationStatus: { active: boolean; text: string };
+  dieselConsumed: number; // Diesel consumed in liters
+  fuel95Consumed: number; // Fuel 95 consumed in liters
+  fuel91Consumed: number; // Fuel 91 consumed in liters
 }
 
-// Mock data for service provider station locations
-const mockStationLocations: StationLocation[] = [
-  {
-    id: 1,
-    stationName: "محطة الصالح",
-    address: "الرياض، حي النخيل، شارع الملك فهد",
-    fuel91Consumed: 5200,
-    fuel95Consumed: 3800,
-    dieselConsumed: 4500,
-    stationStatus: { active: true, text: "نشط" },
-  },
-  {
-    id: 2,
-    stationName: "محطة النور",
-    address: "جدة، حي الصفا، طريق الكورنيش",
-    fuel91Consumed: 4800,
-    fuel95Consumed: 5200,
-    dieselConsumed: 3900,
-    stationStatus: { active: true, text: "نشط" },
-  },
-  {
-    id: 3,
-    stationName: "محطة السلام",
-    address: "الدمام، حي الشاطئ، شارع الخليج",
-    fuel91Consumed: 4200,
-    fuel95Consumed: 3500,
-    dieselConsumed: 5800,
-    stationStatus: { active: true, text: "نشط" },
-  },
-  {
-    id: 4,
-    stationName: "محطة الأمل",
-    address: "مكة المكرمة، حي العزيزية، طريق مكة جدة",
-    fuel91Consumed: 6100,
-    fuel95Consumed: 4200,
-    dieselConsumed: 3800,
-    stationStatus: { active: false, text: "متوقف" },
-  },
-  {
-    id: 5,
-    stationName: "محطة الرياض",
-    address: "الرياض، حي العليا، شارع التحلية",
-    fuel91Consumed: 7200,
-    fuel95Consumed: 6800,
-    dieselConsumed: 5200,
-    stationStatus: { active: true, text: "نشط" },
-  },
-];
-
-// Columns configuration for service provider station locations
+// Columns configuration matching the image
 const stationColumns = [
+  {
+    key: "actions",
+    label: "",
+    width: "w-16 min-w-[60px]",
+    priority: "high" as const,
+  },
   {
     key: "stationStatus",
     label: "حالة المحطة",
+    width: "flex-1 grow min-w-[120px]",
     priority: "high" as const,
   },
   {
     key: "dieselConsumed",
     label: "الديزل المستهلك (لتر)",
-    priority: "low" as const,
+    width: "flex-1 grow min-w-[150px]",
+    priority: "high" as const,
+    render: (value: number) => (
+      <div className="text-center">{value || 0}</div>
+    ),
   },
   {
     key: "fuel95Consumed",
     label: "وقود 95 المستهلك (لتر)",
-    priority: "medium" as const,
+    width: "flex-1 grow min-w-[150px]",
+    priority: "high" as const,
+    render: (value: number) => (
+      <div className="text-center">{value || 0}</div>
+    ),
   },
   {
     key: "fuel91Consumed",
     label: "وقود 91 المستهلك (لتر)",
-    priority: "medium" as const,
+    width: "flex-1 grow min-w-[150px]",
+    priority: "high" as const,
+    render: (value: number) => (
+      <div className="text-center">{value || 0}</div>
+    ),
   },
   {
     key: "address",
     label: "العنوان",
-    priority: "high" as const,
+    width: "flex-1 grow min-w-[250px]",
+    priority: "medium" as const,
+    render: (value: string) => (
+      <div 
+        className="text-right line-clamp-2 max-w-[400px] cursor-help" 
+        title={value || "-"}
+        style={{ direction: "rtl" }}
+      >
+        {value || "-"}
+      </div>
+    ),
   },
   {
     key: "stationName",
     label: "اسم المحطة",
+    width: "flex-1 grow min-w-[150px]",
+    priority: "high" as const,
+  },
+  {
+    key: "stationCode",
+    label: "كود المحطة",
+    width: "flex-1 grow min-w-[120px]",
+    priority: "high" as const,
+  },
+  {
+    key: "refid",
+    label: "الرقم المرجعي",
+    width: "flex-1 grow min-w-[120px]",
     priority: "medium" as const,
   },
 ];
-
-// Fetch real station data for a provider
-const fetchStationLocations = async (
-  providerEmail: string
-): Promise<StationLocation[]> => {
-  const realStations = await fetchProviderStations(providerEmail);
-
-  // Map real stations to the interface, ensuring all fields are populated
-  return realStations.map((station, index) => ({
-    id: station.id || index + 1,
-    stationName: station.stationName || "-",
-    address: station.address || "-",
-    fuel91Consumed: station.fuel91Consumed || 0,
-    fuel95Consumed: station.fuel95Consumed || 0,
-    dieselConsumed: station.dieselConsumed || 0,
-    stationStatus: station.stationStatus || { active: true, text: "نشط" },
-  }));
-};
 
 export const ServiceProvidersInfo = ({
   providerData,
 }: ServiceProvidersInfoProps): JSX.Element => {
   const navigate = useNavigate();
   const { addToast } = useToast();
-  const [stationsFetchFunction, setStationsFetchFunction] = useState<
-    () => Promise<StationLocation[]>
-  >(() => async () => []);
-  const [stationsData, setStationsData] = useState<StationLocation[]>([]);
+  const [isContactMenuOpen, setIsContactMenuOpen] = useState(false);
+  const contactButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
 
-  // Set up the fetch function when component mounts or providerData changes
-  useEffect(() => {
-    // Get provider email or UID to fetch stations
-    const providerEmail =
-      providerData.email || providerData.uId || providerData.uid || "";
+  // Fetch data function for stations - filtered by provider
+  // Same transformation logic as ServiceDistributerStationLocations
+  const fetchStationsData = async (): Promise<Station[]> => {
+    try {
+      // Get provider email and uId - stations are linked by createdUserId matching email
+      const providerEmail = providerData.email || "";
+      const providerUId = providerData.uId || providerData.uid;
 
-    if (providerEmail) {
-      // Create a fetch function that uses the provider's email
-      const fetchStations = async (): Promise<StationLocation[]> => {
-        const data = await fetchStationLocations(providerEmail);
-        setStationsData(data);
-        return data;
-      };
-      setStationsFetchFunction(() => fetchStations);
+      console.log("🔍 Fetching stations for provider:", {
+        providerEmail,
+        providerUId,
+        providerData: {
+          uId: providerData.uId,
+          uid: providerData.uid,
+          email: providerData.email,
+        },
+      });
+
+      if (!providerEmail && !providerUId) {
+        console.log("⚠️ No provider identifier found");
+        return [];
+      }
+
+      // Fetch provider's fuel stations from Firestore (same method as ServiceDistributerStationLocations)
+      const fuelStations = await fetchFuelStationsByProvider(providerEmail, providerUId);
+      
+      console.log(`📊 Fetched ${fuelStations.length} fuel stations`);
+
+      // Transform FuelStation data to Station interface format with consumed fuel quantities
+      const stationsWithConsumption = await Promise.all(
+        fuelStations.map(async (station: FuelStation) => {
+        // Use Firestore document ID directly (same as Stations.tsx)
+        // Generate station code from document ID (first 8 characters, uppercase)
+        const stationCode = station.id.substring(0, 8).toUpperCase();
+
+        // Build address string from formattedLocation or address object
+        let address = "";
+        if (station.formattedLocation?.address) {
+          const addr = station.formattedLocation.address;
+          address =
+            [addr?.road, addr?.city, addr?.state, addr?.country]
+              .filter(Boolean)
+              .join("، ") || station.cityName || "-";
+        } else if (station.address) {
+          if (typeof station.address === "string") {
+            address = station.address;
+          } else if (
+            typeof station.address === "object" &&
+            station.address !== null
+          ) {
+            const addr = station.address as {
+              road?: string;
+              city?: string;
+              state?: string;
+              country?: string;
+            };
+            address =
+              [addr?.road, addr?.city, addr?.state, addr?.country]
+                .filter(Boolean)
+                .join("، ") || station.cityName || "-";
+          } else {
+            address = station.cityName || "-";
+          }
+        } else {
+          address = station.cityName || "-";
+        }
+
+          // Map isActive to stationStatus
+          const isActive = station.isActive !== false; // Default to true if not specified
+          const stationStatus = {
+            active: isActive,
+            text: isActive ? "متاحة للسائقين" : "غير متاحة",
+          };
+
+          // Calculate consumed fuel quantities for this station
+          const stationEmail = station.email || station.id;
+          let dieselConsumed = 0;
+          let fuel95Consumed = 0;
+          let fuel91Consumed = 0;
+
+          try {
+            const consumption = await calculateStationFuelConsumption(stationEmail);
+            dieselConsumed = consumption.dieselConsumed || 0;
+            fuel95Consumed = consumption.fuel95Consumed || 0;
+            fuel91Consumed = consumption.fuel91Consumed || 0;
+          } catch (error) {
+            console.error(`Error calculating consumption for station ${stationEmail}:`, error);
+            // Keep default values of 0
+          }
+
+          return {
+            id: station.id, // Use Firestore document ID directly (string)
+            stationCode,
+            stationName: station.stationName || station.name || "محطة غير معروفة",
+            address,
+            refid: (station as any).refid || (station as any).refId || stationCode, // Station reference ID
+            stationStatus,
+            dieselConsumed,
+            fuel95Consumed,
+            fuel91Consumed,
+          };
+        })
+      );
+
+      return stationsWithConsumption;
+    } catch (error) {
+      console.error("Error fetching provider stations:", error);
+      // Return empty array on error
+      return [];
     }
-  }, [providerData]);
+  };
 
-  // Handler for toggling station status
+  // Handle status toggle (same as ServiceDistributerStationLocations)
   const handleToggleStatus = async (stationId: string | number) => {
     try {
       const stationIdStr = String(stationId);
-      
+
       // Fetch current station data from Firestore to get the current isActive status
       const currentStationData = await fetchStationById(stationIdStr);
-      
+
       // Get current isActive status
-      // Handle null, undefined, or missing values - treat as true/active (matching fetchProviderStations logic: isActive !== false)
+      // Handle null, undefined, or missing values - treat as true/active
       let currentIsActive: boolean;
-      if (currentStationData.isActive === null || currentStationData.isActive === undefined) {
-        // If isActive is null/undefined, treat as active (matching fetchProviderStations: isActive !== false means active)
+      if (
+        currentStationData.isActive === null ||
+        currentStationData.isActive === undefined
+      ) {
+        // If isActive is null/undefined, treat as active
         currentIsActive = true;
       } else {
         currentIsActive = currentStationData.isActive === true;
       }
-      
+
       const newIsActive = !currentIsActive;
       await updateStationIsActive(stationIdStr, newIsActive);
       addToast({
@@ -179,14 +256,6 @@ export const ServiceProvidersInfo = ({
           : "تم تعطيل المحطة بنجاح",
         duration: 3000,
       });
-      
-      // Refresh the stations list
-      const providerEmail =
-        providerData.email || providerData.uId || providerData.uid || "";
-      if (providerEmail) {
-        const updatedData = await fetchStationLocations(providerEmail);
-        setStationsData(updatedData);
-      }
     } catch (error) {
       console.error("Error toggling station status:", error);
       addToast({
@@ -290,6 +359,91 @@ export const ServiceProvidersInfo = ({
     }
     return rows;
   };
+
+  // Update menu position when opened
+  const updateMenuPosition = () => {
+    if (!contactButtonRef.current) return;
+    
+    const rect = contactButtonRef.current.getBoundingClientRect();
+    const menuWidth = 200;
+    const viewportWidth = window.innerWidth;
+    
+    let left = rect.right - menuWidth;
+    
+    if (left < 4) {
+      left = 4;
+    }
+    if (left + menuWidth > viewportWidth - 4) {
+      left = viewportWidth - menuWidth - 4;
+    }
+    
+    setMenuPosition({
+      top: rect.bottom + 8,
+      left: left
+    });
+  };
+
+  // Handle contact menu toggle
+  const handleContactMenuToggle = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsContactMenuOpen(!isContactMenuOpen);
+    if (!isContactMenuOpen) {
+      setTimeout(updateMenuPosition, 0);
+    }
+  };
+
+  // Handle contact option click
+  const handleContactOption = (option: string) => {
+    setIsContactMenuOpen(false);
+    
+    if (option === 'email') {
+      const email = providerData.email || providerInfo.email;
+      if (email && email !== '-') {
+        window.location.href = `mailto:${email}`;
+      } else {
+        alert('لا يوجد بريد إلكتروني متاح لمزود الخدمة');
+      }
+    } else if (option === 'whatsapp') {
+      const phone = providerData.phone || providerData.phoneNumber || providerInfo.phone;
+      if (phone && phone !== '-') {
+        let cleanPhone = phone.replace(/\D/g, '');
+        
+        if (cleanPhone.startsWith('0')) {
+          cleanPhone = cleanPhone.substring(1);
+        }
+        
+        if (!cleanPhone.startsWith('966') && cleanPhone.length > 0) {
+          cleanPhone = '966' + cleanPhone;
+        }
+        
+        const whatsappUrl = `https://wa.me/${cleanPhone}`;
+        window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        alert('لا يوجد رقم هاتف متاح لمزود الخدمة');
+      }
+    } else if (option === 'internal-chat') {
+      console.log('Internal chat selected');
+    }
+  };
+
+  // Update menu position on scroll/resize
+  useEffect(() => {
+    if (isContactMenuOpen) {
+      updateMenuPosition();
+      
+      const handleScroll = () => updateMenuPosition();
+      const handleResize = () => updateMenuPosition();
+      
+      window.addEventListener('scroll', handleScroll);
+      window.addEventListener('resize', handleResize);
+      
+      return () => {
+        window.removeEventListener('scroll', handleScroll);
+        window.removeEventListener('resize', handleResize);
+      };
+    }
+  }, [isContactMenuOpen]);
 
   return (
     <div>
@@ -407,17 +561,75 @@ export const ServiceProvidersInfo = ({
 
               {/* Contact Button */}
               <div className="flex items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
-                <button
-                  className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-medium)] pb-[var(--corner-radius-medium)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] hover:opacity-90 transition-opacity"
-                  style={{ border: "0.5px solid #A9B4BE" }}
-                  aria-label="تواصل مع مزود الخدمة"
-                >
-                  <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
-                    <div className="w-fit font-[number:var(--subtitle-subtitle-3-font-weight)] text-[#5B738B] text-left tracking-[var(--subtitle-subtitle-3-letter-spacing)] whitespace-nowrap [direction:rtl] relative mt-[-1.00px] font-subtitle-subtitle-3 text-[length:var(--subtitle-subtitle-3-font-size)] leading-[var(--subtitle-subtitle-3-line-height)] [font-style:var(--subtitle-subtitle-3-font-style)]">
-                      تواصل مع مزود الخدمة
+                <div className="relative">
+                  <button
+                    type="button"
+                    ref={contactButtonRef}
+                    onClick={handleContactMenuToggle}
+                    className="inline-flex flex-col items-start gap-2.5 pt-[var(--corner-radius-medium)] pb-[var(--corner-radius-medium)] px-2.5 relative flex-[0_0_auto] rounded-[var(--corner-radius-small)] hover:opacity-90 transition-opacity"
+                    style={{ border: "0.5px solid #A9B4BE" }}
+                    aria-label="تواصل مع مزود الخدمة"
+                  >
+                    <div className="flex items-center gap-[var(--corner-radius-small)] relative self-stretch w-full flex-[0_0_auto]">
+                      <div className="w-fit font-[number:var(--subtitle-subtitle-3-font-weight)] text-[#5B738B] text-left tracking-[var(--subtitle-subtitle-3-letter-spacing)] whitespace-nowrap [direction:rtl] relative mt-[-1.00px] font-subtitle-subtitle-3 text-[length:var(--subtitle-subtitle-3-font-size)] leading-[var(--subtitle-subtitle-3-line-height)] [font-style:var(--subtitle-subtitle-3-font-style)]">
+                        تواصل مع مزود الخدمة
+                      </div>
                     </div>
-                  </div>
-                </button>
+                  </button>
+
+                  {/* Contact Menu Dropdown */}
+                  {isContactMenuOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setIsContactMenuOpen(false)}
+                      />
+                      {createPortal(
+                        <div
+                          className="fixed bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50 w-[220px]"
+                          style={{
+                            top: `${menuPosition.top}px`,
+                            left: `${menuPosition.left}px`
+                          }}
+                        >
+                          {/* Internal Chat Option */}
+                          <button
+                            onClick={() => handleContactOption('internal-chat')}
+                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors [direction:rtl] text-right"
+                          >
+                            <span className="text-sm text-gray-700 font-medium flex-1">دردشة داخلية</span>
+                            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                              <MessageCircle className="w-4 h-4 text-blue-500" />
+                            </div>
+                          </button>
+
+                          {/* Email Message Option */}
+                          <button
+                            onClick={() => handleContactOption('email')}
+                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors [direction:rtl] text-right border-t border-gray-100"
+                          >
+                            <span className="text-sm text-gray-700 font-medium flex-1">رسالة ايميل</span>
+                            <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+                              <Mail className="w-4 h-4 text-purple-500" />
+                            </div>
+                          </button>
+
+                          {/* Via WhatsApp Option */}
+                          <button
+                            onClick={() => handleContactOption('whatsapp')}
+                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors [direction:rtl] text-right border-t border-gray-100"
+                          >
+                            <span className="text-sm text-gray-700 font-medium flex-1">عبر الواتساب</span>
+                            <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                              <Phone className="w-4 h-4 text-white" />
+                            </div>
+                          </button>
+                        </div>,
+                        document.body
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             </form>
           </div>
@@ -425,21 +637,23 @@ export const ServiceProvidersInfo = ({
       </main>
 
       {/* Service Provider Station Locations Section - Using DataTableSection */}
+      {/* Same structure as ServiceDistributerStationLocations */}
       <div className="mt-[var(--corner-radius-large)]">
-        <DataTableSection<StationLocation>
-          title={`مواقع محطات ${providerInfo.name}`}
-          entityName="محطة"
-          entityNamePlural="محطات"
-          icon={MapPin}
+        <DataTableSection<Station>
+          title={`محطات ${providerInfo.name}`}
+          entityName="المحطة"
+          entityNamePlural="المحطات"
+          icon={Fuel}
           columns={stationColumns}
-          fetchData={stationsFetchFunction}
+          fetchData={fetchStationsData}
           onToggleStatus={handleToggleStatus}
-          addNewRoute=""
+          addNewRoute={`/service-distributer-stations/add${providerData.email ? `?providerEmail=${encodeURIComponent(providerData.email)}` : ''}`}
           viewDetailsRoute={(id) => `/service-provider-station/${id}`}
-          loadingMessage={`جاري تحميل مواقع محطات ${providerInfo.name}...`}
+          loadingMessage={`جاري تحميل بيانات المحطات...`}
+          errorMessage="فشل في تحميل بيانات المحطات."
           itemsPerPage={5}
           showTimeFilter={false}
-          showAddButton={false}
+          showAddButton={true}
         />
       </div>
     </div>

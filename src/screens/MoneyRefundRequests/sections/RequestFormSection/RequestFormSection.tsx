@@ -4,8 +4,13 @@ import { useNavigate } from "react-router-dom";
 import { submitWalletWithdrawalRequest } from "../../../../services/firestore";
 import { useToast } from "../../../../hooks/useToast";
 import { useGlobalState } from "../../../../hooks/useGlobalState";
+import { RefundConfirmationModal } from "./RefundConfirmationModal";
 
-export const RequestFormSection = (): JSX.Element => {
+interface RequestFormSectionProps {
+  onFormSubmit?: () => void;
+}
+
+export const RequestFormSection = ({ onFormSubmit }: RequestFormSectionProps): JSX.Element => {
   const navigate = useNavigate();
   const { addToast } = useToast();
   const { state } = useGlobalState();
@@ -22,6 +27,7 @@ export const RequestFormSection = (): JSX.Element => {
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({
@@ -38,48 +44,64 @@ export const RequestFormSection = (): JSX.Element => {
     }));
   };
 
-  const handleSubmit = async () => {
+  // Validate form data
+  const validateForm = (): boolean => {
+    const withdrawalAmount = parseFloat(formData.withdrawalAmount);
+
+    if (!formData.companyIban || formData.companyIban.trim() === "") {
+      addToast({
+        type: "error",
+        message: "يرجى إدخال Company IBAN",
+        duration: 3000,
+      });
+      return false;
+    }
+
+    if (withdrawalAmount <= 0) {
+      addToast({
+        type: "error",
+        message: "يرجى إدخال مبلغ صحيح",
+        duration: 3000,
+      });
+      return false;
+    }
+
+    if (withdrawalAmount > companyBalance) {
+      addToast({
+        type: "error",
+        message: `رصيد غير كافٍ. الرصيد الحالي: ${companyBalance} ر.س`,
+        duration: 3000,
+      });
+      return false;
+    }
+
+    if (!formData.bankName || formData.bankName.trim() === "") {
+      addToast({
+        type: "error",
+        message: "يرجى اختيار البنك",
+        duration: 3000,
+      });
+      return false;
+    }
+
+    return true;
+  };
+
+  // Show confirmation modal
+  const handleSubmit = () => {
+    if (!validateForm()) {
+      return;
+    }
+    setShowConfirmationModal(true);
+  };
+
+  // Actually submit the request
+  const handleConfirm = async () => {
     try {
       setIsSubmitting(true);
+      setShowConfirmationModal(false);
 
-      // Validation
       const withdrawalAmount = parseFloat(formData.withdrawalAmount);
-
-      if (!formData.companyIban || formData.companyIban.trim() === "") {
-        addToast({
-          type: "error",
-          message: "يرجى إدخال Company IBAN",
-          duration: 3000,
-        });
-        return;
-      }
-
-      if (withdrawalAmount <= 0) {
-        addToast({
-          type: "error",
-          message: "يرجى إدخال مبلغ صحيح",
-          duration: 3000,
-        });
-        return;
-      }
-
-      if (withdrawalAmount > companyBalance) {
-        addToast({
-          type: "error",
-          message: `رصيد غير كافٍ. الرصيد الحالي: ${companyBalance} ر.س`,
-          duration: 3000,
-        });
-        return;
-      }
-
-      if (!formData.bankName || formData.bankName.trim() === "") {
-        addToast({
-          type: "error",
-          message: "يرجى اختيار البنك",
-          duration: 3000,
-        });
-        return;
-      }
 
       // Submit withdrawal request
       await submitWalletWithdrawalRequest({
@@ -109,10 +131,12 @@ export const RequestFormSection = (): JSX.Element => {
         ibanImage: null,
       });
 
-      // Refresh page to show updated request history
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
+      // Trigger refresh of history section instead of reloading page
+      if (onFormSubmit) {
+        setTimeout(() => {
+          onFormSubmit();
+        }, 500);
+      }
     } catch (error: any) {
       console.error("Submit error:", error);
       addToast({
@@ -123,6 +147,11 @@ export const RequestFormSection = (): JSX.Element => {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Cancel confirmation modal
+  const handleCancel = () => {
+    setShowConfirmationModal(false);
   };
 
   return (
@@ -243,6 +272,17 @@ export const RequestFormSection = (): JSX.Element => {
                       onChange={(e) =>
                         handleInputChange("withdrawalAmount", e.target.value)
                       }
+                      onFocus={(e) => {
+                        if (e.target.value === "0" || e.target.value === "0.00") {
+                          e.target.value = "";
+                          setFormData(prev => ({ ...prev, withdrawalAmount: "" }));
+                        }
+                      }}
+                      onBlur={(e) => {
+                        if (e.target.value === "" || e.target.value === "0") {
+                          setFormData(prev => ({ ...prev, withdrawalAmount: "0" }));
+                        }
+                      }}
                       disabled={formData.withdrawalType === "all"}
                       className="w-full font-[number:var(--body-body-2-font-weight)] text-[var(--form-active-input-text-color)] placeholder-[var(--form-active-placeholder-color)] tracking-[var(--body-body-2-letter-spacing)] relative mt-[-1.00px] font-body-body-2 text-[length:var(--body-body-2-font-size)] leading-[var(--body-body-2-line-height)] [font-style:var(--body-body-2-font-style)] text-right [direction:rtl] bg-transparent border-none outline-none disabled:opacity-50"
                     />

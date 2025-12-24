@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Printer, ArrowLeft } from "lucide-react";
 import { fetchInvoiceById } from "../../services/invoiceService";
 import { Invoice } from "../../types/invoice";
@@ -10,6 +10,7 @@ import { generateZatcaQrFromInvoice } from "../../utils/zatcaQr";
 export const InvoiceDetail = (): JSX.Element => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { addToast } = useToast();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -31,7 +32,13 @@ export const InvoiceDetail = (): JSX.Element => {
             message: "الفاتورة غير موجودة",
             type: "error",
           });
-          navigate(-1);
+          // Navigate back to invoices list instead of using navigate(-1) which might go to wrong page
+          const from = (location.state as any)?.from;
+          if (from) {
+            navigate(from);
+          } else {
+            navigate("/invoices");
+          }
           return;
         }
         setInvoice(fetchedInvoice);
@@ -154,10 +161,10 @@ export const InvoiceDetail = (): JSX.Element => {
     },
     subscription: subscriptionData,
     financial: {
-      subtotal: invoice.subtotal,
+      subtotal: invoice.subtotal || 0,
       vat: 15,
-      vatAmount: invoice.vatAmount,
-      total: invoice.total,
+      vatAmount: invoice.vatAmount || 0,
+      total: invoice.total || 0,
     },
   };
 
@@ -169,7 +176,16 @@ export const InvoiceDetail = (): JSX.Element => {
     <div className="flex flex-col w-full items-center justify-center gap-5 py-8">
       {/* Back Button */}
       <button
-        onClick={() => navigate(-1)}
+        onClick={() => {
+          // Check if we have a previous route in location state
+          const from = (location.state as any)?.from;
+          if (from) {
+            navigate(from);
+          } else {
+            // Fallback to browser history
+            navigate(-1);
+          }
+        }}
         className="self-start mr-auto mb-2 flex items-center gap-2 px-4 py-2 text-color-mode-text-icons-t-primary-gray hover:bg-color-mode-surface-secondary-gray rounded-[var(--corner-radius-small)] transition-colors print:hidden"
         title="العودة"
       >

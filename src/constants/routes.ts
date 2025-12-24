@@ -70,6 +70,7 @@ export const ROUTES = {
 
   // Admin Dashboard
   ADMIN_DASHBOARD: "/admin-dashboard",
+  ADMIN_MAIN_WALLET: "/admin-main-wallet",
   SUPERVISORS: "/supervisors",
   SUPERVISOR_DETAILS: "/supervisors/:id",
   ADD_SUPERVISOR: "/supervisors/add",

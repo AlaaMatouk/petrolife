@@ -3,6 +3,7 @@ import { ROUTES } from "../constants/routes";
 import { LayoutWrapper } from "../components/shared/Layout";
 import { AdminLayoutWrapper } from "../components/AdminDashboard";
 import { ServiceDistributerLayoutWrapper } from "../components/ServiceDistributerDashboard";
+import { RoleProtectedRoute } from "../components/routes";
 
 // Import all screen components
 import { Drivers } from "../screens/Drivers";
@@ -19,6 +20,7 @@ import { MoneyReq } from "../components/AdminDashboard/pages/wallet-requests/Mon
 import { WalletChargeRequests } from "../screens/ChargeRequests/WalletChargeRequests";
 import { MoneyRefundRequests } from "../screens/MoneyRefundRequests/MoneyRefundRequests";
 import { ChargeWallet } from "../screens/ChargeWallet";
+import { TransferMoney } from "../screens/TransferMoney";
 import { PerolifeStationLocations } from "../screens/PerolifeStationLocations/perolifestationlocations";
 import { StoreScreen } from "../screens/Store";
 import { SubscriptionsScreen } from "../screens/Subscriptions";
@@ -122,6 +124,7 @@ import SpecialNotificationDetails from "../components/AdminDashboard/pages/speci
 import Subscriptions from "../components/AdminDashboard/pages/subscriptions/Subscriptions";
 import AddSubscription from "../components/AdminDashboard/pages/subscriptions/AddSubscription";
 import SubscriptionDetails from "../components/AdminDashboard/pages/subscriptions/SubscriptionDetails";
+import MainWallet from "../components/AdminDashboard/pages/main-wallet/MainWallet";
 import { ServiceDistributerGeneralInformation } from "../screens/ServiceDistributerGeneralInformation";
 import CompanyFAQ from "../screens/FAQ/FAQ";
 import TechnicalSupport from "../screens/TechnicalSupport/TechnicalSupport";
@@ -144,9 +147,16 @@ export const AppRouter = () => {
       {/* Authentication - No Layout */}
       <Route path={ROUTES.LOGIN} element={<LoginAndRegister />} />
 
-      {/* Admin Dashboard with AdminLayoutWrapper */}
-      <Route element={<AdminLayoutWrapper />}>
+      {/* Admin Dashboard with AdminLayoutWrapper - Protected for admin role only */}
+      <Route
+        element={
+          <RoleProtectedRoute requiredRole="admin">
+            <AdminLayoutWrapper />
+          </RoleProtectedRoute>
+        }
+      >
         <Route path={ROUTES.ADMIN_DASHBOARD} element={<AdminDashboard />} />
+        <Route path={ROUTES.ADMIN_MAIN_WALLET} element={<MainWallet />} />
         <Route path={ROUTES.SUPERVISORS} element={<Supervisors />} />
         <Route path={ROUTES.ADD_SUPERVISOR} element={<AddSupervisor />} />
         <Route
@@ -312,8 +322,14 @@ export const AppRouter = () => {
         />
       </Route>
 
-      {/* Service Distributer Routes with ServiceDistributerLayoutWrapper */}
-      <Route element={<ServiceDistributerLayoutWrapper />}>
+      {/* Service Distributer Routes with ServiceDistributerLayoutWrapper - Protected for service-distributer role only */}
+      <Route
+        element={
+          <RoleProtectedRoute requiredRole="service-distributer">
+            <ServiceDistributerLayoutWrapper />
+          </RoleProtectedRoute>
+        }
+      >
         <Route
           path={ROUTES.SERVICE_DISTRIBUTER_DASHBOARD}
           element={<ServiceDistributerDashboard />}
@@ -352,8 +368,14 @@ export const AppRouter = () => {
         />
       </Route>
 
-      {/* All Protected Routes with Layout Wrapper */}
-      <Route element={<LayoutWrapper />}>
+      {/* All Protected Routes with Layout Wrapper - Protected for company role only */}
+      <Route
+        element={
+          <RoleProtectedRoute requiredRole="company">
+            <LayoutWrapper />
+          </RoleProtectedRoute>
+        }
+      >
         {/* Main Dashboard */}
         <Route path={ROUTES.DASHBOARD} element={<Dashboard />} />
 
@@ -368,6 +390,7 @@ export const AppRouter = () => {
         {/* Wallet and Financial */}
         <Route path={ROUTES.WALLET} element={<Wallet />} />
         <Route path={ROUTES.CHARGE_WALLET} element={<ChargeWallet />} />
+        <Route path={ROUTES.TRANSFER_MONEY} element={<TransferMoney />} />
         <Route path={ROUTES.FINANCIAL_REPORTS} element={<FinancialReports />} />
         <Route path={ROUTES.WALLET_REPORTS} element={<WalletReports />} />
 

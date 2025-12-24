@@ -2,6 +2,9 @@ import { DataTableSection } from "../../../sections/DataTableSection";
 import { Truck } from "lucide-react";
 import { Map } from "../../../../screens/PerolifeStationLocations/sections/map/Map";
 import { fetchAdminFuelDeliveryRequests } from "../../../../services/firestore";
+import { useState, useEffect } from "react";
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
+import { db } from "../../../../config/firebase";
 
 type FuelDeliveryRequest = {
   id: string;
@@ -36,6 +39,33 @@ const fetchFuelDeliveryRequests = async (): Promise<FuelDeliveryRequest[]> => {
 };
 
 export const FuelDelivery = () => {
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  const handleRefresh = () => {
+    setRefreshTrigger(prev => prev + 1);
+  };
+
+  // Set up real-time listener for fuel delivery orders
+  useEffect(() => {
+    const ordersRef = collection(db, "stationscompany-orders");
+    const ordersQuery = query(ordersRef, orderBy("createdDate", "desc"));
+    const unsubscribe = onSnapshot(
+      ordersQuery,
+      () => {
+        // When data changes, trigger refresh
+        handleRefresh();
+      },
+      (error) => {
+        console.error("Error listening to stationscompany-orders:", error);
+      }
+    );
+
+    // Cleanup
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   return (
     <div className="flex flex-col gap-6">
       {/* Map Section */}
@@ -68,6 +98,8 @@ export const FuelDelivery = () => {
         showTimeFilter={false}
         showAddButton={false}
         showFuelDeliveryButton={true}
+        refreshTrigger={refreshTrigger}
+        onRefresh={handleRefresh}
       />
     </div>
   );

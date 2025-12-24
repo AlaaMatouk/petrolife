@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Printer, ArrowLeft, Phone, Mail, User } from "lucide-react";
 import { fetchInvoiceById } from "../../services/invoiceService";
 import { Invoice } from "../../types/invoice";
@@ -12,6 +12,7 @@ import { ROUTES } from "../../constants/routes";
 export const FuelInvoiceDetail = (): JSX.Element => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const { addToast } = useToast();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
@@ -174,11 +175,18 @@ export const FuelInvoiceDetail = (): JSX.Element => {
       {/* Back Button */}
       <button
         onClick={() => {
-          const tab = searchParams.get("tab");
-          if (tab) {
-            navigate(`${ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS}?tab=${tab}`);
+          // Check if we have a previous route in location state
+          const from = (location.state as any)?.from;
+          if (from) {
+            navigate(from);
           } else {
-            navigate(ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS);
+            // Fallback to existing logic for service distributer
+            const tab = searchParams.get("tab");
+            if (tab) {
+              navigate(`${ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS}?tab=${tab}`);
+            } else {
+              navigate(ROUTES.SERVICE_DISTRIBUTER_FINANCIAL_REPORTS);
+            }
           }
         }}
         className="self-start mr-auto mb-2 flex items-center gap-2 px-4 py-2 text-color-mode-text-icons-t-primary-gray hover:bg-color-mode-surface-secondary-gray rounded-[var(--corner-radius-small)] transition-colors print:hidden"

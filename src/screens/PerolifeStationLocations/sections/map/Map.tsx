@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -103,38 +103,39 @@ export const Map = (): JSX.Element => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Load fuel stations function
+  const loadFuelStations = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await fetchFuelStations();
+      
+      // Remove duplicate stations based on coordinates
+      const uniqueStations = data.reduce((acc: FuelStation[], current) => {
+        const isDuplicate = acc.some(
+          (station) =>
+            station.latitude === current.latitude &&
+            station.longitude === current.longitude
+        );
+        if (!isDuplicate) {
+          acc.push(current);
+        }
+        return acc;
+      }, []);
+      
+      setStations(uniqueStations);
+    } catch (err) {
+      console.error('Error loading fuel stations:', err);
+      setError('فشل تحميل بيانات المحطات');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   // Fetch fuel stations from Firestore
   useEffect(() => {
-    const loadFuelStations = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await fetchFuelStations();
-        
-        // Remove duplicate stations based on coordinates
-        const uniqueStations = data.reduce((acc: FuelStation[], current) => {
-          const isDuplicate = acc.some(
-            (station) =>
-              station.latitude === current.latitude &&
-              station.longitude === current.longitude
-          );
-          if (!isDuplicate) {
-            acc.push(current);
-          }
-          return acc;
-        }, []);
-        
-        setStations(uniqueStations);
-      } catch (err) {
-        console.error('Error loading fuel stations:', err);
-        setError('فشل تحميل بيانات المحطات');
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadFuelStations();
-  }, []);
+  }, [loadFuelStations]);
 
   // Create icon instances
   const redPinIcon = createRedPinIcon();
@@ -173,7 +174,7 @@ export const Map = (): JSX.Element => {
             <div className="text-center">
               <p className="text-red-600 mb-2">{error}</p>
               <button
-                onClick={() => window.location.reload()}
+                onClick={loadFuelStations}
                 className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
               >
                 إعادة المحاولة

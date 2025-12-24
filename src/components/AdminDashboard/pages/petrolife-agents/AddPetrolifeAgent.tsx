@@ -2,9 +2,12 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Input, Select } from "../../../shared/Form";
 import { Upload, ArrowLeft } from "lucide-react";
+import { addPetrolifeAgent, checkAgentPhoneExists } from "../../../../services/firestore";
+import { useToast } from "../../../../context/ToastContext";
 
 const AddPetrolifeAgent = () => {
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -15,6 +18,9 @@ const AddPetrolifeAgent = () => {
     commissionValue: "",
     imageFile: null as File | null,
   });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCheckingPhone, setIsCheckingPhone] = useState(false);
 
   const handleFileUpload = () => {
     const input = document.createElement("input");
@@ -27,9 +33,133 @@ const AddPetrolifeAgent = () => {
     input.click();
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const validateForm = (): boolean => {
+    const newErrors: Record<string, string> = {};
+
+    if (!form.name.trim()) {
+      newErrors.name = "اسم المندوب مطلوب";
+    }
+
+    if (!form.email.trim()) {
+      newErrors.email = "البريد الإلكتروني مطلوب";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+      newErrors.email = "البريد الإلكتروني غير صحيح";
+    }
+
+    if (!form.phone.trim()) {
+      newErrors.phone = "رقم الهاتف مطلوب";
+    }
+
+    if (!form.address.trim()) {
+      newErrors.address = "العنوان مطلوب";
+    }
+
+    if (!form.commissionValue.trim()) {
+      newErrors.commissionValue = "قيمة العمولة مطلوبة";
+    } else if (isNaN(parseFloat(form.commissionValue)) || parseFloat(form.commissionValue) < 0) {
+      newErrors.commissionValue = "قيمة العمولة يجب أن تكون رقماً صحيحاً";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handlePhoneBlur = async () => {
+    if (!form.phone.trim()) return;
+
+    setIsCheckingPhone(true);
+    try {
+      const exists = await checkAgentPhoneExists(form.phone.trim());
+      if (exists) {
+        setErrors((prev) => ({
+          ...prev,
+          phone: "رقم الهاتف مستخدم بالفعل. يرجى استخدام رقم آخر.",
+        }));
+      } else {
+        setErrors((prev => {
+          const newErrors = { ...prev };
+          delete newErrors.phone;
+          return newErrors;
+        }));
+      }
+    } catch (error) {
+      console.error("Error checking phone:", error);
+    } finally {
+      setIsCheckingPhone(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Submitting new agent:", form);
+
+    if (!validateForm()) {
+      addToast({
+        title: "خطأ في التحقق",
+        message: "يرجى إكمال جميع الحقول المطلوبة بشكل صحيح",
+        type: "error",
+      });
+      return;
+    }
+
+    // Check phone uniqueness one more time
+    if (form.phone.trim()) {
+      try {
+        const phoneExists = await checkAgentPhoneExists(form.phone.trim());
+        if (phoneExists) {
+          setErrors((prev) => ({
+            ...prev,
+            phone: "رقم الهاتف مستخدم بالفعل. يرجى استخدام رقم آخر.",
+          }));
+          addToast({
+            title: "خطأ",
+            message: "رقم الهاتف مستخدم بالفعل",
+            type: "error",
+          });
+          return;
+        }
+      } catch (error) {
+        console.error("Error checking phone:", error);
+        addToast({
+          title: "خطأ",
+          message: "حدث خطأ أثناء التحقق من رقم الهاتف",
+          type: "error",
+        });
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await addPetrolifeAgent({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim(),
+        city: form.city,
+        address: form.address.trim(),
+        agentCode: form.agentCode.trim() || undefined,
+        commissionValue: form.commissionValue.trim(),
+        imageFile: form.imageFile,
+      });
+
+      addToast({
+        title: "نجح",
+        message: "تم إضافة المندوب بنجاح",
+        type: "success",
+      });
+
+      // Navigate to agents list
+      navigate("/petrolife-agents");
+    } catch (error: any) {
+      console.error("Error adding agent:", error);
+      addToast({
+        title: "خطأ",
+        message: error.message || "حدث خطأ أثناء إضافة المندوب",
+        type: "error",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const fileName = form.imageFile ? form.imageFile.name : "hsgndkmmcjhpd.jpg";
@@ -72,28 +202,57 @@ const AddPetrolifeAgent = () => {
 
         {/* Form fields - three columns */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 w-full">
-          <Input
-            label="اسم المندوب"
-            value={form.name}
-            onChange={(value) => setForm((p) => ({ ...p, name: value }))}
-            placeholder="اكتب اسم المندوب هنا"
-          />
+          <div>
+            <Input
+              label="اسم المندوب"
+              value={form.name}
+              onChange={(value) => setForm((p) => ({ ...p, name: value }))}
+              placeholder="اكتب اسم المندوب هنا"
+            />
+            {errors.name && (
+              <p className="text-red-500 text-sm mt-1">{errors.name}</p>
+            )}
+          </div>
 
-          <Input
-            label="البريد الإلكتروني"
-            type="email"
-            value={form.email}
-            onChange={(value) => setForm((p) => ({ ...p, email: value }))}
-            placeholder="hesham@gmail.com"
-          />
+          <div>
+            <Input
+              label="البريد الإلكتروني"
+              type="email"
+              value={form.email}
+              onChange={(value) => setForm((p) => ({ ...p, email: value }))}
+              placeholder="hesham@gmail.com"
+            />
+            {errors.email && (
+              <p className="text-red-500 text-sm mt-1">{errors.email}</p>
+            )}
+          </div>
 
-          <Input
-            label="رقم الهاتف"
-            type="tel"
-            value={form.phone}
-            onChange={(value) => setForm((p) => ({ ...p, phone: value }))}
-            placeholder="رقم الهاتف هنا"
-          />
+          <div className="relative">
+            <Input
+              label="رقم الهاتف"
+              type="tel"
+              value={form.phone}
+              onChange={(value) => {
+                setForm((p) => ({ ...p, phone: value }));
+                // Clear error when user types
+                if (errors.phone) {
+                  setErrors((prev) => {
+                    const newErrors = { ...prev };
+                    delete newErrors.phone;
+                    return newErrors;
+                  });
+                }
+              }}
+              onBlur={handlePhoneBlur}
+              placeholder="رقم الهاتف هنا"
+            />
+            {errors.phone && (
+              <p className="text-red-500 text-sm mt-1">{errors.phone}</p>
+            )}
+            {isCheckingPhone && (
+              <p className="text-gray-500 text-sm mt-1">جاري التحقق...</p>
+            )}
+          </div>
 
           <Select
             label="المدينة"
@@ -124,12 +283,17 @@ const AddPetrolifeAgent = () => {
             </div>
           </div>
 
-          <Input
-            label="العنوان"
-            value={form.address}
-            onChange={(value) => setForm((p) => ({ ...p, address: value }))}
-            placeholder="الصائن، 7453، حي قرطبة، Riyadh 13245, Saudi Arabia"
-          />
+          <div>
+            <Input
+              label="العنوان"
+              value={form.address}
+              onChange={(value) => setForm((p) => ({ ...p, address: value }))}
+              placeholder="الصائن، 7453، حي قرطبة، Riyadh 13245, Saudi Arabia"
+            />
+            {errors.address && (
+              <p className="text-red-500 text-sm mt-1">{errors.address}</p>
+            )}
+          </div>
 
           <Input
             label="كود المندوب"
@@ -138,22 +302,28 @@ const AddPetrolifeAgent = () => {
             placeholder="قم بانشاء قيمة للمندوب هنا"
           />
 
-          <Input
-            label="قيمة العمولة (%)"
-            type="number"
-            value={form.commissionValue}
-            onChange={(value) => setForm((p) => ({ ...p, commissionValue: value }))}
-            placeholder="0"
-          />
+          <div>
+            <Input
+              label="قيمة العمولة (%)"
+              type="number"
+              value={form.commissionValue}
+              onChange={(value) => setForm((p) => ({ ...p, commissionValue: value }))}
+              placeholder="0"
+            />
+            {errors.commissionValue && (
+              <p className="text-red-500 text-sm mt-1">{errors.commissionValue}</p>
+            )}
+          </div>
         </div>
 
         {/* Submit - aligned left */}
         <div className="w-full flex justify-end">
           <button
             type="submit"
-            className="px-5 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors"
+            disabled={isSubmitting || isCheckingPhone || !!errors.phone}
+            className="px-5 h-10 rounded-[10px] bg-[#5A66C1] hover:bg-[#4A5AB1] text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            إضافة المندوب
+            {isSubmitting ? "جاري الإضافة..." : "إضافة المندوب"}
           </button>
         </div>
       </div>

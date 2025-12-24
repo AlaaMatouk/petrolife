@@ -1,15 +1,17 @@
 import { DataTableSection } from "../../../sections/DataTableSection";
-import { Wallet } from "lucide-react";
+import { Wallet, ArrowRightLeft } from "lucide-react";
 import {
   fetchAllAdminWalletRequests,
   addRefidToExistingWalletRequests,
   deleteWalletRequest,
   approveWalletChargeRequest,
   rejectWalletChargeRequest,
+  fetchCompanyTransferRequests,
 } from "../../../../services/firestore";
 import { useToast } from "../../../../context/ToastContext";
 import { useState, useCallback, useEffect } from "react";
-import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import { useLocation, useNavigate } from "react-router-dom";
+import { collection, getDocs, query, orderBy, onSnapshot } from "firebase/firestore";
 import { db, auth } from "../../../../config/firebase";
 import { ConfirmDialog } from "../../../shared/ConfirmDialog/ConfirmDialog";
 
@@ -23,6 +25,17 @@ type WalletRequest = {
   requestDate: string;
   status: string;
   responsible: string;
+};
+
+type CompanyTransfer = {
+  id: string;
+  fromCompany: string;
+  toCompany: string;
+  amount: string;
+  status: string;
+  requestDate: string;
+  actions: string;
+  _rawStatus?: string; // Internal field to check status in ActionMenu
 };
 
 const columns = [
@@ -41,13 +54,63 @@ const fetchWalletRequests = async (): Promise<WalletRequest[]> => {
   return await fetchAllAdminWalletRequests();
 };
 
+const transferColumns = [
+  { 
+    key: "status", 
+    label: "الحالة", 
+    priority: "high" as const,
+    render: (value: string) => {
+      const statusConfig = {
+        completed: { text: "مكتمل", className: "bg-green-100 text-green-800" },
+        approved: { text: "موافق عليه", className: "bg-green-100 text-green-800" },
+        rejected: { text: "مرفوض", className: "bg-red-100 text-red-800" },
+        pending: { text: "قيد الانتظار", className: "bg-yellow-100 text-yellow-800" },
+      };
+      const config = statusConfig[value as keyof typeof statusConfig] || statusConfig.pending;
+      return (
+        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${config.className}`}>
+          {config.text}
+        </span>
+      );
+    }
+  },
+  { key: "requestDate", label: "تاريخ التحويل", priority: "high" as const },
+  { key: "amount", label: "المبلغ", priority: "high" as const },
+  { key: "toCompany", label: "إلى الشركة", priority: "high" as const },
+  { key: "fromCompany", label: "من الشركة", priority: "high" as const },
+];
+
+const fetchCompanyTransfersData = async (): Promise<CompanyTransfer[]> => {
+  const transfers = await fetchCompanyTransferRequests();
+  return transfers.map((transfer) => {
+    const requestDate = transfer.requestDate?.toDate
+      ? transfer.requestDate.toDate().toLocaleDateString("ar-SA")
+      : transfer.requestDate
+      ? new Date(transfer.requestDate).toLocaleDateString("ar-SA")
+      : "-";
+
+    return {
+      id: transfer.id,
+      fromCompany: transfer.fromCompany?.name || "-",
+      toCompany: transfer.toCompany?.name || "-",
+      amount: `${new Intl.NumberFormat("ar-SA").format(transfer.amount || 0)} ر.س`,
+      status: transfer.status || "completed",
+      requestDate: requestDate,
+    };
+  });
+};
+
 export const WalletReq = () => {
   const { addToast } = useToast();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [isMigrating, setIsMigrating] = useState(false);
   const [rawWalletRequestsData, setRawWalletRequestsData] = useState<any[]>([]);
   const [needsMigration, setNeedsMigration] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [transferRefreshTrigger, setTransferRefreshTrigger] = useState(0);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [deleteConfirm, setDeleteConfirm] = useState<{
     isOpen: boolean;
     requestId: string | null;
@@ -71,14 +134,33 @@ export const WalletReq = () => {
   const fetchDataWithState = useCallback(async () => {
     const data = await fetchAllAdminWalletRequests();
 
-    // Fetch raw Firestore data to check for refid
+    // Fetch raw Firestore data from both collections to check for refid
     try {
-      const requestsRef = collection(db, "companies-wallets-requests");
-      const querySnapshot = await getDocs(requestsRef);
       const rawData: any[] = [];
-      querySnapshot.forEach((doc) => {
-        rawData.push({ id: doc.id, ...doc.data() });
-      });
+
+      // Fetch from companies-wallets-requests
+      try {
+        const companiesRef = collection(db, "companies-wallets-requests");
+        const companiesSnapshot = await getDocs(companiesRef);
+        companiesSnapshot.forEach((doc) => {
+          rawData.push({ id: doc.id, ...doc.data() });
+        });
+        console.log(`📦 Fetched ${companiesSnapshot.size} requests from companies-wallets-requests`);
+      } catch (error) {
+        console.error("Error fetching company requests:", error);
+      }
+
+      // Fetch from wallets-requests
+      try {
+        const walletsRef = collection(db, "wallets-requests");
+        const walletsSnapshot = await getDocs(walletsRef);
+        walletsSnapshot.forEach((doc) => {
+          rawData.push({ id: doc.id, ...doc.data() });
+        });
+        console.log(`📦 Fetched ${walletsSnapshot.size} requests from wallets-requests`);
+      } catch (error) {
+        console.warn("Error fetching wallet requests (may not exist):", error);
+      }
 
       // Sort manually by date (support both old and new structures)
       rawData.sort((a, b) => {
@@ -102,6 +184,7 @@ export const WalletReq = () => {
 
       setRawWalletRequestsData(rawData);
       setNeedsMigration(rawData.some((request) => !request.refid));
+      console.log(`✅ Total raw requests loaded: ${rawData.length}`);
     } catch (error) {
       console.error("Error fetching raw wallet requests data:", error);
     }
@@ -109,10 +192,61 @@ export const WalletReq = () => {
     return data;
   }, []);
 
-  // Check migration status on mount
+  // Set up real-time listeners for wallet requests
   useEffect(() => {
+    // Listen to companies-wallets-requests
+    const companiesRef = collection(db, "companies-wallets-requests");
+    const companiesQuery = query(companiesRef, orderBy("createdDate", "desc"));
+    const unsubscribeCompanies = onSnapshot(
+      companiesQuery,
+      () => {
+        // When data changes, refresh the formatted data
+        fetchDataWithState();
+      },
+      (error) => {
+        console.error("Error listening to companies-wallets-requests:", error);
+      }
+    );
+
+    // Listen to wallets-requests
+    let unsubscribeWallets: (() => void) | null = null;
+    try {
+      const walletsRef = collection(db, "wallets-requests");
+      const walletsQuery = query(walletsRef, orderBy("createdDate", "desc"));
+      unsubscribeWallets = onSnapshot(
+        walletsQuery,
+        () => {
+          // When data changes, refresh the formatted data
+          fetchDataWithState();
+        },
+        (error) => {
+          console.warn("Error listening to wallets-requests:", error);
+        }
+      );
+    } catch (error) {
+      console.warn("wallets-requests collection may not exist:", error);
+    }
+
+    // Initial load
     fetchDataWithState();
+
+    // Cleanup
+    return () => {
+      unsubscribeCompanies();
+      if (unsubscribeWallets) {
+        unsubscribeWallets();
+      }
+    };
   }, [fetchDataWithState]);
+
+  // Handle refresh from navigation state
+  useEffect(() => {
+    if (location.state?.refresh) {
+      fetchDataWithState();
+      // Clear refresh flag
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, fetchDataWithState, navigate, location.pathname]);
 
   const handleAddRefidToExisting = async () => {
     try {
@@ -177,8 +311,9 @@ export const WalletReq = () => {
         requestNumber: "",
       });
 
-      // Refresh the data
+      // Refresh the data and trigger table refresh
       await fetchDataWithState();
+      setRefreshTrigger(prev => prev + 1);
     } catch (error: any) {
       console.error("Error deleting wallet request:", error);
       addToast({
@@ -226,8 +361,10 @@ export const WalletReq = () => {
     }
 
     // Get status from correct location (support both old and new structures)
-    const currentStatus =
-      request.status || request.requestedUser?.status || "pending";
+    // Normalize to lowercase for consistent comparison
+    const currentStatus = String(
+      request.status || request.requestedUser?.status || "pending"
+    ).toLowerCase();
     if (currentStatus !== "pending") {
       addToast({
         type: "error",
@@ -252,8 +389,9 @@ export const WalletReq = () => {
         duration: 4000,
       });
 
-      // Refresh data
+      // Refresh data and trigger table refresh
       await fetchDataWithState();
+      setRefreshTrigger(prev => prev + 1);
     } catch (error: any) {
       console.error("Error approving request:", error);
       addToast({
@@ -265,6 +403,7 @@ export const WalletReq = () => {
       setProcessingId(null);
     }
   };
+
 
   // Handle reject wallet request - open confirmation
   const handleReject = (id: string | number) => {
@@ -280,10 +419,12 @@ export const WalletReq = () => {
       return;
     }
 
-    if (request.status !== "pending") {
+    // Normalize status to lowercase for consistent comparison
+    const currentStatus = String(request.status || "pending").toLowerCase();
+    if (currentStatus !== "pending") {
       addToast({
         type: "error",
-        message: `لا يمكن رفض طلب ${request.status}`,
+        message: `لا يمكن رفض طلب ${currentStatus}`,
         duration: 3000,
       });
       return;
@@ -341,8 +482,9 @@ export const WalletReq = () => {
         requestNumber: "",
       });
 
-      // Refresh data
+      // Refresh data and trigger table refresh
       await fetchDataWithState();
+      setRefreshTrigger(prev => prev + 1);
     } catch (error: any) {
       console.error("Error rejecting request:", error);
       addToast({
@@ -394,7 +536,27 @@ export const WalletReq = () => {
         itemsPerPage={10}
         showTimeFilter={false}
         showMoneyRefundButton={true}
+        refreshTrigger={refreshTrigger}
       />
+
+      {/* Company Transfer Requests Section */}
+      <div className="mt-8">
+        <DataTableSection<CompanyTransfer>
+          title="تحويلات بين الشركات"
+          entityName="التحويل"
+          entityNamePlural="تحويلات"
+          icon={ArrowRightLeft}
+          columns={transferColumns}
+          fetchData={fetchCompanyTransfersData}
+          addNewRoute="/wallet-requests"
+          viewDetailsRoute={(id) => `/wallet-requests/${id}`}
+          loadingMessage="جاري تحميل تحويلات الشركات..."
+          itemsPerPage={10}
+          showTimeFilter={false}
+          showAddButton={false}
+          refreshTrigger={transferRefreshTrigger}
+        />
+      </div>
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog

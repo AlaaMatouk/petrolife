@@ -1,66 +1,266 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Eye, X, ArrowLeft } from "lucide-react";
+import { doc, getDoc } from "firebase/firestore";
+import { db, auth } from "../../../../config/firebase";
+import {
+  approveWalletWithdrawalRequest,
+  rejectWalletWithdrawalRequest,
+} from "../../../../services/firestore";
+import { useToast } from "../../../../context/ToastContext";
 
 interface RefundRequestData {
-  id: number;
+  id: string;
   requestNumber: string;
   clientName: string;
-  orderType: string;
-  oldBalance: string;
-  addedBalance: string;
   requestDate: string;
   status: string;
   responsible: string;
-  withdrawalAmount: string;
+  withdrawalAmount: string | number;
   companyIban: string;
   bankName: string;
   ibanImage: string;
+  oldBalance: string | number;
 }
-
-const mockRefundRequestData: RefundRequestData = {
-  id: 1,
-  requestNumber: "MR-1001",
-  clientName: "شركة الأفق",
-  orderType: "استرداد مباشر",
-  oldBalance: "5,000 ر.س",
-  addedBalance: "2,500 ر.س",
-  requestDate: "2025-01-15",
-  status: "قيد المراجعة",
-  responsible: "أحمد محمد",
-  withdrawalAmount: "2,500 ر.س",
-  companyIban: "SA1234567890123456789012",
-  bankName: "البنك الأهلي السعودي",
-  ibanImage: "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400&h=300&fit=crop",
-};
 
 export const RefundRevision = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [refundRequestData, setRefundRequestData] = useState<RefundRequestData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(false);
 
-  // In a real app, you would fetch the refund request data based on the ID
-  const refundRequestData = mockRefundRequestData;
+  // Fetch refund request data from Firestore
+  useEffect(() => {
+    const fetchRefundRequest = async () => {
+      if (!id) {
+        addToast({
+          type: "error",
+          message: "معرف الطلب غير موجود",
+          duration: 3000,
+        });
+        navigate("/wallet-requests/moneyrefundrequests");
+        return;
+      }
 
-  const handleAccept = () => {
-    // Handle accept logic here
-    console.log("Accepting refund request:", id);
-    // Navigate back or show success message
-    navigate("/wallet-requests/moneyrefundrequests");
+      try {
+        setLoading(true);
+        const requestRef = doc(db, "companies-wallets-withdrawals", id);
+        const requestSnap = await getDoc(requestRef);
+
+        if (!requestSnap.exists()) {
+          addToast({
+            type: "error",
+            message: "الطلب غير موجود",
+            duration: 3000,
+          });
+          navigate("/wallet-requests/moneyrefundrequests");
+          return;
+        }
+
+        const data = requestSnap.data();
+
+        // Format date
+        const formatDate = (timestamp: any): string => {
+          if (!timestamp) return "-";
+          try {
+            if (timestamp.toDate && typeof timestamp.toDate === "function") {
+              return new Date(timestamp.toDate()).toLocaleString("ar-EG", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              });
+            }
+            if (timestamp instanceof Date) {
+              return timestamp.toLocaleString("ar-EG", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              });
+            }
+            return new Date(timestamp).toLocaleString("ar-EG", {
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+          } catch (error) {
+            return String(timestamp);
+          }
+        };
+
+        const dateToUse = data.createdDate || data.actionDate || data.requestDate;
+        const status = data.status || "pending";
+        const responsible =
+          data.processedBy?.name || data.actionUser?.name || "-";
+
+        // Handle both withdrawaAmount (typo) and withdrawalAmount field names
+        const withdrawalAmount = data.withdrawalAmount || data.withdrawaAmount || "-";
+
+        setRefundRequestData({
+          id: requestSnap.id,
+          requestNumber: data.refid || data.refId || requestSnap.id,
+          clientName: data.requestedUser?.name || "-",
+          requestDate: formatDate(dateToUse),
+          status: status,
+          responsible: responsible,
+          withdrawalAmount: withdrawalAmount,
+          companyIban: data.companyIban || "-",
+          bankName: data.bankName || "-",
+          ibanImage: data.ibanImageUrl || "-",
+          oldBalance: data.requestedUser?.balance || "-",
+        });
+      } catch (error: any) {
+        console.error("Error fetching refund request:", error);
+        addToast({
+          type: "error",
+          message: "فشل في تحميل بيانات الطلب",
+          duration: 3000,
+        });
+        navigate("/wallet-requests/moneyrefundrequests");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRefundRequest();
+  }, [id, navigate, addToast]);
+
+  const handleAccept = async () => {
+    if (!id) return;
+
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      addToast({
+        type: "error",
+        message: "يجب تسجيل الدخول كمسؤول",
+        duration: 3000,
+      });
+      return;
+    }
+
+    if (!refundRequestData) {
+      addToast({
+        type: "error",
+        message: "بيانات الطلب غير متوفرة",
+        duration: 3000,
+      });
+      return;
+    }
+
+    if (refundRequestData.status !== "pending") {
+      addToast({
+        type: "error",
+        message: `لا يمكن الموافقة على طلب ${refundRequestData.status}`,
+        duration: 3000,
+      });
+      return;
+    }
+
+    try {
+      setProcessing(true);
+
+      await approveWalletWithdrawalRequest(id, {
+        uid: currentUser.uid,
+        email: currentUser.email!,
+        name: currentUser.displayName || currentUser.email!,
+      });
+
+      addToast({
+        type: "success",
+        message: "تمت الموافقة على طلب الاسترداد بنجاح وتم خصم المبلغ من الرصيد",
+        duration: 4000,
+      });
+
+      // Refresh data and navigate back
+      navigate("/wallet-requests/moneyrefundrequests");
+    } catch (error: any) {
+      console.error("Error approving refund request:", error);
+      addToast({
+        type: "error",
+        message: error.message || "فشل في الموافقة على الطلب",
+        duration: 3000,
+      });
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const handleReject = () => {
     setIsRejectModalOpen(true);
   };
 
-  const handleRejectSubmit = () => {
-    // Handle reject logic here with reason
-    console.log("Rejecting refund request:", id, "Reason:", rejectionReason);
-    // Navigate back or show success message
-    setIsRejectModalOpen(false);
-    setRejectionReason("");
-    navigate("/wallet-requests/moneyrefundrequests");
+  const handleRejectSubmit = async () => {
+    if (!id) return;
+
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      addToast({
+        type: "error",
+        message: "يجب تسجيل الدخول كمسؤول",
+        duration: 3000,
+      });
+      return;
+    }
+
+    if (!refundRequestData) {
+      addToast({
+        type: "error",
+        message: "بيانات الطلب غير متوفرة",
+        duration: 3000,
+      });
+      return;
+    }
+
+    if (refundRequestData.status !== "pending") {
+      addToast({
+        type: "error",
+        message: `لا يمكن رفض طلب ${refundRequestData.status}`,
+        duration: 3000,
+      });
+      return;
+    }
+
+    try {
+      setProcessing(true);
+
+      await rejectWalletWithdrawalRequest(
+        id,
+        {
+          uid: currentUser.uid,
+          email: currentUser.email!,
+          name: currentUser.displayName || currentUser.email!,
+        },
+        rejectionReason || undefined
+      );
+
+      addToast({
+        type: "success",
+        message: `تم رفض طلب الاسترداد رقم ${refundRequestData.requestNumber} بنجاح`,
+        duration: 3000,
+      });
+
+      setIsRejectModalOpen(false);
+      setRejectionReason("");
+      navigate("/wallet-requests/moneyrefundrequests");
+    } catch (error: any) {
+      console.error("Error rejecting refund request:", error);
+      addToast({
+        type: "error",
+        message: error.message || "فشل في رفض الطلب",
+        duration: 3000,
+      });
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const handleRejectCancel = () => {
@@ -69,8 +269,46 @@ export const RefundRevision = () => {
   };
 
   const handleBack = () => {
-    navigate("/wallet-requests");
+    navigate("/wallet-requests/moneyrefundrequests");
   };
+
+  // Format amount for display
+  const formatAmount = (amount: string | number): string => {
+    if (amount === "-" || !amount) return "-";
+    const numAmount = typeof amount === "string" ? parseFloat(amount) : amount;
+    if (isNaN(numAmount)) return String(amount);
+    return `${new Intl.NumberFormat("ar-SA").format(numAmount)} ر.س`;
+  };
+
+  // Format status for display
+  const formatStatus = (status: string): string => {
+    const statusMap: { [key: string]: string } = {
+      pending: "قيد المراجعة",
+      approved: "موافق عليه",
+      rejected: "مرفوض",
+    };
+    return statusMap[status] || status;
+  };
+
+  if (loading) {
+    return (
+      <div className="max-w-[582px] ml-auto" dir="rtl">
+        <div className="flex items-center justify-center p-8">
+          <div className="text-gray-600">جاري تحميل بيانات الطلب...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!refundRequestData) {
+    return (
+      <div className="max-w-[582px] ml-auto" dir="rtl">
+        <div className="flex items-center justify-center p-8">
+          <div className="text-red-600">لم يتم العثور على بيانات الطلب</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-[582px] ml-auto" dir="rtl">
@@ -116,7 +354,7 @@ export const RefundRevision = () => {
             </label>
             <div className="p-3 bg-[#F5F6F766] rounded-md border border-gray-200">
               <span className="text-[#5B738B] font-normal text-sm">
-                {refundRequestData.status}
+                {formatStatus(refundRequestData.status)}
               </span>
             </div>
           </div>
@@ -140,7 +378,7 @@ export const RefundRevision = () => {
             </label>
             <div className="p-3 bg-[#F5F6F766] rounded-md border border-gray-200">
               <span className="text-[#5B738B] font-normal text-sm">
-                {refundRequestData.withdrawalAmount}
+                {formatAmount(refundRequestData.withdrawalAmount)}
               </span>
             </div>
           </div>
@@ -176,38 +414,82 @@ export const RefundRevision = () => {
         </h3>
         <div className="border border-dashed border-[#A9B4BE] rounded-[8px] p-4">
           <div className="flex justify-center">
-            <img
-              src={refundRequestData.ibanImage}
-              alt="IBAN receipt"
-              className="max-w-full h-auto rounded-[8px] shadow-sm flex-1 object-cover"
-              style={{ maxHeight: "158px" }}
-            />
+            {refundRequestData.ibanImage && refundRequestData.ibanImage !== "-" ? (
+              <img
+                src={refundRequestData.ibanImage}
+                alt="IBAN receipt"
+                className="max-w-full h-auto rounded-[8px] shadow-sm flex-1 object-cover"
+                style={{ maxHeight: "158px" }}
+              />
+            ) : (
+              <div className="text-gray-400">لا توجد صورة متوفرة</div>
+            )}
           </div>
         </div>
 
         {/* Action Buttons */}
         <div className="flex flex-col sm:flex-row gap-4 mt-5 justify-end">
-
-
           <div className="flex flex-col sm:flex-row gap-[10px] justify-between">
-            <button
-              onClick={handleReject}
-              className="px-[10px] py-3 bg-white text-[#5B738B] border-[0.8px] border-[#5B738B] font-normal rounded-[8px] w-[120px]"
-              style={{ border: "0.8px solid #5B738B" }}
-            >
-              تصدير الطلب
-            </button>
+            {refundRequestData.status === "pending" && (
+              <>
+                <button
+                  onClick={handleReject}
+                  disabled={processing}
+                  className="px-[10px] py-3 bg-white text-[#5B738B] border-[0.8px] border-[#5B738B] font-normal rounded-[8px] w-[120px] disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ border: "0.8px solid #5B738B" }}
+                >
+                  {processing ? "جاري المعالجة..." : "رفض"}
+                </button>
 
-            <button
-              onClick={handleAccept}
-              className="px-[10px] py-3 bg-[#5A66C1] text-white font-normal rounded-[8px] w-[120px]"
-            >
-              حسنا
-            </button>
+                <button
+                  onClick={handleAccept}
+                  disabled={processing}
+                  className="px-[10px] py-3 bg-[#5A66C1] text-white font-normal rounded-[8px] w-[120px] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {processing ? "جاري المعالجة..." : "موافقة"}
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
 
+      {/* Reject Modal */}
+      {isRejectModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4" dir="rtl">
+            <h2 className="text-lg font-semibold mb-4">رفض طلب الاسترداد</h2>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                سبب الرفض (اختياري)
+              </label>
+              <textarea
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                className="w-full p-2 border border-gray-300 rounded-md"
+                rows={4}
+                placeholder="أدخل سبب الرفض..."
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={handleRejectCancel}
+                disabled={processing}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md disabled:opacity-50"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handleRejectSubmit}
+                disabled={processing}
+                className="px-4 py-2 bg-red-600 text-white rounded-md disabled:opacity-50"
+              >
+                {processing ? "جاري المعالجة..." : "رفض"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

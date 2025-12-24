@@ -11,6 +11,7 @@ import {
   updateDoc,
   deleteDoc,
   arrayUnion,
+  arrayRemove,
   where,
   orderBy,
   setDoc,
@@ -146,22 +147,70 @@ export const fetchCompaniesDrivers = async () => {
 
 /**
  * Fetch all documents from the Firestore "drivers" collection
+ * Ordered by createdDate descending (newest first)
  * @returns Promise with the drivers data
  */
 export const fetchDrivers = async () => {
   try {
     const driversRef = collection(db, "drivers");
-    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(
-      driversRef
-    );
+    
+    // Try to fetch with orderBy, fallback to unordered if field doesn't exist
+    let querySnapshot: QuerySnapshot<DocumentData>;
+    try {
+      const driversQuery = query(driversRef, orderBy("createdDate", "desc"));
+      querySnapshot = await getDocs(driversQuery);
+    } catch (orderError) {
+      // Fallback to unordered query if createdDate field doesn't exist on all documents
+      console.warn("⚠️ Could not order by createdDate, fetching without order");
+      querySnapshot = await getDocs(driversRef);
+    }
 
     const driversData: any[] = [];
 
     querySnapshot.forEach((doc) => {
+      const data = doc.data();
       driversData.push({
         docId: doc.id,
-        ...doc.data(),
+        ...data,
+        createdDate: data.createdDate || data.createdAt || null, // Store createdDate for sorting
       });
+    });
+
+    // Client-side sort by createdDate descending (newest first) as fallback
+    driversData.sort((a, b) => {
+      const dateA = a.createdDate;
+      const dateB = b.createdDate;
+      
+      // Convert Firestore Timestamp to Date if needed
+      let timeA = 0;
+      let timeB = 0;
+      
+      if (dateA) {
+        if (dateA.toDate && typeof dateA.toDate === "function") {
+          timeA = dateA.toDate().getTime();
+        } else if (dateA instanceof Date) {
+          timeA = dateA.getTime();
+        } else if (typeof dateA === "number") {
+          timeA = dateA;
+        } else {
+          timeA = new Date(dateA).getTime();
+        }
+      }
+      
+      if (dateB) {
+        if (dateB.toDate && typeof dateB.toDate === "function") {
+          timeB = dateB.toDate().getTime();
+        } else if (dateB instanceof Date) {
+          timeB = dateB.getTime();
+        } else if (typeof dateB === "number") {
+          timeB = dateB;
+        } else {
+          timeB = new Date(dateB).getTime();
+        }
+      }
+      
+      // Sort descending (newest first)
+      return timeB - timeA;
     });
 
     return driversData;
@@ -2391,10 +2440,40 @@ export const checkAndCreateTransferRequest = async (
       return null;
     }
 
-    // Fetch current balance
-    const currentBalance = await calculateStationsCompanyBalance(companyEmail);
-
-    console.log(`💰 Current balance: ${currentBalance.toFixed(2)}`);
+    // Fetch current balance from stored document first (accounts for transfers)
+    // Only fall back to calculation if document doesn't have balance field
+    let currentBalance = 0;
+    try {
+      const qRef = query(
+        collection(db, "stationscompany"),
+        where("email", "==", companyEmail.toLowerCase())
+      );
+      const snapshot = await getDocs(qRef);
+      
+      if (!snapshot.empty) {
+        const docData = snapshot.docs[0].data();
+        const storedBalance = docData.balance;
+        
+        if (storedBalance !== undefined && storedBalance !== null) {
+          // Use stored balance which accounts for transfers
+          currentBalance = storedBalance;
+          console.log(`💰 Current balance from document (accounts for transfers): ${currentBalance.toFixed(2)}`);
+        } else {
+          // Fall back to calculation if balance field doesn't exist
+          currentBalance = await calculateStationsCompanyBalance(companyEmail);
+          console.log(`💰 Current balance (calculated, no stored balance): ${currentBalance.toFixed(2)}`);
+        }
+      } else {
+        // No document found, calculate from orders
+        currentBalance = await calculateStationsCompanyBalance(companyEmail);
+        console.log(`💰 Current balance (calculated, no document): ${currentBalance.toFixed(2)}`);
+      }
+    } catch (error) {
+      // Fall back to calculation on error
+      console.warn("⚠️ Error fetching stored balance, calculating from orders:", error);
+      currentBalance = await calculateStationsCompanyBalance(companyEmail);
+      console.log(`💰 Current balance (calculated, fallback): ${currentBalance.toFixed(2)}`);
+    }
 
     // Check if balance >= 3000
     if (currentBalance < 3000) {
@@ -2507,6 +2586,70 @@ export const fetchServiceDistributerTransfers = async (
       `❌ Error fetching transfer requests for ${companyEmail}:`,
       error
     );
+    throw error;
+  }
+};
+
+/**
+ * Fetch all service distributer transfers (for admin view)
+ * @returns Promise with array of all transfer requests
+ */
+export const fetchAllServiceDistributerTransfers = async (): Promise<ServiceDistributerTransferRequest[]> => {
+  try {
+    console.log("📊 Fetching all service distributer transfers for admin...");
+
+    const transfersRef = collection(db, "service-distributer-transfers");
+    const querySnapshot = await getDocs(transfersRef);
+
+    const transfers: ServiceDistributerTransferRequest[] = [];
+    querySnapshot.forEach((doc) => {
+      transfers.push({
+        id: doc.id,
+        ...doc.data(),
+      } as ServiceDistributerTransferRequest);
+    });
+
+    // Sort by createdAt descending (client-side to avoid composite index requirement)
+    transfers.sort((a, b) => {
+      const aDate = a.createdAt?.toDate
+        ? a.createdAt.toDate()
+        : new Date(a.createdAt || 0);
+      const bDate = b.createdAt?.toDate
+        ? b.createdAt.toDate()
+        : new Date(b.createdAt || 0);
+      return bDate.getTime() - aDate.getTime();
+    });
+
+    console.log(`✅ Found ${transfers.length} total transfer requests`);
+    return transfers;
+  } catch (error) {
+    console.error("❌ Error fetching all transfer requests:", error);
+    throw error;
+  }
+};
+
+/**
+ * Calculate total commissions for all service providers (admin view)
+ * @returns Promise with total commission amount
+ */
+export const calculateTotalCommissionsForAllProviders = async (): Promise<number> => {
+  try {
+    console.log("💰 Calculating total commissions for all providers...");
+
+    const commissionsRef = collection(db, "commissions");
+    const querySnapshot = await getDocs(commissionsRef);
+
+    let totalCommissions = 0;
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      const commissionAmount = data.commissionAmount || 0;
+      totalCommissions += commissionAmount;
+    });
+
+    console.log(`✅ Total commissions for all providers: ${totalCommissions.toFixed(2)}`);
+    return totalCommissions;
+  } catch (error) {
+    console.error("❌ Error calculating total commissions:", error);
     throw error;
   }
 };
@@ -3051,13 +3194,19 @@ export const updateLastTransferToFullBalance = async (
     }
 
     // Update the transfer amount to full balance
-    const transferRef = doc(db, "service-distributer-transfers", lastTransfer.id);
+    const transferRef = doc(
+      db,
+      "service-distributer-transfers",
+      lastTransfer.id
+    );
     await updateDoc(transferRef, {
       transferAmount: currentBalance,
     });
 
     console.log(
-      `✅ Updated transfer ${lastTransfer.transferNumber} (ID: ${lastTransfer.id}) to full balance: ${currentBalance.toFixed(2)}`
+      `✅ Updated transfer ${lastTransfer.transferNumber} (ID: ${
+        lastTransfer.id
+      }) to full balance: ${currentBalance.toFixed(2)}`
     );
 
     return lastTransfer.id;
@@ -3164,8 +3313,8 @@ export const updateStationsCompanyBalance = async (
       // Continue with balance calculation even if commission processing fails
     }
 
-    // Calculate the balance (which now deducts commission)
-    const balance = await calculateStationsCompanyBalance(companyEmail);
+    // Calculate the balance from orders (which now deducts commission)
+    const calculatedBalance = await calculateStationsCompanyBalance(companyEmail);
 
     // Find stationscompany document by email
     const qRef = query(
@@ -3189,21 +3338,73 @@ export const updateStationsCompanyBalance = async (
     // Update the document with balance field
     const docSnap = snapshot.docs[0];
     const docRef = doc(db, "stationscompany", docSnap.id);
+    const currentDocData = docSnap.data();
+    const currentStoredBalance = currentDocData.balance || 0;
 
-    await updateDoc(docRef, {
-      balance: balance,
-    });
-
-    console.log(
-      `✅ Updated balance for stationscompany ${companyEmail}: ${balance.toFixed(
-        2
-      )}`
-    );
+    // CRITICAL: If stored balance is LOWER than calculated balance, it means transfers have been made
+    // We should use the stored balance (after transfers) instead of recalculating from orders
+    // This prevents overwriting the balance after a transfer is completed
+    let balanceToUse = calculatedBalance;
+    if (currentStoredBalance < calculatedBalance) {
+      console.log(
+        `⚠️ Stored balance (${currentStoredBalance.toFixed(2)}) is lower than calculated balance (${calculatedBalance.toFixed(2)})`
+      );
+      console.log(`   This indicates transfers have been made. Using stored balance.`);
+      balanceToUse = currentStoredBalance;
+      
+      // Don't update the balance if it's already lower (transfers deducted)
+      // Only update if calculated balance is less than stored (new orders added)
+      if (calculatedBalance < currentStoredBalance) {
+        balanceToUse = calculatedBalance;
+        await updateDoc(docRef, {
+          balance: balanceToUse,
+        });
+        console.log(
+          `✅ Updated balance for stationscompany ${companyEmail}: ${balanceToUse.toFixed(2)}`
+        );
+      } else {
+        console.log(
+          `✅ Keeping stored balance (transfers already deducted): ${balanceToUse.toFixed(2)}`
+        );
+      }
+    } else {
+      // Normal case: no transfers made, update with calculated balance
+      await updateDoc(docRef, {
+        balance: balanceToUse,
+      });
+      console.log(
+        `✅ Updated balance for stationscompany ${companyEmail}: ${balanceToUse.toFixed(2)}`
+      );
+    }
 
     // Auto-check and create transfer request if balance >= 3000
+    // Use the balance that accounts for transfers (balanceToUse, not calculatedBalance)
     // This is non-blocking - don't fail balance update if transfer creation fails
     try {
-      await checkAndCreateTransferRequest(companyEmail);
+      // Temporarily update the balance in the document for the check
+      // The check uses calculateStationsCompanyBalance which doesn't account for transfers
+      // So we need to pass the correct balance
+      const finalBalance = balanceToUse;
+      
+      // Only check for transfer request if we're using the calculated balance
+      // OR if the stored balance (after transfers) is still >= 3000
+      if (finalBalance >= 3000) {
+        // Check if there's already a pending transfer request
+        const transfersRef = collection(db, "service-distributer-transfers");
+        const transferQ = query(
+          transfersRef,
+          where("stationsCompanyEmail", "==", companyEmail.toLowerCase()),
+          where("status", "==", "pending")
+        );
+        const transferSnapshot = await getDocs(transferQ);
+
+        if (transferSnapshot.empty) {
+          // Only create if no pending transfer exists
+          await checkAndCreateTransferRequest(companyEmail);
+        } else {
+          console.log("⚠️ Pending transfer request already exists, skipping creation");
+        }
+      }
     } catch (error) {
       console.error(
         `⚠️ Error checking/creating transfer request (non-critical):`,
@@ -3216,6 +3417,117 @@ export const updateStationsCompanyBalance = async (
       `❌ Error updating balance for stationscompany ${companyEmail}:`,
       error
     );
+    throw error;
+  }
+};
+
+/**
+ * Generate wallet number from provider ID or email
+ * Format: SA-XXXX-XXXX-XXXX (12 alphanumeric characters)
+ * @param providerId - Provider document ID
+ * @param providerEmail - Provider email (used as fallback)
+ * @returns Wallet number string
+ */
+const generateWalletNumber = (providerId: string, providerEmail?: string): string => {
+  if (providerId && providerId.length >= 12) {
+    return `SA-${providerId.slice(0, 4)}-${providerId.slice(4, 8)}-${providerId.slice(8, 12)}`;
+  } else if (providerId) {
+    // Pad ID if too short
+    const paddedId = providerId.padEnd(12, '0');
+    return `SA-${paddedId.slice(0, 4)}-${paddedId.slice(4, 8)}-${paddedId.slice(8, 12)}`;
+  } else if (providerEmail) {
+    const emailHash = providerEmail.slice(0, 12).toUpperCase().replace(/[^A-Z0-9]/g, '').padEnd(12, 'X');
+    return `SA-${emailHash.slice(0, 4)}-${emailHash.slice(4, 8)}-${emailHash.slice(8, 12)}`;
+  }
+  return "SA-XXXX-XXXX-XXXX";
+};
+
+/**
+ * Ensure wallet number exists in stationscompany document
+ * Generates and stores wallet number if it doesn't exist
+ * @param companyEmail - The stationscompany email
+ * @returns Promise with wallet number string
+ */
+export const ensureWalletNumber = async (companyEmail: string): Promise<string> => {
+  try {
+    const qRef = query(
+      collection(db, "stationscompany"),
+      where("email", "==", companyEmail.toLowerCase())
+    );
+    const snapshot = await getDocs(qRef);
+
+    if (snapshot.empty) {
+      console.warn(`⚠️ Stationscompany document not found for email: ${companyEmail}`);
+      // Generate wallet number from email as fallback
+      return generateWalletNumber("", companyEmail);
+    }
+
+    const docSnap = snapshot.docs[0];
+    const docData = docSnap.data();
+    const docRef = doc(db, "stationscompany", docSnap.id);
+
+    // If wallet number already exists, return it
+    if (docData.walletNumber) {
+      return docData.walletNumber;
+    }
+
+    // Generate wallet number if it doesn't exist
+    const walletNumber = generateWalletNumber(docSnap.id, companyEmail);
+
+    // Store it in the document
+    await updateDoc(docRef, {
+      walletNumber: walletNumber,
+    });
+
+    console.log(`✅ Generated and stored wallet number for ${companyEmail}: ${walletNumber}`);
+    return walletNumber;
+  } catch (error) {
+    console.error(`❌ Error ensuring wallet number for ${companyEmail}:`, error);
+    // Return generated wallet number even on error
+    return generateWalletNumber("", companyEmail);
+  }
+};
+
+/**
+ * Initialize wallet numbers for all existing stationscompany documents
+ * Can be called once to backfill existing data
+ * @returns Promise<void>
+ */
+export const initializeWalletNumbers = async (): Promise<void> => {
+  try {
+    console.log("🔄 Initializing wallet numbers for all stationscompany documents...");
+
+    const stationsCompanyRef = collection(db, "stationscompany");
+    const snapshot = await getDocs(stationsCompanyRef);
+
+    let updated = 0;
+    let skipped = 0;
+
+    for (const docSnap of snapshot.docs) {
+      const data = docSnap.data();
+      
+      // Skip if wallet number already exists
+      if (data.walletNumber) {
+        skipped++;
+        continue;
+      }
+
+      // Generate wallet number
+      const walletNumber = generateWalletNumber(docSnap.id, data.email);
+      
+      // Update document
+      const docRef = doc(db, "stationscompany", docSnap.id);
+      await updateDoc(docRef, {
+        walletNumber: walletNumber,
+      });
+
+      updated++;
+      console.log(`✅ Generated wallet number for ${data.email || docSnap.id}: ${walletNumber}`);
+    }
+
+    console.log(`✅ Wallet numbers initialization complete: ${updated} updated, ${skipped} skipped`);
+  } catch (error) {
+    console.error("❌ Error initializing wallet numbers:", error);
     throw error;
   }
 };
@@ -3559,6 +3871,35 @@ export const fetchCoupons = async (): Promise<any[]> => {
   } catch (error) {
     console.error("Error fetching coupons:", error);
     return [];
+  }
+};
+
+/**
+ * Fetch coupon by code from Firestore
+ * @param code - The coupon code to search for
+ * @returns Promise with coupon data or null if not found
+ */
+export const fetchCouponByCode = async (code: string): Promise<any | null> => {
+  try {
+    const couponsCollection = collection(db, "coupons");
+    const q = query(
+      couponsCollection,
+      where("code", "==", code.toUpperCase().trim())
+    );
+    const querySnapshot = await getDocs(q);
+
+    if (querySnapshot.empty) {
+      return null;
+    }
+
+    const couponDoc = querySnapshot.docs[0];
+    return {
+      id: couponDoc.id,
+      ...couponDoc.data(),
+    };
+  } catch (error) {
+    console.error("Error fetching coupon by code:", error);
+    return null;
   }
 };
 export const calculateBatteryChangeStatistics = (
@@ -4708,6 +5049,48 @@ export const calculateFuelConsumptionByCities = async (
  * Fetch subscriptions for current user and calculate expiry dates
  * @returns Promise with subscription data including expiry dates
  */
+/**
+ * Check if this is the company's first time subscribing
+ * @returns Promise<boolean> - true if no subscription history exists, false otherwise
+ */
+export const checkIsFirstTimeSubscription = async (): Promise<boolean> => {
+  try {
+    const user = auth.currentUser;
+    if (!user) {
+      console.error("No authenticated user");
+      return false;
+    }
+
+    // Get the current company
+    const company = await fetchCurrentCompany();
+    if (!company) {
+      console.error("No company found for current user");
+      return false;
+    }
+
+    const companyEmail = company.email;
+    if (!companyEmail) {
+      console.error("No company email found");
+      return false;
+    }
+
+    // Query subscriptions-payment collection by company email
+    const subscriptionsCollection = collection(db, "subscriptions-payment");
+    const q = query(
+      subscriptionsCollection,
+      where("company.email", "==", companyEmail),
+      limit(1)
+    );
+    const subscriptionsSnapshot = await getDocs(q);
+
+    // Return true if no subscriptions found (first time)
+    return subscriptionsSnapshot.docs.length === 0;
+  } catch (error) {
+    console.error("Error checking first-time subscription status:", error);
+    return false;
+  }
+};
+
 export const fetchUserSubscriptions = async (): Promise<any[]> => {
   try {
     const user = auth.currentUser;
@@ -4746,13 +5129,57 @@ export const fetchUserSubscriptions = async (): Promise<any[]> => {
       companyEmail
     );
 
-    // Query by company.email (nested field)
-    const q = query(
-      subscriptionsCollection,
-      where("company.email", "==", companyEmail),
-      orderBy("createdDate", "desc")
-    );
-    const subscriptionsSnapshot = await getDocs(q);
+    let subscriptionsSnapshot;
+    
+    // Try query with orderBy first (requires composite index)
+    try {
+      const q = query(
+        subscriptionsCollection,
+        where("company.email", "==", companyEmail),
+        orderBy("createdDate", "desc")
+      );
+      subscriptionsSnapshot = await getDocs(q);
+    } catch (indexError: any) {
+      // If index is missing, fetch all and filter/sort in memory
+      if (indexError.code === "failed-precondition") {
+        console.warn(
+          "⚠️ Composite index not found. Fetching all subscriptions and filtering in memory..."
+        );
+        const allSubscriptionsSnapshot = await getDocs(subscriptionsCollection);
+        
+        // Filter by company email in memory
+        const filteredDocs = allSubscriptionsSnapshot.docs.filter((doc) => {
+          const data = doc.data();
+          const paymentCompanyEmail = data.company?.email?.toLowerCase();
+          return paymentCompanyEmail === companyEmail.toLowerCase();
+        });
+        
+        // Sort by createdDate in memory (descending)
+        filteredDocs.sort((a, b) => {
+          const dateA = a.data().createdDate?.toDate 
+            ? a.data().createdDate.toDate().getTime() 
+            : a.data().createdDate instanceof Date 
+            ? a.data().createdDate.getTime() 
+            : 0;
+          const dateB = b.data().createdDate?.toDate 
+            ? b.data().createdDate.toDate().getTime() 
+            : b.data().createdDate instanceof Date 
+            ? b.data().createdDate.getTime() 
+            : 0;
+          return dateB - dateA; // Descending order
+        });
+        
+        // Create a mock QuerySnapshot-like object
+        subscriptionsSnapshot = {
+          docs: filteredDocs,
+          empty: filteredDocs.length === 0,
+          size: filteredDocs.length,
+        } as any;
+      } else {
+        // Re-throw if it's a different error
+        throw indexError;
+      }
+    }
 
     console.log(
       "Total subscriptions found (filtered by company.email):",
@@ -5291,7 +5718,8 @@ export const deleteSubscription = async (
 };
 
 /**
- * Process subscription payment: deduct wallet balance, create subscription payment, order, and invoice
+ * Process subscription payment: deduct wallet balance, create subscription payment and invoice
+ * Note: Subscriptions are NOT added to orders collection
  * @param subscriptionData - Subscription payment data
  * @returns Promise with invoice ID and subscription payment ID
  */
@@ -5304,10 +5732,11 @@ export const processSubscriptionPayment = async (subscriptionData: {
   vat: number;
   companyId: string;
   company: any;
+  couponCode?: string;
+  couponData?: any;
 }): Promise<{
   invoiceId: string;
   subscriptionPaymentId: string;
-  orderId: string;
 }> => {
   try {
     const currentUser = auth.currentUser;
@@ -5361,6 +5790,19 @@ export const processSubscriptionPayment = async (subscriptionData: {
 
     // Safely determine periodValueInDays
     let periodValueInDays = subscription.periodValueInDays;
+
+    // If coupon is applied (especially LIFE1 with 100% discount), set to 1 year
+    const couponCode = subscriptionData.couponCode;
+    const couponData = subscriptionData.couponData;
+    if (couponCode && couponData) {
+      const couponPercentage =
+        couponData.percentage || couponData.precentage || 0;
+      // If it's LIFE1 or 100% discount coupon, set to 1 year (365 days)
+      if (couponCode.toUpperCase() === "LIFE1" || couponPercentage === 100) {
+        periodValueInDays = 365;
+      }
+    }
+
     if (!periodValueInDays) {
       // Try to determine from periodName
       let periodNameStr = "";
@@ -5412,19 +5854,20 @@ export const processSubscriptionPayment = async (subscriptionData: {
       const currentBalance =
         companyData.balance || companyData.walletBalance || 0;
 
-      // Verify sufficient balance
-      if (currentBalance < totalWithVAT) {
+      // Verify sufficient balance (skip if total is 0 due to 100% discount)
+      if (totalWithVAT > 0 && currentBalance < totalWithVAT) {
         throw new Error("Insufficient balance");
       }
 
-      // Calculate new balance
-      const newBalance = currentBalance - totalWithVAT;
+      // Calculate new balance (only deduct if total > 0)
+      const newBalance =
+        totalWithVAT > 0 ? currentBalance - totalWithVAT : currentBalance;
 
       // 2. Create subscription payment document
       const subscriptionPaymentRef = doc(
         collection(db, "subscriptions-payment")
       );
-      const subscriptionPaymentData = {
+      const subscriptionPaymentData: any = {
         company: {
           id: company.id || finalCompanyId,
           email: companyEmail || companyData.email || "",
@@ -5456,43 +5899,18 @@ export const processSubscriptionPayment = async (subscriptionData: {
         createdDate: serverTimestamp(),
         createdUserId: currentUser.uid,
       };
+
+      // Add coupon information if provided
+      if (couponCode) {
+        subscriptionPaymentData.couponCode = couponCode;
+      }
+      if (couponData) {
+        subscriptionPaymentData.couponData = couponData;
+      }
+
       transaction.set(subscriptionPaymentRef, subscriptionPaymentData);
 
-      // 3. Create order document
-      const orderRef = doc(collection(db, "orders"));
-      const orderData = {
-        companyUid: currentUser.uid,
-        createdUserId: currentUser.uid,
-        orderDate: serverTimestamp(),
-        createdDate: serverTimestamp(),
-        service: {
-          title: {
-            ar: "اشتراك",
-            en: "Subscription",
-          },
-          desc: {
-            ar: "اشتراك في باقة",
-            en: "Subscription package",
-          },
-        },
-        selectedOption: {
-          name: {
-            ar: subscription.title?.ar || subscription.title?.en || "اشتراك",
-            en:
-              subscription.title?.en ||
-              subscription.title?.ar ||
-              "Subscription",
-          },
-        },
-        totalPrice: totalWithVAT,
-        fuelCost: 0,
-        deliveryFees: 0,
-        status: "completed",
-        subscriptionPaymentId: subscriptionPaymentRef.id,
-      };
-      transaction.set(orderRef, orderData);
-
-      // 4. Update company's balance, selectedSubscription, and maxCarNumber in one update
+      // 3. Update company's balance, selectedSubscription, and maxCarNumber in one update
       transaction.update(companyDocRef, {
         balance: newBalance,
         selectedSubscription: {
@@ -5513,7 +5931,6 @@ export const processSubscriptionPayment = async (subscriptionData: {
 
       return {
         subscriptionPaymentId: subscriptionPaymentRef.id,
-        orderId: orderRef.id,
       };
     });
 
@@ -5643,7 +6060,6 @@ export const processSubscriptionPayment = async (subscriptionData: {
       type: "Subscription",
       createdAt: Timestamp.fromDate(subscriptionStartDate),
       companyData: cleanCompanyData,
-      orderId: result.orderId,
       items: [invoiceItem],
       subtotal: totalWithoutVAT,
       vatAmount: vat,
@@ -5658,7 +6074,6 @@ export const processSubscriptionPayment = async (subscriptionData: {
     return {
       invoiceId: invoiceDocRef.id,
       subscriptionPaymentId: result.subscriptionPaymentId,
-      orderId: result.orderId,
     };
   } catch (error) {
     console.error("❌ Error processing subscription payment:", error);
@@ -6331,19 +6746,7 @@ export const updateService = async (
  */
 export const fetchWalletChargeRequests = async () => {
   try {
-    const requestsRef = collection(db, "companies-wallets-requests");
-    const q = query(requestsRef, orderBy("createdDate", "desc"));
-    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
-
     const allRequestsData: any[] = [];
-
-    querySnapshot.forEach((doc) => {
-      allRequestsData.push({
-        id: doc.id,
-        ...doc.data(),
-      });
-    });
-
     const currentUser = auth.currentUser;
 
     if (!currentUser) {
@@ -6352,6 +6755,39 @@ export const fetchWalletChargeRequests = async () => {
 
     const userEmail = currentUser.email;
 
+    // STEP 1: Fetch from companies-wallets-requests
+    try {
+      const companiesRef = collection(db, "companies-wallets-requests");
+      const q = query(companiesRef, orderBy("createdDate", "desc"));
+      const snapshot = await getDocs(q);
+
+      snapshot.forEach((doc) => {
+        allRequestsData.push({
+          id: doc.id,
+          ...doc.data(),
+        });
+      });
+    } catch (error) {
+      console.error("Error fetching company requests:", error);
+    }
+
+    // STEP 2: Fetch from wallets-requests (for clients/individuals)
+    try {
+      const walletsRef = collection(db, "wallets-requests");
+      const q = query(walletsRef, orderBy("createdDate", "desc"));
+      const snapshot = await getDocs(q);
+
+      snapshot.forEach((doc) => {
+        allRequestsData.push({
+          id: doc.id,
+          ...doc.data(),
+        });
+      });
+    } catch (error) {
+      console.warn("wallets-requests collection not found or error:", error);
+    }
+
+    // Filter by user email (works for both collections)
     const filteredRequests = allRequestsData.filter((request) => {
       const requestedUserEmail = request.requestedUser?.email;
 
@@ -6539,8 +6975,84 @@ export const fetchAdminWalletReports = async () => {
         });
     }
 
+    // Also fetch subscription payments
+    console.log("\n🔄 Fetching subscription payments for admin wallet reports...");
+    try {
+      const subscriptionPayments = await fetchAllSubscriptionPayments();
+      console.log(`✅ Fetched ${subscriptionPayments.length} subscription payments`);
+      
+      // Transform subscription payments to wallet report format
+      subscriptionPayments.forEach((subscription) => {
+        const formatDate = (timestamp: any): string => {
+          if (!timestamp) return "-";
+          try {
+            if (timestamp.toDate && typeof timestamp.toDate === "function") {
+              return new Date(timestamp.toDate()).toLocaleString("ar-EG", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              });
+            }
+            if (timestamp instanceof Date) {
+              return timestamp.toLocaleString("ar-EG", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              });
+            }
+            return new Date(timestamp).toLocaleString("ar-EG", {
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+          } catch (error) {
+            return String(timestamp);
+          }
+        };
+        
+        const planName = subscription.planName?.ar || subscription.planName?.en || subscription.planName || 'اشتراك';
+        const planType = subscription.planType === 'monthly' ? 'شهري' : subscription.planType === 'yearly' ? 'سنوي' : '';
+        const operationName = planType ? `${planName} ${planType}` : planName;
+        
+        const rawDate = subscription.createdDate || subscription.paymentDate;
+        
+        allRequestsData.push({
+          id: subscription.id,
+          date: formatDate(rawDate),
+          clientType: "شركة", // Subscriptions are for companies
+          clientName: subscription.companyName || subscription.company?.name || "-",
+          operationNumber: subscription.refid || subscription.id,
+          operationType: "اشتراك",
+          debit: subscription.amount || subscription.price || subscription.totalAmount || "-",
+          credit: "-",
+          balance: subscription.companyBalance || subscription.balance || "-",
+          rawDate: rawDate,
+        });
+      });
+    } catch (subscriptionError) {
+      console.warn("⚠️ Error fetching subscription payments for wallet reports:", subscriptionError);
+      // Continue without subscription payments if there's an error
+    }
+    
+    // Sort all data by date (descending - newest first)
+    allRequestsData.sort((a, b) => {
+      try {
+        const dateA = a.rawDate?.toDate ? a.rawDate.toDate() : new Date(a.rawDate || 0);
+        const dateB = b.rawDate?.toDate ? b.rawDate.toDate() : new Date(b.rawDate || 0);
+        return dateB.getTime() - dateA.getTime();
+      } catch (error) {
+        return 0;
+      }
+    });
+
     console.log(
-      `✅ Total admin wallet reports found: ${allRequestsData.length}`
+      `✅ Total admin wallet reports found: ${allRequestsData.length} (including ${allRequestsData.length - (querySnapshot.size)} subscription payments)`
     );
     return allRequestsData;
   } catch (error) {
@@ -6555,13 +7067,7 @@ export const fetchAdminWalletReports = async () => {
 export const fetchAllAdminWalletRequests = async () => {
   try {
     console.log(
-      "\n🔄 Fetching admin wallet requests from companies-wallets-requests..."
-    );
-
-    const requestsRef = collection(db, "companies-wallets-requests");
-    // Query by createdDate (new requests) or actionDate (old requests) - get all and sort
-    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(
-      requestsRef
+      "\n🔄 Fetching admin wallet requests from multiple collections..."
     );
 
     const allRequestsData: any[] = [];
@@ -6601,23 +7107,50 @@ export const fetchAllAdminWalletRequests = async () => {
       }
     };
 
-    querySnapshot.forEach((doc) => {
+    // Helper function to process a document from any collection
+    const processDocument = (doc: any, source: string) => {
       const data = doc.data();
+
+      // Debug logging for each document
+      console.log(`📄 Processing document ${doc.id} from ${source}:`, {
+        hasStatus: !!data.status,
+        status: data.status,
+        hasRequestedUser: !!data.requestedUser,
+        hasValue: !!data.value,
+        hasRefid: !!data.refid,
+        hasCreatedDate: !!data.createdDate,
+      });
 
       // Determine the date to use (createdDate for new requests, actionDate for old ones)
       const dateToUse = data.createdDate || data.actionDate || data.requestDate;
 
       // Get status from correct location (data.status for new, data.requestedUser.status for old)
-      const status = data.status || data.requestedUser?.status || "pending";
+      // Ensure status is always a string and handle null/undefined
+      let status = data.status;
+      if (!status && data.requestedUser?.status) {
+        status = data.requestedUser.status;
+      }
+      if (!status || status === null || status === undefined) {
+        status = "pending";
+      }
+      status = String(status).toLowerCase(); // Normalize to lowercase for consistency
 
-      // Get order type
-      const orderType = data.type || "-";
+      // Get order type (for wallets-requests, it might be in requestedUser.type)
+      const orderType = data.type || data.requestedUser?.type || "-";
 
       // Get responsible person (processedBy for new, actionUser for old)
       const responsible =
         data.processedBy?.name || data.actionUser?.name || "-";
 
-      allRequestsData.push({
+      // Ensure we have at least basic data before adding
+      if (!data.requestedUser && !data.value) {
+        console.warn(
+          `⚠️ Skipping document ${doc.id} from ${source} - missing required fields`
+        );
+        return null;
+      }
+
+      return {
         id: doc.id,
         requestNumber: data.refid || doc.id, // رقم العملية
         clientName: data.requestedUser?.name || "-", // العميل
@@ -6628,10 +7161,49 @@ export const fetchAllAdminWalletRequests = async () => {
         status: status, // حالة الطلب
         responsible: responsible, // المسؤول
         rawDate: dateToUse, // For sorting
-      });
-    });
+        source: source, // Track which collection it came from
+      };
+    };
 
-    // Sort by date descending (newest first)
+    // STEP 1: Fetch from companies-wallets-requests
+    try {
+      console.log("📦 Fetching from companies-wallets-requests...");
+      const companiesRef = collection(db, "companies-wallets-requests");
+      const companiesSnapshot = await getDocs(companiesRef);
+
+      companiesSnapshot.forEach((doc) => {
+        const processed = processDocument(doc, "company");
+        if (processed) {
+          allRequestsData.push(processed);
+        }
+      });
+      console.log(`✅ Found ${companiesSnapshot.size} company requests`);
+    } catch (error) {
+      console.error("❌ Error fetching company requests:", error);
+      // Continue even if one collection fails
+    }
+
+    // STEP 2: Fetch from wallets-requests (for clients/individuals)
+    try {
+      console.log("📦 Fetching from wallets-requests...");
+      const walletsRef = collection(db, "wallets-requests");
+      const walletsSnapshot = await getDocs(walletsRef);
+
+      walletsSnapshot.forEach((doc) => {
+        const processed = processDocument(doc, "client");
+        if (processed) {
+          allRequestsData.push(processed);
+        }
+      });
+      console.log(
+        `✅ Found ${walletsSnapshot.size} client/individual requests`
+      );
+    } catch (error) {
+      console.warn("⚠️ wallets-requests collection not found or error:", error);
+      // Continue if collection doesn't exist
+    }
+
+    // STEP 3: Sort all requests by date descending (newest first)
     allRequestsData.sort((a, b) => {
       const dateA = a.rawDate?.toDate
         ? a.rawDate.toDate()
@@ -6644,6 +7216,14 @@ export const fetchAllAdminWalletRequests = async () => {
 
     console.log(
       `✅ Total admin wallet requests found: ${allRequestsData.length}`
+    );
+    console.log(
+      `📊 Status breakdown:`,
+      allRequestsData.reduce((acc, req) => {
+        const status = req.status || "unknown";
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>)
     );
     return allRequestsData;
   } catch (error) {
@@ -6691,87 +7271,133 @@ export const addRefidToExistingWalletRequests = async (): Promise<number> => {
       "🔄 Starting migration: Adding refid to existing wallet requests..."
     );
 
-    const requestsRef = collection(db, "companies-wallets-requests");
-    const requestsSnapshot = await getDocs(requestsRef);
-    console.log(`📦 Found ${requestsSnapshot.size} wallet requests`);
+    let totalUpdatedCount = 0;
+    const requestsToUpdate: Array<{
+      docRef: any;
+      refid: string;
+      collection: string;
+    }> = [];
 
-    let updatedCount = 0;
-    const requestsToUpdate: Array<{ docRef: any; refid: string }> = [];
+    // Helper function to check if refid exists in both collections
+    const checkRefidUniqueness = async (refid: string): Promise<boolean> => {
+      // Check companies-wallets-requests
+      const companiesRefCheck = collection(db, "companies-wallets-requests");
+      const qCompanies = query(companiesRefCheck, where("refid", "==", refid));
+      const companiesSnapshot = await getDocs(qCompanies);
 
-    // First pass: Identify requests without refid and generate refids
-    for (const requestDoc of requestsSnapshot.docs) {
-      const requestData = requestDoc.data();
+      // Check wallets-requests
+      try {
+        const walletsRefCheck = collection(db, "wallets-requests");
+        const qWallets = query(walletsRefCheck, where("refid", "==", refid));
+        const walletsSnapshot = await getDocs(qWallets);
 
-      // Skip if request already has refid
-      if (requestData.refid) {
-        console.log(
-          `⏭️  Wallet request ${requestDoc.id} already has refid: ${requestData.refid}`
-        );
-        continue;
+        return companiesSnapshot.empty && walletsSnapshot.empty;
+      } catch (error) {
+        // If wallets-requests doesn't exist, just check companies
+        return companiesSnapshot.empty;
       }
+    };
 
-      // Generate unique 8-digit refid
-      let refid: string = "";
-      let isUnique = false;
-      let attempts = 0;
-      const maxAttempts = 20;
-
-      while (!isUnique && attempts < maxAttempts) {
-        // Generate 8-digit number (10000000 to 99999999)
-        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
-        refid = randomCode.toString();
-
-        // Check if refid already exists in Firestore or in our pending updates
-        const requestsRefCheck = collection(db, "companies-wallets-requests");
-        const qCheck = query(requestsRefCheck, where("refid", "==", refid));
-        const querySnapshot = await getDocs(qCheck);
-
-        // Also check if this refid is already in our pending updates
-        const isInPendingUpdates = requestsToUpdate.some(
-          (item) => item.refid === refid
-        );
-
-        if (querySnapshot.empty && !isInPendingUpdates) {
-          isUnique = true;
-        } else {
-          attempts++;
-        }
-      }
-
-      if (!isUnique || !refid) {
-        console.error(
-          `❌ Failed to generate unique refid for wallet request ${requestDoc.id} after ${maxAttempts} attempts`
-        );
-        continue;
-      }
-
-      requestsToUpdate.push({
-        docRef: doc(db, "companies-wallets-requests", requestDoc.id),
-        refid: refid,
-      });
+    // Helper function to process a collection
+    const processCollection = async (collectionName: string) => {
+      console.log(`📦 Processing ${collectionName}...`);
+      const requestsRef = collection(db, collectionName);
+      const requestsSnapshot = await getDocs(requestsRef);
       console.log(
-        `✅ Generated refid ${refid} for wallet request ${requestDoc.id}`
+        `📦 Found ${requestsSnapshot.size} requests in ${collectionName}`
       );
+
+      let collectionUpdatedCount = 0;
+
+      for (const requestDoc of requestsSnapshot.docs) {
+        const requestData = requestDoc.data();
+
+        // Skip if request already has refid
+        if (requestData.refid) {
+          console.log(
+            `⏭️  Request ${requestDoc.id} in ${collectionName} already has refid: ${requestData.refid}`
+          );
+          continue;
+        }
+
+        // Generate unique 8-digit refid
+        let refid: string = "";
+        let isUnique = false;
+        let attempts = 0;
+        const maxAttempts = 20;
+
+        while (!isUnique && attempts < maxAttempts) {
+          // Generate 8-digit number (10000000 to 99999999)
+          const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+          refid = randomCode.toString();
+
+          // Check if refid already exists in both collections or in our pending updates
+          const existsInFirestore = !(await checkRefidUniqueness(refid));
+          const isInPendingUpdates = requestsToUpdate.some(
+            (item) => item.refid === refid
+          );
+
+          if (!existsInFirestore && !isInPendingUpdates) {
+            isUnique = true;
+          } else {
+            attempts++;
+          }
+        }
+
+        if (!isUnique || !refid) {
+          console.error(
+            `❌ Failed to generate unique refid for request ${requestDoc.id} in ${collectionName} after ${maxAttempts} attempts`
+          );
+          continue;
+        }
+
+        requestsToUpdate.push({
+          docRef: doc(db, collectionName, requestDoc.id),
+          refid: refid,
+          collection: collectionName,
+        });
+        console.log(
+          `✅ Generated refid ${refid} for request ${requestDoc.id} in ${collectionName}`
+        );
+      }
+
+      return collectionUpdatedCount;
+    };
+
+    // Process companies-wallets-requests
+    await processCollection("companies-wallets-requests");
+
+    // Process wallets-requests
+    try {
+      await processCollection("wallets-requests");
+    } catch (error) {
+      console.warn("⚠️ wallets-requests collection not found or error:", error);
     }
 
     console.log(
       `📝 Updating ${requestsToUpdate.length} wallet requests with refid...`
     );
-    for (const { docRef, refid } of requestsToUpdate) {
+
+    // Update all requests
+    for (const { docRef, refid, collection } of requestsToUpdate) {
       try {
         await updateDoc(docRef, { refid: refid });
-        updatedCount++;
+        totalUpdatedCount++;
         console.log(
-          `✅ Updated wallet request ${docRef.id} with refid: ${refid}`
+          `✅ Updated request ${docRef.id} in ${collection} with refid: ${refid}`
         );
       } catch (error) {
-        console.error(`❌ Error updating wallet request ${docRef.id}:`, error);
+        console.error(
+          `❌ Error updating request ${docRef.id} in ${collection}:`,
+          error
+        );
       }
     }
+
     console.log(
-      `✅ Migration completed: ${updatedCount} wallet requests updated with refid`
+      `✅ Migration completed: ${totalUpdatedCount} wallet requests updated with refid`
     );
-    return updatedCount;
+    return totalUpdatedCount;
   } catch (error) {
     console.error("❌ Error in migration:", error);
     throw error;
@@ -7274,6 +7900,69 @@ export const fetchCurrentCompany = async (): Promise<any> => {
 };
 
 /**
+ * Fetch current logged-in client data
+ * @returns Promise with client data or null
+ */
+export const fetchCurrentClient = async (): Promise<any> => {
+  try {
+    const currentUser = auth.currentUser;
+
+    if (!currentUser) {
+      return null;
+    }
+
+    const clientsRef = collection(db, "clients");
+
+    // Try to find client by UID first
+    let qByUid = query(clientsRef, where("uid", "==", currentUser.uid));
+    let querySnapshot = await getDocs(qByUid);
+
+    // If not found by UID, try by email
+    if (querySnapshot.empty && currentUser.email) {
+      const qByEmail = query(
+        clientsRef,
+        where("email", "==", currentUser.email)
+      );
+      querySnapshot = await getDocs(qByEmail);
+    }
+
+    // If not found by email, try by id field
+    if (querySnapshot.empty && currentUser.uid) {
+      const qById = query(clientsRef, where("id", "==", currentUser.uid));
+      querySnapshot = await getDocs(qById);
+    }
+
+    // Try direct document lookup
+    if (querySnapshot.empty && currentUser.uid) {
+      const clientDocRef = doc(db, "clients", currentUser.uid);
+      const clientDoc = await getDoc(clientDocRef);
+      if (clientDoc.exists()) {
+        return {
+          id: clientDoc.id,
+          ...clientDoc.data(),
+        } as any;
+      }
+    }
+
+    if (querySnapshot.empty) {
+      return null;
+    }
+
+    // Get the first matching document
+    const clientDoc = querySnapshot.docs[0];
+    const clientData = {
+      id: clientDoc.id,
+      ...clientDoc.data(),
+    } as any;
+
+    return clientData;
+  } catch (error) {
+    console.error("❌ Error fetching current client:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetch ALL clients from Firestore (for admin dashboard)
  * @returns Promise with all clients data
  */
@@ -7347,8 +8036,104 @@ export const getTotalClientsBalance = async (): Promise<number> => {
 };
 
 /**
+ * MIGRATION: Add balance field to clients that don't have it
+ * This fixes clients created before the balance field was added
+ * @returns Promise with migration results
+ */
+export const migrateClientBalances = async (): Promise<{
+  success: boolean;
+  updated: number;
+  skipped: number;
+  errors: number;
+  total: number;
+  message: string;
+}> => {
+  try {
+    console.log("\n🔄 ========================================");
+    console.log("MIGRATING CLIENT BALANCES");
+    console.log("========================================");
+
+    const clientsRef = collection(db, "clients");
+    const snapshot = await getDocs(clientsRef);
+
+    console.log(`📊 Total clients found: ${snapshot.size}`);
+
+    let updatedCount = 0;
+    let skippedCount = 0;
+    let errorCount = 0;
+    const clientsToUpdate: { id: string; name: string }[] = [];
+
+    // Identify clients without balance field
+    snapshot.forEach((docSnapshot) => {
+      const data = docSnapshot.data();
+      if (data.balance === undefined) {
+        clientsToUpdate.push({
+          id: docSnapshot.id,
+          name: data.name || "Unknown",
+        });
+      } else {
+        skippedCount++;
+      }
+    });
+
+    console.log(`\n📋 Clients needing balance: ${clientsToUpdate.length}`);
+    console.log(`✅ Clients with balance: ${skippedCount}`);
+
+    if (clientsToUpdate.length === 0) {
+      const message = "All clients already have balance field!";
+      console.log(`\n✨ ${message}`);
+      return {
+        success: true,
+        updated: 0,
+        skipped: skippedCount,
+        errors: 0,
+        total: snapshot.size,
+        message,
+      };
+    }
+
+    // Update clients with missing balance
+    for (const client of clientsToUpdate) {
+      try {
+        const clientDocRef = doc(db, "clients", client.id);
+        await updateDoc(clientDocRef, {
+          balance: 0,
+        });
+        updatedCount++;
+        console.log(`✅ Updated: ${client.name} (${client.id})`);
+      } catch (error) {
+        errorCount++;
+        console.error(`❌ Failed to update ${client.id}:`, error);
+      }
+    }
+
+    console.log("\n========================================");
+    console.log("📊 MIGRATION SUMMARY:");
+    console.log(`✅ Updated: ${updatedCount}`);
+    console.log(`⏭️  Skipped: ${skippedCount}`);
+    console.log(`❌ Errors: ${errorCount}`);
+    console.log(`📊 Total: ${snapshot.size}`);
+    console.log("========================================\n");
+
+    const message = `Successfully updated ${updatedCount} clients. ${skippedCount} already had balance. ${errorCount} errors.`;
+    return {
+      success: errorCount === 0,
+      updated: updatedCount,
+      skipped: skippedCount,
+      errors: errorCount,
+      total: snapshot.size,
+      message,
+    };
+  } catch (error) {
+    console.error("❌ Fatal error during migration:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetch ALL orders from Firestore (for admin dashboard - no filtering)
- * @returns Promise with all orders data
+ * Excludes subscription orders (subscriptions are stored in subscriptions-payment collection)
+ * @returns Promise with all orders data (excluding subscriptions)
  */
 export const fetchAllOrders = async (): Promise<any[]> => {
   try {
@@ -7361,17 +8146,179 @@ export const fetchAllOrders = async (): Promise<any[]> => {
     const allOrdersData: any[] = [];
 
     querySnapshot.forEach((doc) => {
-      allOrdersData.push({
+      const orderData = doc.data();
+      // Filter out subscription orders (they have subscriptionPaymentId field)
+      if (!orderData.subscriptionPaymentId) {
+        allOrdersData.push({
+          id: doc.id,
+          ...orderData,
+        });
+      }
+    });
+
+    console.log(`✅ Fetched ${allOrdersData.length} orders (subscriptions excluded)`);
+    return allOrdersData;
+  } catch (error) {
+    console.error("❌ Error fetching all orders:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch ALL subscription payments from Firestore (for admin dashboard)
+ * @returns Promise with all subscription payment data
+ */
+export const fetchAllSubscriptionPayments = async (): Promise<any[]> => {
+  try {
+    console.log("\n📦 Fetching ALL subscription payments from Firestore...");
+
+    const subscriptionsPaymentRef = collection(db, "subscriptions-payment");
+    let querySnapshot;
+    
+    try {
+      const q = query(subscriptionsPaymentRef, orderBy("createdDate", "desc"));
+      querySnapshot = await getDocs(q);
+    } catch (orderByError: any) {
+      // If orderBy fails (no index or field doesn't exist), fetch without ordering
+      console.warn(
+        "⚠️ Could not order by createdDate, fetching subscription payments without order:",
+        orderByError
+      );
+      querySnapshot = await getDocs(subscriptionsPaymentRef);
+    }
+
+    const allSubscriptionPayments: any[] = [];
+
+    querySnapshot.forEach((doc) => {
+      allSubscriptionPayments.push({
         id: doc.id,
         ...doc.data(),
       });
     });
 
-    console.log(`✅ Fetched ${allOrdersData.length} orders`);
-    return allOrdersData;
+    // Sort in memory if orderBy failed
+    if (allSubscriptionPayments.length > 0 && !allSubscriptionPayments[0].createdDate) {
+      // If no createdDate, sort by document ID (newest first)
+      allSubscriptionPayments.sort((a, b) => b.id.localeCompare(a.id));
+    } else if (allSubscriptionPayments.length > 0) {
+      // Sort by createdDate in memory
+      allSubscriptionPayments.sort((a, b) => {
+        const dateA = a.createdDate?.toDate 
+          ? a.createdDate.toDate().getTime() 
+          : a.createdDate instanceof Date 
+          ? a.createdDate.getTime() 
+          : 0;
+        const dateB = b.createdDate?.toDate 
+          ? b.createdDate.toDate().getTime() 
+          : b.createdDate instanceof Date 
+          ? b.createdDate.getTime() 
+          : 0;
+        return dateB - dateA; // Descending order
+      });
+    }
+
+    console.log(`✅ Fetched ${allSubscriptionPayments.length} subscription payments`);
+    return allSubscriptionPayments;
   } catch (error) {
-    console.error("❌ Error fetching all orders:", error);
+    console.error("❌ Error fetching subscription payments:", error);
     throw error;
+  }
+};
+
+/**
+ * Calculate total subscription revenue from all subscription payments
+ * @returns Promise with total subscription revenue amount
+ */
+export const calculateTotalSubscriptionRevenue = async (): Promise<number> => {
+  try {
+    console.log("💰 Calculating total subscription revenue...");
+
+    const subscriptionPayments = await fetchAllSubscriptionPayments();
+    
+    let totalRevenue = 0;
+    subscriptionPayments.forEach((payment) => {
+      const amount = payment.amount || payment.price || payment.totalAmount || 0;
+      totalRevenue += amount;
+    });
+
+    console.log(`✅ Total subscription revenue: ${totalRevenue.toFixed(2)}`);
+    return totalRevenue;
+  } catch (error) {
+    console.error("❌ Error calculating total subscription revenue:", error);
+    throw error;
+  }
+};
+
+/**
+ * Calculate monthly revenue data (subscriptions and commissions grouped by month)
+ * @returns Promise with monthly revenue data for chart
+ */
+export const calculateMonthlyRevenueData = async (): Promise<{
+  labels: string[];
+  subscriptions: number[];
+  commissions: number[];
+}> => {
+  try {
+    console.log("📊 Calculating monthly revenue data...");
+
+    const monthLabels = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+    
+    // Initialize monthly totals
+    const subscriptionTotals: number[] = new Array(12).fill(0);
+    const commissionTotals: number[] = new Array(12).fill(0);
+
+    // Fetch subscriptions and group by month
+    const subscriptionPayments = await fetchAllSubscriptionPayments();
+    subscriptionPayments.forEach((payment) => {
+      const paymentDate = payment.createdDate?.toDate 
+        ? payment.createdDate.toDate()
+        : payment.createdDate instanceof Date 
+        ? payment.createdDate
+        : payment.paymentDate?.toDate
+        ? payment.paymentDate.toDate()
+        : null;
+
+      if (paymentDate) {
+        const month = paymentDate.getMonth(); // 0-11
+        const amount = payment.amount || payment.price || payment.totalAmount || 0;
+        subscriptionTotals[month] += amount;
+      }
+    });
+
+    // Fetch commissions and group by month
+    const commissionsRef = collection(db, "commissions");
+    const commissionsSnapshot = await getDocs(commissionsRef);
+    
+    commissionsSnapshot.forEach((doc) => {
+      const data = doc.data();
+      const commissionDate = data.createdAt?.toDate
+        ? data.createdAt.toDate()
+        : data.createdDate?.toDate
+        ? data.createdDate.toDate()
+        : null;
+
+      if (commissionDate) {
+        const month = commissionDate.getMonth(); // 0-11
+        const commissionAmount = data.commissionAmount || 0;
+        commissionTotals[month] += commissionAmount;
+      }
+    });
+
+    console.log("✅ Monthly revenue data calculated");
+    return {
+      labels: monthLabels,
+      subscriptions: subscriptionTotals,
+      commissions: commissionTotals,
+    };
+  } catch (error) {
+    console.error("❌ Error calculating monthly revenue data:", error);
+    // Return empty data on error
+    const monthLabels = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+    return {
+      labels: monthLabels,
+      subscriptions: new Array(12).fill(0),
+      commissions: new Array(12).fill(0),
+    };
   }
 };
 
@@ -9709,7 +10656,7 @@ const uploadFileToStorage = async (
  * @param googleMapsLink - Google Maps URL
  * @returns Object with lat and lng, or null if parsing fails
  */
-const parseGoogleMapsLink = (
+export const parseGoogleMapsLink = (
   googleMapsLink: string
 ): { lat: number; lng: number } | null => {
   try {
@@ -9821,7 +10768,12 @@ const getDayObject = (dayAr: string): { ar: string; en: string } => {
 /**
  * Convert Arabic plate letters to English
  */
-const convertPlateLettersToEnglish = (arabicLetters: string): string => {
+const convertPlateLettersToEnglish = (arabicLetters: string | undefined | null): string => {
+  // Handle undefined, null, or empty string
+  if (!arabicLetters || typeof arabicLetters !== 'string') {
+    return "";
+  }
+  
   const letterMap: { [key: string]: string } = {
     أ: "A",
     ب: "B",
@@ -9883,12 +10835,12 @@ export interface AddDriverData {
   address: string;
   city: string;
   selectedDays: string[];
-  vehicleStatus: string;
+  vehicleStatus?: string;
   driverAmount: string;
   driverLicense?: File | string;
-  plateLetters: string;
-  plateNumber: string;
-  vehicleCategory: string;
+  plateLetters?: string;
+  plateNumber?: string;
+  vehicleCategory?: string;
 }
 
 /**
@@ -9902,6 +10854,20 @@ export const addCompanyDriver = async (driverData: AddDriverData) => {
 
     if (!currentUser) {
       throw new Error("No user is currently logged in");
+    }
+
+    // Check if a driver with the same phone number already exists
+    if (driverData.phone) {
+      const driversRef = collection(db, "companies-drivers");
+      const phoneQuery = query(
+        driversRef,
+        where("phoneNumber", "==", driverData.phone)
+      );
+      const phoneSnapshot = await getDocs(phoneQuery);
+
+      if (!phoneSnapshot.empty) {
+        throw new Error("رقم الهاتف مستخدم بالفعل. يرجى استخدام رقم آخر.");
+      }
     }
 
     // console.log('Adding new driver to Firestore...');
@@ -9944,20 +10910,24 @@ export const addCompanyDriver = async (driverData: AddDriverData) => {
       image: imageUrl || "",
       licenceAttachment: licenseUrl || "",
 
-      // Plate number
+      // Plate number (handle optional fields)
       plateNumber: {
-        ar: `${driverData.plateNumber} ${driverData.plateLetters}`,
-        en: `${driverData.plateNumber} ${convertPlateLettersToEnglish(
-          driverData.plateLetters
-        )}`,
+        ar: driverData.plateNumber && driverData.plateLetters 
+          ? `${driverData.plateNumber} ${driverData.plateLetters}` 
+          : driverData.plateNumber || driverData.plateLetters || "",
+        en: driverData.plateNumber && driverData.plateLetters
+          ? `${driverData.plateNumber} ${convertPlateLettersToEnglish(
+              driverData.plateLetters
+            )}`
+          : driverData.plateNumber || convertPlateLettersToEnglish(driverData.plateLetters) || "",
       },
 
-      // Car size
-      size: convertCarSizeToEnglish(driverData.vehicleCategory),
+      // Car size (default to "صغيرة" if not provided)
+      size: convertCarSizeToEnglish(driverData.vehicleCategory || "صغيرة"),
 
       // Plan details
       plan: {
-        carSize: convertCarSizeToEnglish(driverData.vehicleCategory),
+        carSize: convertCarSizeToEnglish(driverData.vehicleCategory || "صغيرة"),
         dailyTrans: driverData.driverAmount,
         exceptionDays: driverData.selectedDays.map((day) => getDayObject(day)),
         createdDate: Date.now(),
@@ -10008,8 +10978,8 @@ export const addCompanyDriver = async (driverData: AddDriverData) => {
       // Empty arrays for future use
       driverIds: [],
 
-      // Additional info (if needed)
-      vehicleStatus: driverData.vehicleStatus,
+      // Additional info (if needed) - default to "عادية" if not provided
+      vehicleStatus: driverData.vehicleStatus || "عادية",
     };
 
     // console.log('Prepared driver document:', driverDocument);
@@ -11305,6 +12275,34 @@ export interface AddServiceProviderData {
   commercialRegistrationFile?: File | null;
 }
 
+export interface AddPetrolifeAgentData {
+  name: string;
+  email: string;
+  phone: string;
+  city: string;
+  address: string;
+  agentCode?: string;
+  commissionValue: string;
+  imageFile?: File | null;
+}
+
+export interface PetrolifeAgent {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  city: string;
+  address: string;
+  agentCode: string;
+  commissionValue: number;
+  imageUrl?: string;
+  joinDate: Timestamp;
+  isActive: boolean;
+  companies: string[]; // Array of company document IDs
+  createdDate: Timestamp;
+  createdUserId: string;
+}
+
 /**
  * Add a new car to Firestore companies-cars collection
  * @param carData - Car form data
@@ -12553,6 +13551,114 @@ export const fetchCompanyById = async (companyId: string) => {
 };
 
 /**
+ * Find a company by phone number
+ * @param phoneNumber - The phone number to search for (can include spaces, country codes like "+966 56 190 4021")
+ * @returns Promise with company data if found, null if not found
+ */
+export const findCompanyByPhoneNumber = async (
+  phoneNumber: string
+): Promise<{
+  id: string;
+  name: string;
+  email: string;
+  uid: string;
+  phoneNumber: string;
+} | null> => {
+  try {
+    if (!phoneNumber || phoneNumber.trim().length < 8) {
+      return null;
+    }
+
+    const companiesRef = collection(db, "companies");
+    let snapshot: any;
+
+    // First, try searching with the exact format as entered (with spaces and +)
+    // This matches Firestore format like "+966 56 190 4021"
+    const exactFormat = phoneNumber.trim();
+    console.log("🔍 Searching for company with exact format:", exactFormat);
+
+    let q = query(companiesRef, where("phoneNumber", "==", exactFormat));
+    snapshot = await getDocs(q);
+
+    // If not found, try searching by phone field
+    if (snapshot.empty) {
+      q = query(companiesRef, where("phone", "==", exactFormat));
+      snapshot = await getDocs(q);
+    }
+
+    // If user entered partial number like "56 190 402", try adding +966 prefix
+    if (snapshot.empty && !exactFormat.startsWith("+")) {
+      const withPrefix = `+966 ${exactFormat}`.trim();
+      console.log("🔍 Trying with +966 prefix:", withPrefix);
+
+      q = query(companiesRef, where("phoneNumber", "==", withPrefix));
+      snapshot = await getDocs(q);
+
+      if (snapshot.empty) {
+        q = query(companiesRef, where("phone", "==", withPrefix));
+        snapshot = await getDocs(q);
+      }
+    }
+
+    // If still not found, try with cleaned format (no spaces)
+    if (snapshot.empty) {
+      const cleanPhone = phoneNumber.replace(/[\s\+\-\(\)]/g, "");
+      console.log("🔍 Trying with cleaned format:", cleanPhone);
+
+      q = query(companiesRef, where("phoneNumber", "==", cleanPhone));
+      snapshot = await getDocs(q);
+
+      if (snapshot.empty) {
+        q = query(companiesRef, where("phone", "==", cleanPhone));
+        snapshot = await getDocs(q);
+      }
+    }
+
+    // For Saudi numbers, try without leading 0
+    if (snapshot.empty) {
+      const cleanPhone = phoneNumber.replace(/[\s\+\-\(\)]/g, "");
+      if (cleanPhone.startsWith("966")) {
+        const withoutCountryCode = cleanPhone.substring(3);
+        if (withoutCountryCode.startsWith("0")) {
+          const withoutZero = withoutCountryCode.substring(1);
+          console.log("🔍 Trying without leading 0:", withoutZero);
+
+          q = query(companiesRef, where("phoneNumber", "==", withoutZero));
+          snapshot = await getDocs(q);
+
+          if (snapshot.empty) {
+            q = query(companiesRef, where("phone", "==", withoutZero));
+            snapshot = await getDocs(q);
+          }
+        }
+      }
+    }
+
+    if (snapshot.empty) {
+      console.log("❌ Company not found with phone:", phoneNumber);
+      return null;
+    }
+
+    const companyDoc = snapshot.docs[0];
+    const companyData = companyDoc.data();
+
+    const company = {
+      id: companyDoc.id,
+      name: companyData.name || companyData.brandName || "",
+      email: companyData.email || "",
+      uid: companyData.uId || companyData.uid || companyDoc.id,
+      phoneNumber: companyData.phoneNumber || companyData.phone || phoneNumber,
+    };
+
+    console.log("✅ Company found:", company.name);
+    return company;
+  } catch (error) {
+    console.error("❌ Error searching for company by phone:", error);
+    return null;
+  }
+};
+
+/**
  * Interface for fuel station data
  */
 export interface FuelStation {
@@ -12773,9 +13879,30 @@ export const fetchUserFuelStations = async (): Promise<FuelStation[]> => {
 
     // Query with filter at Firestore level
     const carStationsRef = collection(db, "carstations");
-    const q = query(carStationsRef, where("createdUserId", "==", userEmail));
-
-    const querySnapshot = await getDocs(q);
+    
+    let querySnapshot;
+    try {
+      // Try query with orderBy (requires composite index)
+      const q = query(
+        carStationsRef, 
+        where("createdUserId", "==", userEmail),
+        orderBy("createdDate", "desc")
+      );
+      querySnapshot = await getDocs(q);
+    } catch (indexError: any) {
+      // If index is missing, fetch without orderBy and sort in memory
+      if (indexError.code === "failed-precondition") {
+        console.warn(
+          "⚠️ Composite index not found. Fetching stations and sorting in memory..."
+        );
+        const q = query(carStationsRef, where("createdUserId", "==", userEmail));
+        querySnapshot = await getDocs(q);
+      } else {
+        // Re-throw if it's a different error
+        throw indexError;
+      }
+    }
+    
     const fuelStations: FuelStation[] = [];
 
     querySnapshot.forEach((doc) => {
@@ -12829,13 +13956,141 @@ export const fetchUserFuelStations = async (): Promise<FuelStation[]> => {
       }
     });
 
+    // Sort in memory if orderBy failed (or as a fallback)
+    if (fuelStations.length > 0) {
+      fuelStations.sort((a, b) => {
+        const dateA = a.createdDate?.toDate 
+          ? a.createdDate.toDate().getTime() 
+          : a.createdDate instanceof Date 
+          ? a.createdDate.getTime() 
+          : 0;
+        const dateB = b.createdDate?.toDate 
+          ? b.createdDate.toDate().getTime() 
+          : b.createdDate instanceof Date 
+          ? b.createdDate.getTime() 
+          : 0;
+        return dateB - dateA; // Descending order (newest first)
+      });
+    }
+
     console.log(
-      `✅ Fetched ${fuelStations.length} fuel stations for user ${userEmail}`
+      `✅ Fetched ${fuelStations.length} fuel stations for user ${userEmail} (sorted by createdDate desc)`
     );
 
     return fuelStations;
   } catch (error) {
     console.error("❌ Error fetching user fuel stations:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch fuel stations filtered by provider email/UID
+ * Stations can be linked to provider by:
+ * - Station's createdUserId matching provider's email or uId
+ * - Station's uId matching provider's uId or email
+ * @param providerEmail - The email of the provider
+ * @param providerUId - The UID of the provider (optional)
+ * @returns Promise with array of provider's fuel stations
+ */
+export const fetchFuelStationsByProvider = async (
+  providerEmail: string,
+  providerUId?: string
+): Promise<FuelStation[]> => {
+  try {
+    console.log(
+      `📍 Fetching fuel stations for provider: email=${providerEmail}, uId=${providerUId}`
+    );
+
+    if (!providerEmail && !providerUId) {
+      console.log("⚠️ No provider identifier provided");
+      return [];
+    }
+
+    // Fetch all carstations documents (same approach as fetchProviderStations)
+    // This is necessary because stations can have identifier in createdUserId, uId, or uid fields
+    const carStationsRef = collection(db, "carstations");
+    const querySnapshot = await getDocs(carStationsRef);
+    const fuelStations: FuelStation[] = [];
+
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+
+      // Get station identifiers
+      const stationCreatedUserId = data.createdUserId;
+      const stationUId = data.uId || data.uid;
+
+      // Match stations: station's createdUserId should match provider's email or uId
+      // OR station's uId should match provider's uId or email
+      const matchesByCreatedUserId =
+        stationCreatedUserId &&
+        (stationCreatedUserId === providerEmail ||
+          (providerUId && stationCreatedUserId === providerUId));
+
+      const matchesByUId =
+        stationUId &&
+        ((providerUId && stationUId === providerUId) ||
+          stationUId === providerEmail);
+
+      // Only include stations that belong to this provider
+      if (!matchesByCreatedUserId && !matchesByUId) {
+        return; // Skip this station
+      }
+
+      // Extract location data from formattedLocation or direct fields
+      const formattedLocation = data.formattedLocation || {};
+      const stationName =
+        data.name || data.email || formattedLocation.name || "Unknown Station";
+      const cityName =
+        formattedLocation.address?.city ||
+        data.address?.city ||
+        data.city ||
+        "Unknown City";
+      const latitude = formattedLocation.lat || data.latitude || 0;
+      const longitude = formattedLocation.lng || data.longitude || 0;
+
+      console.log(`Station ${doc.id}:`, {
+        name: stationName,
+        city: cityName,
+        lat: latitude,
+        lng: longitude,
+        hasFormattedLocation: !!data.formattedLocation,
+        phoneNumber: data.phoneNumber,
+        isActive: data.isActive,
+        createdUserId: data.createdUserId,
+        uId: data.uId,
+      });
+
+      // Include stations regardless of coordinates (different from fetchUserFuelStations)
+      fuelStations.push({
+        id: doc.id,
+        stationName,
+        cityName,
+        latitude,
+        longitude,
+        formattedLocation: data.formattedLocation,
+        // Include all additional fields from the document
+        name: data.name,
+        email: data.email,
+        phoneNumber: data.phoneNumber,
+        address: data.address,
+        isActive: data.isActive,
+        type: data.type,
+        options: data.options,
+        balance: data.balance,
+        uId: data.uId,
+        createdDate: data.createdDate,
+        createdUserId: data.createdUserId,
+      });
+    });
+
+    console.log(
+      `✅ Fetched ${fuelStations.length} fuel stations for provider email=${providerEmail}, uId=${providerUId}`
+    );
+
+    return fuelStations;
+  } catch (error) {
+    console.error("❌ Error fetching provider fuel stations:", error);
     throw error;
   }
 };
@@ -14292,6 +15547,7 @@ export interface ServiceProviderData {
   stationsCount: number;
   ordersCount: number;
   uId?: string;
+  walletNumber?: string; // Wallet number stored in Firestore
 }
 
 /**
@@ -14305,9 +15561,20 @@ export const fetchStationsCompanyData = async (): Promise<
     console.log("🏢 Fetching stations company data with related counts...");
 
     // Fetch all collections in parallel for better performance
+    // Order stationscompany by createdDate descending
+    const stationsCompanyRef = collection(db, "stationscompany");
+    const stationsCompanyQuery = query(
+      stationsCompanyRef,
+      orderBy("createdDate", "desc")
+    );
+    
     const [stationsCompanySnapshot, carStationsSnapshot, ordersSnapshot] =
       await Promise.all([
-        getDocs(collection(db, "stationscompany")),
+        getDocs(stationsCompanyQuery).catch(() => {
+          // Fallback to unordered query if createdDate field doesn't exist on all documents
+          console.warn("⚠️ Could not order by createdDate, fetching without order");
+          return getDocs(stationsCompanyRef);
+        }),
         getDocs(collection(db, "carstations")),
         getDocs(collection(db, "stationscompany-orders")),
       ]);
@@ -14323,11 +15590,11 @@ export const fetchStationsCompanyData = async (): Promise<
     // Process stations company data
     const serviceProvidersData: ServiceProviderData[] = [];
 
-    stationsCompanySnapshot.forEach((doc) => {
-      const data = doc.data();
+    stationsCompanySnapshot.forEach((docSnap) => {
+      const data = docSnap.data();
 
       // Get company UID for counting related data
-      const companyUid = data.uId || data.uid || doc.id;
+      const companyUid = data.uId || data.uid || docSnap.id;
 
       // Count related car stations by matching company email with createdUserId
       let stationsCount = 0;
@@ -14365,10 +15632,25 @@ export const fetchStationsCompanyData = async (): Promise<
       });
       console.log(`📊 Total orders for ${data.name}: ${ordersCount}`);
 
+      // Get createdDate from document (could be in data or metadata)
+      const createdDate = data.createdDate || data.createdAt || docSnap.metadata?.createdAt || null;
+
+      // Get or generate wallet number from stored field
+      let walletNumber = data.walletNumber;
+      if (!walletNumber) {
+        // Generate wallet number if it doesn't exist (will be stored asynchronously)
+        walletNumber = generateWalletNumber(docSnap.id, data.email);
+        // Store it asynchronously (non-blocking)
+        const docRef = doc(db, "stationscompany", docSnap.id);
+        updateDoc(docRef, { walletNumber }).catch((err) => {
+          console.warn(`⚠️ Failed to store wallet number for ${data.email}:`, err);
+        });
+      }
+
       // Create service provider data object
-      const serviceProvider: ServiceProviderData = {
-        id: doc.id, // Always use Firestore document ID for consistency
-        clientCode: data.refid || data.id || data.uId || doc.id, // Use refid as primary source
+      const serviceProvider: ServiceProviderData & { createdDate?: any } = {
+        id: docSnap.id, // Always use Firestore document ID for consistency
+        clientCode: data.refid || data.id || data.uId || docSnap.id, // Use refid as primary source
         providerName: data.name || "غير محدد",
         type: data.type || "غير محدد",
         phoneNumber: data.phoneNumber || data.phone || "-",
@@ -14383,6 +15665,8 @@ export const fetchStationsCompanyData = async (): Promise<
         stationsCount,
         ordersCount,
         uId: companyUid,
+        walletNumber, // Include wallet number from Firestore
+        createdDate, // Store createdDate for sorting
       };
 
       serviceProvidersData.push(serviceProvider);
@@ -14394,10 +15678,40 @@ export const fetchStationsCompanyData = async (): Promise<
 
     // Sort by creation date descending (newest first)
     serviceProvidersData.sort((a, b) => {
-      // Try to get created date from metadata or fallback to 0
-      const dateA = (a as any).createdAt?.toDate?.() || new Date(0);
-      const dateB = (b as any).createdAt?.toDate?.() || new Date(0);
-      return dateB.getTime() - dateA.getTime();
+      // Get createdDate from the data
+      const dateA = (a as any).createdDate;
+      const dateB = (b as any).createdDate;
+      
+      // Convert Firestore Timestamp to Date if needed
+      let timeA = 0;
+      let timeB = 0;
+      
+      if (dateA) {
+        if (dateA.toDate && typeof dateA.toDate === "function") {
+          timeA = dateA.toDate().getTime();
+        } else if (dateA instanceof Date) {
+          timeA = dateA.getTime();
+        } else if (typeof dateA === "number") {
+          timeA = dateA;
+        } else {
+          timeA = new Date(dateA).getTime();
+        }
+      }
+      
+      if (dateB) {
+        if (dateB.toDate && typeof dateB.toDate === "function") {
+          timeB = dateB.toDate().getTime();
+        } else if (dateB instanceof Date) {
+          timeB = dateB.getTime();
+        } else if (typeof dateB === "number") {
+          timeB = dateB;
+        } else {
+          timeB = new Date(dateB).getTime();
+        }
+      }
+      
+      // Sort descending (newest first)
+      return timeB - timeA;
     });
 
     return serviceProvidersData;
@@ -14851,9 +16165,20 @@ export const acceptStationsCompanyRequest = async (
     // Merge additional fields (excluding undefined values)
     const finalData = { ...stationsCompanyData, ...additionalFields };
 
+    // Generate wallet number for the new company (will be set after document is created)
+    // Note: We'll generate it after getting the document ID, so for now we'll generate a temporary one
+    // The wallet number will be properly set in the fetchStationsCompanyData function if missing
+
     // Add to stationscompany collection
     const stationsCompanyRef = collection(db, "stationscompany");
     const newCompanyDoc = await addDoc(stationsCompanyRef, finalData);
+    
+    // Generate and store wallet number after document is created (so we have the document ID)
+    const walletNumber = generateWalletNumber(newCompanyDoc.id, requestData.email || requestData.emailAddress || "");
+    await updateDoc(newCompanyDoc, {
+      walletNumber: walletNumber,
+    });
+    console.log(`✅ Generated wallet number for new company: ${walletNumber}`);
 
     console.log(
       `✅ Company added to stationscompany collection with ID: ${newCompanyDoc.id}`
@@ -17799,65 +19124,134 @@ export const approveWalletChargeRequest = async (
     console.log("📋 Request ID:", requestId);
     console.log("👤 Admin:", adminUser.email);
 
-    // STEP 1: Fetch request and find company BEFORE transaction
-    const requestRef = doc(db, "companies-wallets-requests", requestId);
-    const requestSnap = await getDoc(requestRef);
+    // STEP 1: Try to find request in both collections
+    let requestRef: any;
+    let requestSnap: any;
+    let requestData: any;
+    let collectionName: string;
+    let isClientRequest = false;
 
-    if (!requestSnap.exists()) {
-      throw new Error("Request not found");
+    // Try companies-wallets-requests first
+    requestRef = doc(db, "companies-wallets-requests", requestId);
+    requestSnap = await getDoc(requestRef);
+
+    if (requestSnap.exists()) {
+      collectionName = "companies-wallets-requests";
+      requestData = requestSnap.data();
+      console.log("✅ Found request in companies-wallets-requests");
+    } else {
+      // Try wallets-requests (for clients/individuals)
+      requestRef = doc(db, "wallets-requests", requestId);
+      requestSnap = await getDoc(requestRef);
+
+      if (requestSnap.exists()) {
+        collectionName = "wallets-requests";
+        requestData = requestSnap.data();
+        isClientRequest = true;
+        console.log("✅ Found request in wallets-requests (client/individual)");
+      } else {
+        throw new Error("Request not found in any collection");
+      }
     }
 
-    const requestData = requestSnap.data();
     console.log("💵 Request Amount:", requestData.value);
+    console.log("📦 Collection:", collectionName);
+    console.log(
+      "👤 User Type:",
+      isClientRequest ? "Client/Individual" : "Company"
+    );
 
-    // Find company document ID
-    let companyDocId: string;
+    // STEP 2: Find the user document (company or client)
+    let userDocId: string;
+    let userCollection: string;
+    let userDocRef: any;
 
-    if (requestData.companyId) {
-      // New requests: Use stored company ID
-      console.log("🏢 Using stored Company ID:", requestData.companyId);
-      companyDocId = requestData.companyId;
-    } else {
-      // Old requests: Query by UID or email (fallback for legacy data)
-      console.log("🔍 Searching for company by UID/email...");
-      const companiesRef = collection(db, "companies");
+    if (isClientRequest) {
+      // For wallets-requests, find in clients collection
+      userCollection = "clients";
+      console.log("🔍 Searching for client by UID/email...");
+      const clientsRef = collection(db, "clients");
 
       // Try by UID
       let qByUid = query(
-        companiesRef,
-        where("uid", "==", requestData.requestedUser.uid)
+        clientsRef,
+        where(
+          "uid",
+          "==",
+          requestData.requestedUser?.uid || requestData.requestedUser?.id
+        )
       );
-      let companySnapshot = await getDocs(qByUid);
+      let clientSnapshot = await getDocs(qByUid);
 
       // If not found, try by email
-      if (companySnapshot.empty && requestData.requestedUser.email) {
+      if (clientSnapshot.empty && requestData.requestedUser?.email) {
         console.log("🔍 Not found by UID, trying email...");
         const qByEmail = query(
-          companiesRef,
+          clientsRef,
           where("email", "==", requestData.requestedUser.email)
         );
-        companySnapshot = await getDocs(qByEmail);
+        clientSnapshot = await getDocs(qByEmail);
       }
 
-      // If still not found, try by createdUserId
-      if (companySnapshot.empty && requestData.requestedUser.email) {
-        console.log("🔍 Not found by email, trying createdUserId...");
-        const qByCreatedUserId = query(
+      if (clientSnapshot.empty) {
+        throw new Error("Client not found");
+      }
+
+      userDocId = clientSnapshot.docs[0].id;
+      userDocRef = doc(db, "clients", userDocId);
+      console.log("✓ Found Client ID:", userDocId);
+    } else {
+      // For companies-wallets-requests, find in companies collection
+      userCollection = "companies";
+
+      if (requestData.companyId) {
+        // New requests: Use stored company ID
+        console.log("🏢 Using stored Company ID:", requestData.companyId);
+        userDocId = requestData.companyId;
+      } else {
+        // Old requests: Query by UID or email (fallback for legacy data)
+        console.log("🔍 Searching for company by UID/email...");
+        const companiesRef = collection(db, "companies");
+
+        // Try by UID
+        let qByUid = query(
           companiesRef,
-          where("createdUserId", "==", requestData.requestedUser.email)
+          where("uid", "==", requestData.requestedUser?.uid)
         );
-        companySnapshot = await getDocs(qByCreatedUserId);
+        let companySnapshot = await getDocs(qByUid);
+
+        // If not found, try by email
+        if (companySnapshot.empty && requestData.requestedUser?.email) {
+          console.log("🔍 Not found by UID, trying email...");
+          const qByEmail = query(
+            companiesRef,
+            where("email", "==", requestData.requestedUser.email)
+          );
+          companySnapshot = await getDocs(qByEmail);
+        }
+
+        // If still not found, try by createdUserId
+        if (companySnapshot.empty && requestData.requestedUser?.email) {
+          console.log("🔍 Not found by email, trying createdUserId...");
+          const qByCreatedUserId = query(
+            companiesRef,
+            where("createdUserId", "==", requestData.requestedUser.email)
+          );
+          companySnapshot = await getDocs(qByCreatedUserId);
+        }
+
+        if (companySnapshot.empty) {
+          throw new Error("Company not found");
+        }
+
+        userDocId = companySnapshot.docs[0].id;
+        console.log("✓ Found Company ID:", userDocId);
       }
 
-      if (companySnapshot.empty) {
-        throw new Error("Company not found");
-      }
-
-      companyDocId = companySnapshot.docs[0].id;
-      console.log("✓ Found Company ID:", companyDocId);
+      userDocRef = doc(db, "companies", userDocId);
     }
 
-    // STEP 2: Run atomic transaction
+    // STEP 3: Run atomic transaction
     const result = await runTransaction(db, async (transaction) => {
       // Re-read request inside transaction to ensure consistency
       const requestSnap = await transaction.get(requestRef);
@@ -17874,16 +19268,15 @@ export const approveWalletChargeRequest = async (
       }
       console.log("✓ Request status is pending");
 
-      // Get company document
-      const companyDocRef = doc(db, "companies", companyDocId);
-      const companySnap = await transaction.get(companyDocRef);
+      // Get user document (company or client)
+      const userSnap = await transaction.get(userDocRef);
 
-      if (!companySnap.exists()) {
-        throw new Error("Company not found");
+      if (!userSnap.exists()) {
+        throw new Error(`${isClientRequest ? "Client" : "Company"} not found`);
       }
 
-      const companyData = companySnap.data();
-      const currentBalance = companyData.balance || 0;
+      const userData = userSnap.data();
+      const currentBalance = userData.balance || 0;
       const newBalance = currentBalance + requestData.value;
 
       console.log("💰 Current Balance:", currentBalance);
@@ -17897,8 +19290,8 @@ export const approveWalletChargeRequest = async (
         processedBy: adminUser,
       });
 
-      // Update company balance
-      transaction.update(companyDocRef, {
+      // Update user balance (company or client)
+      transaction.update(userDocRef, {
         balance: newBalance,
       });
 
@@ -17910,6 +19303,577 @@ export const approveWalletChargeRequest = async (
     return result;
   } catch (error: any) {
     console.error("❌ Error approving wallet request:", error);
+    throw error;
+  }
+};
+
+// ============================================================================
+// COMPANY-TO-COMPANY TRANSFER MANAGEMENT
+// ============================================================================
+
+/**
+ * Submit a company-to-company transfer request
+ * Deducts money from sender's balance immediately and creates pending request
+ * @param transferData - Transfer data including recipient phone, amount
+ * @returns Promise with created transfer request ID
+ */
+export const submitCompanyTransferRequest = async (transferData: {
+  recipientPhoneNumber: string;
+  recipientName: string;
+  amount: number;
+}): Promise<string> => {
+  try {
+    console.log("\n💸 ========================================");
+    console.log("📝 SUBMITTING COMPANY TRANSFER REQUEST");
+    console.log("========================================");
+
+    // Validate user authentication
+    const currentUser = auth.currentUser;
+    if (!currentUser || !currentUser.email) {
+      throw new Error("User not authenticated");
+    }
+    console.log("👤 User:", currentUser.email);
+
+    // Validate amount
+    if (transferData.amount <= 0) {
+      throw new Error("Transfer amount must be greater than 0");
+    }
+    console.log("💵 Amount:", transferData.amount);
+
+    // Find recipient company by phone number
+    const recipientCompany = await findCompanyByPhoneNumber(
+      transferData.recipientPhoneNumber
+    );
+    if (!recipientCompany) {
+      throw new Error("الشركة المستقبلة غير موجودة. يرجى التحقق من رقم الجوال");
+    }
+    console.log("🏢 Recipient Company:", recipientCompany.name);
+
+    // Get sender company data
+    const senderCompany = await fetchCurrentCompany();
+    if (!senderCompany) {
+      throw new Error("Company not found");
+    }
+    console.log("🏢 Sender Company:", senderCompany.name);
+    console.log("💰 Current Balance:", senderCompany.balance || 0);
+
+    // Validate sufficient balance
+    if ((senderCompany.balance || 0) < transferData.amount) {
+      throw new Error(
+        `رصيد غير كافٍ. الرصيد الحالي: ${senderCompany.balance || 0} ر.س`
+      );
+    }
+
+    // Find sender company document ID
+    const companiesRef = collection(db, "companies");
+    let senderCompanyDocId: string;
+
+    // Try to find by email (document ID is usually email)
+    const senderCompanyDocRef = doc(db, "companies", senderCompany.email);
+    const senderCompanyDoc = await getDoc(senderCompanyDocRef);
+
+    if (senderCompanyDoc.exists()) {
+      senderCompanyDocId = senderCompanyDoc.id;
+    } else {
+      // Try by UID
+      const qByUid = query(companiesRef, where("uId", "==", currentUser.uid));
+      const snapshot = await getDocs(qByUid);
+      if (!snapshot.empty) {
+        senderCompanyDocId = snapshot.docs[0].id;
+      } else {
+        // Try by email field
+        const qByEmail = query(
+          companiesRef,
+          where("email", "==", currentUser.email)
+        );
+        const emailSnapshot = await getDocs(qByEmail);
+        if (!emailSnapshot.empty) {
+          senderCompanyDocId = emailSnapshot.docs[0].id;
+        } else {
+          throw new Error("Sender company document not found");
+        }
+      }
+    }
+
+    // Find recipient company document ID
+    const recipientCompanyDocRef = doc(db, "companies", recipientCompany.id);
+    const recipientCompanyDoc = await getDoc(recipientCompanyDocRef);
+    if (!recipientCompanyDoc.exists()) {
+      throw new Error("Recipient company document not found");
+    }
+    const recipientCompanyDocId = recipientCompanyDoc.id;
+
+    // Use atomic transaction to deduct from sender, add to recipient, and create transfer record
+    const result = await runTransaction(db, async (transaction) => {
+      // Re-read sender company to get latest balance
+      const senderDocRef = doc(db, "companies", senderCompanyDocId);
+      const senderDoc = await transaction.get(senderDocRef);
+
+      if (!senderDoc.exists()) {
+        throw new Error("Sender company not found");
+      }
+
+      const senderData = senderDoc.data();
+      const currentSenderBalance = senderData.balance || 0;
+
+      // Validate balance again inside transaction
+      if (currentSenderBalance < transferData.amount) {
+        throw new Error(
+          `رصيد غير كافٍ. الرصيد الحالي: ${currentSenderBalance} ر.س`
+        );
+      }
+
+      // Re-read recipient company to get latest balance
+      const recipientDocRef = doc(db, "companies", recipientCompanyDocId);
+      const recipientDoc = await transaction.get(recipientDocRef);
+
+      if (!recipientDoc.exists()) {
+        throw new Error("Recipient company not found");
+      }
+
+      const recipientData = recipientDoc.data();
+      const currentRecipientBalance = recipientData.balance || 0;
+
+      const newSenderBalance = currentSenderBalance - transferData.amount;
+      const newRecipientBalance = currentRecipientBalance + transferData.amount;
+
+      console.log("💰 Sender Current Balance:", currentSenderBalance);
+      console.log("➖ Deducting from sender:", transferData.amount);
+      console.log("💰 Sender New Balance:", newSenderBalance);
+      console.log("💰 Recipient Current Balance:", currentRecipientBalance);
+      console.log("➕ Adding to recipient:", transferData.amount);
+      console.log("💰 Recipient New Balance:", newRecipientBalance);
+
+      // Deduct from sender balance
+      transaction.update(senderDocRef, {
+        balance: newSenderBalance,
+      });
+
+      // Add to recipient balance
+      transaction.update(recipientDocRef, {
+        balance: newRecipientBalance,
+      });
+
+      // Create transfer record with completed status
+      const transfersRef = collection(db, "companies-transfers");
+      const transferDocRef = doc(transfersRef);
+
+      const transferRequest = {
+        type: "company-to-company",
+        fromCompany: {
+          id: senderCompanyDocId,
+          name: senderCompany.name || senderData.name || senderData.brandName,
+          email: senderCompany.email || senderData.email,
+          uid: senderCompany.uid || senderData.uId || currentUser.uid,
+        },
+        toCompany: {
+          id: recipientCompanyDocId,
+          name: recipientCompany.name,
+          email: recipientCompany.email,
+          phoneNumber: recipientCompany.phoneNumber,
+        },
+        amount: transferData.amount,
+        status: "completed", // Changed from "pending" to "completed"
+        requestDate: serverTimestamp(),
+        completedAt: serverTimestamp(), // Add completion timestamp
+        createdUserId: currentUser.email,
+        companyId: senderCompanyDocId, // For easy lookup
+        recipientCompanyId: recipientCompanyDocId,
+      };
+
+      transaction.set(transferDocRef, transferRequest);
+
+      console.log("✅ Transfer completed with ID:", transferDocRef.id);
+      return transferDocRef.id;
+    });
+
+    // Send notification to recipient (outside transaction)
+    try {
+      await sendTransferNotification(
+        recipientCompanyDocId,
+        senderCompany.name || "شركة",
+        transferData.amount
+      );
+      console.log("✅ Notification sent to recipient");
+    } catch (notifError) {
+      console.error("⚠️ Failed to send notification:", notifError);
+      // Don't throw - transfer is already completed
+    }
+
+    console.log("========================================\n");
+    return result;
+  } catch (error: any) {
+    console.error("❌ Error submitting company transfer request:", error);
+    throw error;
+  }
+};
+
+/**
+ * Approve company-to-company transfer request
+ * Adds money to recipient balance and sends notification
+ * @param requestId - Transfer request document ID
+ * @param adminUser - Admin processing the request
+ * @returns Promise with success boolean
+ */
+export const approveCompanyTransferRequest = async (
+  requestId: string,
+  adminUser: { uid: string; email: string; name: string }
+): Promise<boolean> => {
+  try {
+    console.log("\n✅ ========================================");
+    console.log("📝 APPROVING COMPANY TRANSFER REQUEST");
+    console.log("========================================");
+    console.log("📋 Request ID:", requestId);
+    console.log("👤 Admin:", adminUser.email);
+
+    const requestRef = doc(db, "companies-transfers", requestId);
+    const requestSnap = await getDoc(requestRef);
+
+    if (!requestSnap.exists()) {
+      throw new Error("Transfer request not found");
+    }
+
+    const initialRequestData = requestSnap.data();
+
+    if (initialRequestData.status !== "pending") {
+      throw new Error(`Request already ${initialRequestData.status}`);
+    }
+
+    console.log("💵 Transfer Amount:", initialRequestData.amount);
+    console.log("🏢 From Company:", initialRequestData.fromCompany.name);
+    console.log("🏢 To Company:", initialRequestData.toCompany.name);
+
+    // Store data for notification (before transaction)
+    const recipientCompanyId = initialRequestData.recipientCompanyId;
+    const fromCompanyName = initialRequestData.fromCompany.name;
+    const transferAmount = initialRequestData.amount;
+
+    // Use atomic transaction to add balance and update request
+    const result = await runTransaction(db, async (transaction) => {
+      // Re-read request inside transaction
+      const requestSnap = await transaction.get(requestRef);
+      if (!requestSnap.exists()) {
+        throw new Error("Transfer request not found");
+      }
+
+      const requestData = requestSnap.data();
+
+      // Validate status again
+      if (requestData.status !== "pending") {
+        throw new Error(`Request already ${requestData.status}`);
+      }
+
+      // Get recipient company document
+      const recipientCompanyDocRef = doc(
+        db,
+        "companies",
+        requestData.recipientCompanyId
+      );
+      const recipientCompanySnap = await transaction.get(
+        recipientCompanyDocRef
+      );
+
+      if (!recipientCompanySnap.exists()) {
+        throw new Error("Recipient company not found");
+      }
+
+      const recipientCompanyData = recipientCompanySnap.data();
+      const currentBalance = recipientCompanyData.balance || 0;
+      const newBalance = currentBalance + requestData.amount;
+
+      console.log("💰 Recipient Current Balance:", currentBalance);
+      console.log("➕ Adding:", requestData.amount);
+      console.log("💰 Recipient New Balance:", newBalance);
+
+      // Update request status
+      transaction.update(requestRef, {
+        status: "approved",
+        processedAt: serverTimestamp(),
+        processedBy: adminUser,
+      });
+
+      // Add to recipient balance
+      transaction.update(recipientCompanyDocRef, {
+        balance: newBalance,
+      });
+
+      console.log("✅ Transaction completed successfully");
+      return true;
+    });
+
+    // Send notification to recipient company (outside transaction)
+    try {
+      await sendTransferNotification(
+        recipientCompanyId,
+        fromCompanyName,
+        transferAmount
+      );
+      console.log("✅ Notification sent to recipient");
+    } catch (notifError) {
+      console.error("⚠️ Failed to send notification:", notifError);
+      // Don't throw - notification failure shouldn't fail the approval
+    }
+
+    console.log("========================================\n");
+    return result;
+  } catch (error: any) {
+    console.error("❌ Error approving company transfer:", error);
+    throw error;
+  }
+};
+
+/**
+ * Reject company-to-company transfer request
+ * Refunds money back to sender and updates request status
+ * @param requestId - Transfer request document ID
+ * @param adminUser - Admin processing the request
+ * @param reason - Optional rejection reason
+ * @returns Promise with success boolean
+ */
+export const rejectCompanyTransferRequest = async (
+  requestId: string,
+  adminUser: { uid: string; email: string; name: string },
+  reason?: string
+): Promise<boolean> => {
+  try {
+    console.log("\n❌ ========================================");
+    console.log("📝 REJECTING COMPANY TRANSFER REQUEST");
+    console.log("========================================");
+    console.log("📋 Request ID:", requestId);
+    console.log("👤 Admin:", adminUser.email);
+    if (reason) console.log("📝 Reason:", reason);
+
+    const requestRef = doc(db, "companies-transfers", requestId);
+    const requestSnap = await getDoc(requestRef);
+
+    if (!requestSnap.exists()) {
+      throw new Error("Transfer request not found");
+    }
+
+    const requestData = requestSnap.data();
+
+    if (requestData.status !== "pending") {
+      throw new Error(`Request already ${requestData.status}`);
+    }
+
+    console.log("💵 Transfer Amount:", requestData.amount);
+    console.log("🏢 From Company:", requestData.fromCompany.name);
+    console.log("🏢 To Company:", requestData.toCompany.name);
+
+    // Use atomic transaction to refund balance and update request
+    const result = await runTransaction(db, async (transaction) => {
+      // Re-read request inside transaction
+      const requestSnap = await transaction.get(requestRef);
+      if (!requestSnap.exists()) {
+        throw new Error("Transfer request not found");
+      }
+
+      const requestData = requestSnap.data();
+
+      // Validate status again
+      if (requestData.status !== "pending") {
+        throw new Error(`Request already ${requestData.status}`);
+      }
+
+      // Get sender company document to refund the money
+      const senderCompanyDocRef = doc(db, "companies", requestData.companyId);
+      const senderCompanySnap = await transaction.get(senderCompanyDocRef);
+
+      if (!senderCompanySnap.exists()) {
+        throw new Error("Sender company not found");
+      }
+
+      const senderCompanyData = senderCompanySnap.data();
+      const currentBalance = senderCompanyData.balance || 0;
+      const refundAmount = requestData.amount;
+      const newBalance = currentBalance + refundAmount;
+
+      console.log("💰 Sender Current Balance:", currentBalance);
+      console.log("➕ Refunding:", refundAmount);
+      console.log("💰 Sender New Balance:", newBalance);
+
+      // Update request status
+      transaction.update(requestRef, {
+        status: "rejected",
+        processedAt: serverTimestamp(),
+        processedBy: adminUser,
+        rejectionReason: reason || "لم يتم تحديد سبب",
+      });
+
+      // Refund to sender balance
+      transaction.update(senderCompanyDocRef, {
+        balance: newBalance,
+      });
+
+      console.log("✅ Transaction completed successfully");
+      return true;
+    });
+
+    console.log("========================================\n");
+    return result;
+  } catch (error: any) {
+    console.error("❌ Error rejecting company transfer:", error);
+    throw error;
+  }
+};
+
+/**
+ * Send transfer notification to recipient company
+ * @param recipientCompanyId - Company document ID
+ * @param fromCompanyName - Name of sending company
+ * @param amount - Transfer amount
+ * @returns Promise with notification ID
+ */
+export const sendTransferNotification = async (
+  recipientCompanyId: string,
+  fromCompanyName: string,
+  amount: number
+): Promise<string> => {
+  try {
+    // Get recipient company email for notification targeting
+    const recipientCompanyDoc = await getDoc(
+      doc(db, "companies", recipientCompanyId)
+    );
+    if (!recipientCompanyDoc.exists()) {
+      throw new Error("Recipient company not found");
+    }
+
+    const recipientCompanyData = recipientCompanyDoc.data();
+    const recipientEmail = recipientCompanyData.email;
+
+    if (!recipientEmail) {
+      throw new Error("Recipient company email not found");
+    }
+
+    // Create notification using notificationService
+    const { createNotification } = await import("./notificationService");
+    const notificationId = await createNotification({
+      title: "تحويل أموال",
+      body: `تم استلام ${amount} ر.س من شركة ${fromCompanyName}`,
+      targetedUsers: {
+        companies: [recipientEmail], // Target specific company by email
+      },
+    });
+
+    console.log("✅ Transfer notification created:", notificationId);
+    return notificationId;
+  } catch (error) {
+    console.error("❌ Error sending transfer notification:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all company-to-company transfer requests
+ * @returns Promise with array of transfer requests
+ */
+export const fetchCompanyTransferRequests = async (): Promise<any[]> => {
+  try {
+    console.log("🔍 Fetching company transfer requests...");
+
+    const transfersRef = collection(db, "companies-transfers");
+    const q = query(transfersRef, orderBy("requestDate", "desc"));
+    const querySnapshot = await getDocs(q);
+
+    const transfers: any[] = [];
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      transfers.push({
+        id: doc.id,
+        type: data.type || "company-to-company",
+        fromCompany: data.fromCompany,
+        toCompany: data.toCompany,
+        amount: data.amount,
+        status: data.status || "pending",
+        requestDate: data.requestDate,
+        processedAt: data.processedAt,
+        processedBy: data.processedBy,
+        createdUserId: data.createdUserId,
+        companyId: data.companyId,
+        recipientCompanyId: data.recipientCompanyId,
+      });
+    });
+
+    console.log(`✅ Found ${transfers.length} company transfer requests`);
+    return transfers;
+  } catch (error: any) {
+    console.error("❌ Error fetching company transfer requests:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch company transfers for a specific company (both sent and received)
+ * @param companyId - The company document ID
+ * @param companyEmail - The company email (optional, for fallback lookup)
+ * @returns Promise with array of transfer requests
+ */
+export const fetchCompanyTransfersForCompany = async (
+  companyId?: string,
+  companyEmail?: string
+): Promise<any[]> => {
+  try {
+    console.log("🔍 Fetching company transfers for company...");
+    console.log("Company ID:", companyId);
+    console.log("Company Email:", companyEmail);
+
+    const transfersRef = collection(db, "companies-transfers");
+    const querySnapshot = await getDocs(transfersRef);
+
+    const transfers: any[] = [];
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      transfers.push({
+        id: doc.id,
+        type: data.type || "company-to-company",
+        fromCompany: data.fromCompany,
+        toCompany: data.toCompany,
+        amount: data.amount,
+        status: data.status || "pending",
+        requestDate: data.requestDate,
+        processedAt: data.processedAt,
+        processedBy: data.processedBy,
+        createdUserId: data.createdUserId,
+        companyId: data.companyId,
+        recipientCompanyId: data.recipientCompanyId,
+      });
+    });
+
+    // Filter transfers where company is either sender or recipient
+    const filteredTransfers = transfers.filter((transfer) => {
+      const isSender =
+        transfer.companyId === companyId ||
+        transfer.fromCompany?.id === companyId ||
+        transfer.fromCompany?.email === companyEmail ||
+        transfer.createdUserId === companyEmail;
+
+      const isRecipient =
+        transfer.recipientCompanyId === companyId ||
+        transfer.toCompany?.id === companyId ||
+        transfer.toCompany?.email === companyEmail;
+
+      return isSender || isRecipient;
+    });
+
+    // Sort by date descending
+    filteredTransfers.sort((a, b) => {
+      const dateA = a.requestDate?.toDate
+        ? a.requestDate.toDate()
+        : a.requestDate
+        ? new Date(a.requestDate)
+        : new Date(0);
+      const dateB = b.requestDate?.toDate
+        ? b.requestDate.toDate()
+        : b.requestDate
+        ? new Date(b.requestDate)
+        : new Date(0);
+      return dateB.getTime() - dateA.getTime();
+    });
+
+    console.log(`✅ Found ${filteredTransfers.length} transfers for company`);
+    return filteredTransfers;
+  } catch (error: any) {
+    console.error("❌ Error fetching company transfers:", error);
     throw error;
   }
 };
@@ -17935,14 +19899,35 @@ export const rejectWalletChargeRequest = async (
     console.log("👤 Admin:", adminUser.email);
     if (reason) console.log("📝 Reason:", reason);
 
-    const requestRef = doc(db, "companies-wallets-requests", requestId);
-    const requestSnap = await getDoc(requestRef);
+    // Try to find request in both collections
+    let requestRef: any;
+    let requestSnap: any;
+    let requestData: any;
+    let collectionName: string;
 
-    if (!requestSnap.exists()) {
-      throw new Error("Request not found");
+    // Try companies-wallets-requests first
+    requestRef = doc(db, "companies-wallets-requests", requestId);
+    requestSnap = await getDoc(requestRef);
+
+    if (requestSnap.exists()) {
+      collectionName = "companies-wallets-requests";
+      requestData = requestSnap.data();
+      console.log("✅ Found request in companies-wallets-requests");
+    } else {
+      // Try wallets-requests (for clients/individuals)
+      requestRef = doc(db, "wallets-requests", requestId);
+      requestSnap = await getDoc(requestRef);
+
+      if (requestSnap.exists()) {
+        collectionName = "wallets-requests";
+        requestData = requestSnap.data();
+        console.log("✅ Found request in wallets-requests (client/individual)");
+      } else {
+        throw new Error("Request not found in any collection");
+      }
     }
 
-    const requestData = requestSnap.data();
+    console.log("📦 Collection:", collectionName);
 
     if (requestData.status !== "pending") {
       throw new Error(`Request already ${requestData.status}`);
@@ -17974,7 +19959,25 @@ export const rejectWalletChargeRequest = async (
 const generateUniqueWithdrawalRefid = async (): Promise<string> => {
   const maxAttempts = 20;
   for (let i = 0; i < maxAttempts; i++) {
-    const refid = Math.floor(10000000 + Math.random() * 90000000).toString();
+    // Generate 8-digit refid based on current timestamp
+    // Use last 8 digits of timestamp, ensuring it's always 8 digits
+    const timestamp = Date.now();
+    // Get last 8 digits: timestamp % 100000000, then pad to ensure 8 digits
+    let refid = (timestamp % 100000000).toString();
+    
+    // If the result is less than 8 digits (shouldn't happen with current timestamps, but safety check)
+    // or if we need to add randomness for uniqueness, add a small random component
+    if (refid.length < 8) {
+      // Pad with zeros if needed (shouldn't happen with current timestamps)
+      refid = refid.padStart(8, '0');
+    }
+    
+    // If this is a retry (i > 0), add a small random component to ensure uniqueness
+    if (i > 0) {
+      const randomSuffix = Math.floor(Math.random() * 100).toString().padStart(2, '0');
+      // Replace last 2 digits with random suffix to ensure uniqueness
+      refid = refid.slice(0, 6) + randomSuffix;
+    }
 
     // Check uniqueness in companies-wallets-withdrawals collection
     const requestsRef = collection(db, "companies-wallets-withdrawals");
@@ -18049,16 +20052,38 @@ export const submitWalletWithdrawalRequest = async (requestData: {
     }
     console.log("💵 Withdrawal Amount:", requestData.withdrawalAmount);
 
-    // Get current company data
-    const company = await fetchCurrentCompany();
-    if (!company) {
-      throw new Error("Company not found");
+    // Try to get company data first
+    let company = await fetchCurrentCompany();
+    let client = null;
+    let isClientRequest = false;
+    let userId: string;
+    let userName: string;
+    let currentBalance: number;
+
+    if (company) {
+      // User is a company
+      console.log("🏢 Company:", company.name);
+      console.log("💰 Current Balance:", company.balance || 0);
+      userId = company.id;
+      userName = company.name;
+      currentBalance = company.balance || 0;
+    } else {
+      // Try to get client data
+      client = await fetchCurrentClient();
+      if (!client) {
+        throw new Error(
+          "User not found. Neither company nor client data exists."
+        );
+      }
+      isClientRequest = true;
+      console.log("👤 Client:", client.name);
+      console.log("💰 Current Balance:", client.balance || 0);
+      userId = client.id;
+      userName = client.name;
+      currentBalance = client.balance || 0;
     }
-    console.log("🏢 Company:", company.name);
-    console.log("💰 Current Balance:", company.balance || 0);
 
     // Check sufficient balance (pre-validation)
-    const currentBalance = company.balance || 0;
     if (currentBalance < requestData.withdrawalAmount) {
       throw new Error(`رصيد غير كافٍ. الرصيد الحالي: ${currentBalance} ر.س`);
     }
@@ -18075,15 +20100,18 @@ export const submitWalletWithdrawalRequest = async (requestData: {
       );
     }
 
-    // Create withdrawal request document
+    // Create withdrawal request document in the same collection for both types
+    // The approval function already handles both companies and clients
     const requestsRef = collection(db, "companies-wallets-withdrawals");
     const newRequest = {
       refid,
-      companyId: company.id, // Store company document ID for easy lookup
+      companyId: isClientRequest ? undefined : userId, // Store company ID if company, undefined if client
+      clientId: isClientRequest ? userId : undefined, // Store client ID if client, undefined if company
+      userType: isClientRequest ? "client" : "company", // Track user type for clarity
       requestedUser: {
         uid: currentUser.uid,
         email: currentUser.email!,
-        name: company.name,
+        name: userName,
         balance: currentBalance, // Current balance at time of request
       },
       accountNumber: requestData.accountNumber,
@@ -18103,11 +20131,113 @@ export const submitWalletWithdrawalRequest = async (requestData: {
     console.log("✅ Wallet withdrawal request created successfully");
     console.log("📋 Request ID:", docRef.id);
     console.log("🔢 Refid:", refid);
+    console.log("👤 User Type:", isClientRequest ? "Client" : "Company");
     console.log("========================================\n");
 
     return docRef.id;
   } catch (error: any) {
     console.error("❌ Error submitting wallet withdrawal request:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add 8-digit refid to existing withdrawal requests that don't have one
+ * Uses createdDate timestamp to generate refid
+ * @returns Promise with number of updated requests
+ */
+export const addRefidToExistingWithdrawalRequests = async (): Promise<number> => {
+  try {
+    console.log(
+      "🔄 Starting migration: Adding refid to existing withdrawal requests..."
+    );
+    const requestsRef = collection(db, "companies-wallets-withdrawals");
+    const requestsSnapshot = await getDocs(requestsRef);
+    console.log(`📦 Found ${requestsSnapshot.size} withdrawal requests`);
+
+    let updatedCount = 0;
+    const requestsToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    for (const requestDoc of requestsSnapshot.docs) {
+      const requestData = requestDoc.data();
+      if (requestData.refid) {
+        console.log(
+          `⏭️  Request ${requestDoc.id} already has refid: ${requestData.refid}`
+        );
+        continue;
+      }
+
+      // Generate refid from createdDate timestamp
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Get createdDate timestamp
+        const createdDate = requestData.createdDate?.toDate 
+          ? requestData.createdDate.toDate() 
+          : requestData.createdDate instanceof Date 
+          ? requestData.createdDate 
+          : new Date();
+        const timestamp = createdDate.getTime();
+        
+        // Generate 8-digit refid from timestamp
+        let baseRefid = (timestamp % 100000000).toString().padStart(8, '0');
+        
+        // If retrying, add random suffix to ensure uniqueness
+        if (attempts > 0) {
+          const randomSuffix = Math.floor(Math.random() * 100).toString().padStart(2, '0');
+          baseRefid = baseRefid.slice(0, 6) + randomSuffix;
+        }
+        
+        refid = baseRefid;
+        
+        // Check uniqueness
+        const requestsRefCheck = collection(db, "companies-wallets-withdrawals");
+        const qCheck = query(requestsRefCheck, where("refid", "==", refid));
+        const querySnapshot = await getDocs(qCheck);
+        const isInPendingUpdates = requestsToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for request ${requestDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      requestsToUpdate.push({
+        docRef: doc(db, "companies-wallets-withdrawals", requestDoc.id),
+        refid: refid,
+      });
+      console.log(`✅ Generated refid ${refid} for request ${requestDoc.id}`);
+    }
+
+    console.log(`📝 Updating ${requestsToUpdate.length} requests with refid...`);
+    for (const { docRef, refid } of requestsToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(`✅ Updated request ${docRef.id} with refid: ${refid}`);
+      } catch (error) {
+        console.error(`❌ Error updating request ${docRef.id}:`, error);
+      }
+    }
+    console.log(
+      `✅ Migration completed: ${updatedCount} withdrawal requests updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
     throw error;
   }
 };
@@ -18141,54 +20271,310 @@ export const approveWalletWithdrawalRequest = async (
     }
 
     const requestData = requestSnap.data();
-    console.log("💵 Withdrawal Amount:", requestData.withdrawalAmount);
 
-    // Find company document ID
-    let companyDocId: string;
+    // Handle both withdrawaAmount (typo) and withdrawalAmount field names
+    const withdrawalAmount =
+      requestData.withdrawalAmount || requestData.withdrawaAmount;
+    console.log("💵 Withdrawal Amount:", withdrawalAmount);
 
-    if (requestData.companyId) {
-      // New requests: Use stored company ID
+    // Validate request data structure
+    if (!requestData.requestedUser) {
+      throw new Error("Request data is missing requestedUser information");
+    }
+
+    if (!withdrawalAmount || withdrawalAmount <= 0) {
+      throw new Error("Invalid withdrawal amount");
+    }
+
+    console.log("📋 Request data:", {
+      hasCompanyId: !!requestData.companyId,
+      companyId: requestData.companyId,
+      requestedUserUid: requestData.requestedUser?.uid,
+      requestedUserEmail: requestData.requestedUser?.email,
+    });
+
+    // STEP 1: Determine if this is a company or client request
+    let userDocId: string | undefined;
+    let userCollection: string | undefined;
+    let userDocRef: any;
+    let isClientRequest = false;
+
+    // Check if clientId is stored (new client requests)
+    if (requestData.clientId) {
+      console.log("👤 Using stored Client ID:", requestData.clientId);
+      const clientDocRef = doc(db, "clients", requestData.clientId);
+      const clientDoc = await getDoc(clientDocRef);
+      if (clientDoc.exists()) {
+        userDocId = requestData.clientId;
+        userCollection = "clients";
+        userDocRef = clientDocRef;
+        isClientRequest = true;
+        console.log("✓ Verified client exists with stored ID");
+      } else {
+        console.warn("⚠️ Stored clientId doesn't exist, searching...");
+        // Continue to search below
+      }
+    }
+    // Check if companyId is stored (new company requests)
+    else if (requestData.companyId) {
       console.log("🏢 Using stored Company ID:", requestData.companyId);
-      companyDocId = requestData.companyId;
-    } else {
-      // Old requests: Query by UID or email (fallback for legacy data)
-      console.log("🔍 Searching for company by UID/email...");
+      const companyDocRef = doc(db, "companies", requestData.companyId);
+      const companyDoc = await getDoc(companyDocRef);
+      if (companyDoc.exists()) {
+        userDocId = requestData.companyId;
+        userCollection = "companies";
+        userDocRef = companyDocRef;
+        console.log("✓ Verified company exists with stored ID");
+      } else {
+        console.warn("⚠️ Stored companyId doesn't exist, searching...");
+        // Continue to search below
+      }
+    }
+
+    // If companyId not set or invalid, search for company or client
+    if (!userDocId) {
+      console.log("🔍 Searching for user (company or client) by UID/email...");
+
+      // Try to find in companies first
       const companiesRef = collection(db, "companies");
+      let companySnapshot: any = null;
 
-      // Try by UID
-      let qByUid = query(
-        companiesRef,
-        where("uid", "==", requestData.requestedUser.uid)
-      );
-      let companySnapshot = await getDocs(qByUid);
+      if (requestData.requestedUser?.uid) {
+        console.log(
+          "🔍 Trying to find company by UID:",
+          requestData.requestedUser.uid
+        );
+        const qByUid = query(
+          companiesRef,
+          where("uid", "==", requestData.requestedUser.uid)
+        );
+        companySnapshot = await getDocs(qByUid);
+        if (!companySnapshot.empty) {
+          console.log("✅ Found company by UID");
+        }
+      }
 
-      // If not found, try by email
-      if (companySnapshot.empty && requestData.requestedUser.email) {
-        console.log("🔍 Not found by UID, trying email...");
+      // If not found in companies, try by email
+      if (
+        (!companySnapshot || companySnapshot.empty) &&
+        requestData.requestedUser?.email
+      ) {
+        console.log(
+          "🔍 Not found by UID, trying company by email:",
+          requestData.requestedUser.email
+        );
         const qByEmail = query(
           companiesRef,
           where("email", "==", requestData.requestedUser.email)
         );
         companySnapshot = await getDocs(qByEmail);
+        if (!companySnapshot.empty) {
+          console.log("✅ Found company by email");
+        }
       }
 
       // If still not found, try by createdUserId
-      if (companySnapshot.empty && requestData.requestedUser.email) {
-        console.log("🔍 Not found by email, trying createdUserId...");
+      if (
+        (!companySnapshot || companySnapshot.empty) &&
+        requestData.requestedUser?.email
+      ) {
+        console.log(
+          "🔍 Not found by email, trying company by createdUserId:",
+          requestData.requestedUser.email
+        );
         const qByCreatedUserId = query(
           companiesRef,
           where("createdUserId", "==", requestData.requestedUser.email)
         );
         companySnapshot = await getDocs(qByCreatedUserId);
+        if (!companySnapshot.empty) {
+          console.log("✅ Found company by createdUserId");
+        }
       }
 
-      if (companySnapshot.empty) {
-        throw new Error("Company not found");
+      // If still not found, try by uId (case variation)
+      if (
+        (!companySnapshot || companySnapshot.empty) &&
+        requestData.requestedUser?.uid
+      ) {
+        console.log(
+          "🔍 Not found, trying company by uId (lowercase):",
+          requestData.requestedUser.uid
+        );
+        const qByUId = query(
+          companiesRef,
+          where("uId", "==", requestData.requestedUser.uid)
+        );
+        companySnapshot = await getDocs(qByUId);
+        if (!companySnapshot.empty) {
+          console.log("✅ Found company by uId");
+        }
       }
 
-      companyDocId = companySnapshot.docs[0].id;
-      console.log("✓ Found Company ID:", companyDocId);
+      // If found in companies, use it
+      if (companySnapshot && !companySnapshot.empty) {
+        userDocId = companySnapshot.docs[0].id;
+        userCollection = "companies";
+        userDocRef = doc(db, "companies", userDocId);
+        console.log("✓ Found Company ID:", userDocId);
+        const companyData = companySnapshot.docs[0].data();
+        console.log("📋 Company data:", {
+          id: userDocId,
+          name: companyData.name,
+          email: companyData.email,
+          uid: companyData.uid || companyData.uId,
+        });
+      } else {
+        // Not found in companies, try clients collection
+        console.log("🔍 Company not found, searching in clients collection...");
+        const clientsRef = collection(db, "clients");
+        let clientSnapshot: any = null;
+
+        // Try by UID
+        if (requestData.requestedUser?.uid) {
+          console.log(
+            "🔍 Trying to find client by UID:",
+            requestData.requestedUser.uid
+          );
+          const qByUid = query(
+            clientsRef,
+            where("uid", "==", requestData.requestedUser.uid)
+          );
+          clientSnapshot = await getDocs(qByUid);
+          if (!clientSnapshot.empty) {
+            console.log("✅ Found client by UID");
+          }
+        }
+
+        // Try by email
+        if (
+          (!clientSnapshot || clientSnapshot.empty) &&
+          requestData.requestedUser?.email
+        ) {
+          console.log(
+            "🔍 Not found by UID, trying client by email:",
+            requestData.requestedUser.email
+          );
+          const qByEmail = query(
+            clientsRef,
+            where("email", "==", requestData.requestedUser.email)
+          );
+          clientSnapshot = await getDocs(qByEmail);
+          if (!clientSnapshot.empty) {
+            console.log("✅ Found client by email");
+          }
+        }
+
+        // Try by id field
+        if (
+          (!clientSnapshot || clientSnapshot.empty) &&
+          requestData.requestedUser?.uid
+        ) {
+          console.log(
+            "🔍 Not found, trying client by id field:",
+            requestData.requestedUser.uid
+          );
+          const qById = query(
+            clientsRef,
+            where("id", "==", requestData.requestedUser.uid)
+          );
+          clientSnapshot = await getDocs(qById);
+          if (!clientSnapshot.empty) {
+            console.log("✅ Found client by id field");
+          }
+        }
+
+        // Try by document ID directly (uid might be the document ID)
+        if (
+          (!clientSnapshot || clientSnapshot.empty) &&
+          requestData.requestedUser?.uid
+        ) {
+          console.log(
+            "🔍 Not found, trying client by document ID (uid as doc ID):",
+            requestData.requestedUser.uid
+          );
+          try {
+            const clientDocRef = doc(
+              db,
+              "clients",
+              requestData.requestedUser.uid
+            );
+            const clientDoc = await getDoc(clientDocRef);
+            if (clientDoc.exists()) {
+              console.log("✅ Found client by document ID");
+              // Create a snapshot-like object for consistency
+              clientSnapshot = {
+                docs: [{ id: clientDoc.id, data: () => clientDoc.data() }],
+                empty: false,
+              };
+            }
+          } catch (error) {
+            console.log("⚠️ Error trying document ID lookup:", error);
+          }
+        }
+
+        if (clientSnapshot && !clientSnapshot.empty) {
+          userDocId = clientSnapshot.docs[0].id;
+          userCollection = "clients";
+          userDocRef = doc(db, "clients", userDocId);
+          isClientRequest = true;
+          console.log("✓ Found Client ID:", userDocId);
+          const clientData = clientSnapshot.docs[0].data();
+          console.log("📋 Client data:", {
+            id: userDocId,
+            name: clientData.name,
+            email: clientData.email,
+            uid: clientData.uid || clientData.id,
+          });
+        } else {
+          console.error(
+            "❌ User not found in companies or clients collections"
+          );
+          console.error(
+            "📋 Full request data:",
+            JSON.stringify(
+              {
+                id: requestSnap.id,
+                companyId: requestData.companyId,
+                requestedUser: requestData.requestedUser,
+                withdrawalAmount: withdrawalAmount,
+              },
+              null,
+              2
+            )
+          );
+          throw new Error(
+            `User not found. Requested user: ${
+              requestData.requestedUser?.email ||
+              requestData.requestedUser?.uid ||
+              "unknown"
+            }. Please ensure the user exists in the companies or clients collection.`
+          );
+        }
+      }
     }
+
+    // Validate that we found a user (company or client)
+    if (!userDocId || !userCollection || !userDocRef) {
+      console.error(
+        "❌ Failed to find user (company or client) for withdrawal request"
+      );
+      console.error("📋 Request data:", {
+        id: requestSnap.id,
+        companyId: requestData.companyId,
+        requestedUser: requestData.requestedUser,
+        withdrawalAmount: withdrawalAmount,
+      });
+      throw new Error(
+        `User not found. Requested user: ${
+          requestData.requestedUser?.email ||
+          requestData.requestedUser?.uid ||
+          "unknown"
+        }. Please ensure the user exists in the companies or clients collection.`
+      );
+    }
+
+    console.log(`✅ Found ${userCollection} with ID: ${userDocId}`);
 
     // STEP 2: Run atomic transaction
     const result = await runTransaction(db, async (transaction) => {
@@ -18202,34 +20588,43 @@ export const approveWalletWithdrawalRequest = async (
       const requestData = requestSnap.data();
 
       // Validate request status
-      if (requestData.status !== "pending") {
-        throw new Error(`Request already ${requestData.status}`);
+      const currentStatus = String(
+        requestData.status || "pending"
+      ).toLowerCase();
+      if (currentStatus !== "pending") {
+        throw new Error(`Request already ${currentStatus}`);
       }
       console.log("✓ Request status is pending");
 
-      // Get company document
-      const companyDocRef = doc(db, "companies", companyDocId);
-      const companySnap = await transaction.get(companyDocRef);
+      // Get user document (company or client)
+      const userSnap = await transaction.get(userDocRef);
 
-      if (!companySnap.exists()) {
-        throw new Error("Company not found");
+      if (!userSnap.exists()) {
+        throw new Error(`${userCollection} not found`);
       }
 
-      const companyData = companySnap.data();
-      const currentBalance = companyData.balance || 0;
-      const withdrawalAmount = requestData.withdrawalAmount;
+      const userData = userSnap.data();
+      const currentBalance = userData.balance || 0;
+
+      // Handle both withdrawaAmount (typo) and withdrawalAmount field names
+      const withdrawalAmountValue =
+        requestData.withdrawalAmount || requestData.withdrawaAmount;
+
+      if (!withdrawalAmountValue || withdrawalAmountValue <= 0) {
+        throw new Error("Invalid withdrawal amount");
+      }
 
       // CRITICAL: Validate sufficient balance
-      if (currentBalance < withdrawalAmount) {
+      if (currentBalance < withdrawalAmountValue) {
         throw new Error(
-          `رصيد غير كافٍ. الرصيد الحالي: ${currentBalance} ر.س، المبلغ المطلوب: ${withdrawalAmount} ر.س`
+          `رصيد غير كافٍ. الرصيد الحالي: ${currentBalance} ر.س، المبلغ المطلوب: ${withdrawalAmountValue} ر.س`
         );
       }
 
-      const newBalance = currentBalance - withdrawalAmount;
+      const newBalance = currentBalance - withdrawalAmountValue;
 
-      console.log("💰 Current Balance:", currentBalance);
-      console.log("➖ Withdrawing:", withdrawalAmount);
+      console.log(`💰 Current Balance (${userCollection}):`, currentBalance);
+      console.log("➖ Withdrawing:", withdrawalAmountValue);
       console.log("💰 New Balance:", newBalance);
 
       // Update request status
@@ -18239,12 +20634,12 @@ export const approveWalletWithdrawalRequest = async (
         processedBy: adminUser,
       });
 
-      // Update company balance (DEDUCTION)
-      transaction.update(companyDocRef, {
+      // Update user balance (DEDUCTION) - works for both companies and clients
+      transaction.update(userDocRef, {
         balance: newBalance,
       });
 
-      console.log("✅ Transaction completed successfully");
+      console.log(`✅ Transaction completed successfully (${userCollection})`);
       return true;
     });
 
@@ -18367,12 +20762,16 @@ export const fetchAllAdminWithdrawalRequests = async () => {
       const responsible =
         data.processedBy?.name || data.actionUser?.name || "-";
 
+      // Handle both withdrawaAmount (typo) and withdrawalAmount field names
+      const withdrawalAmount =
+        data.withdrawalAmount || data.withdrawaAmount || "-";
+
       allRequestsData.push({
         id: doc.id,
-        requestNumber: data.refid || doc.id,
+        requestNumber: data.refid || data.refId || doc.id,
         clientName: data.requestedUser?.name || "-",
         oldBalance: data.requestedUser?.balance || "-",
-        withdrawalAmount: data.withdrawalAmount || "-",
+        withdrawalAmount: withdrawalAmount,
         companyIban: data.companyIban || "-",
         bankName: data.bankName || "-",
         ibanImage: data.ibanImageUrl || "-",
@@ -18412,7 +20811,8 @@ export const fetchUserWithdrawalRequests = async () => {
   try {
     const currentUser = auth.currentUser;
     if (!currentUser) {
-      throw new Error("User not authenticated");
+      console.warn("⚠️ User not authenticated, returning empty array");
+      return [];
     }
 
     console.log("\n🔄 Fetching user withdrawal requests...");
@@ -18474,6 +20874,523 @@ export const fetchUserWithdrawalRequests = async () => {
     return userRequests;
   } catch (error) {
     console.error("❌ Error fetching user withdrawal requests:", error);
+    throw error;
+  }
+};
+
+/**
+ * Upload banks data to Firestore
+ * @param banks - Array of bank objects with Arabic and English names
+ * @returns Promise with upload result
+ */
+export const uploadBanksToFirestore = async (
+  banks: Array<{ arabic: string; english: string }>
+): Promise<{ created: number; skipped: number }> => {
+  try {
+    console.log("\n🏦 ========================================");
+    console.log("📝 UPLOADING BANKS TO FIRESTORE");
+    console.log("========================================");
+
+    const banksRef = collection(db, "banks");
+    let created = 0;
+    let skipped = 0;
+
+    // Fetch all existing banks to check for duplicates
+    const existingBanksSnapshot = await getDocs(banksRef);
+    const existingArabicNames = new Set<string>();
+    existingBanksSnapshot.forEach((doc) => {
+      const data = doc.data();
+      if (data.arabic) {
+        existingArabicNames.add(data.arabic.trim().toLowerCase());
+      }
+    });
+
+    // Filter out duplicates and empty banks
+    const newBanks = banks.filter((bank) => {
+      const arabic = bank.arabic.trim();
+      const english = bank.english.trim();
+
+      if (!arabic && !english) {
+        skipped++;
+        return false;
+      }
+
+      if (existingArabicNames.has(arabic.toLowerCase())) {
+        skipped++;
+        return false;
+      }
+
+      existingArabicNames.add(arabic.toLowerCase());
+      return true;
+    });
+
+    // Use batch write for better performance
+    const batchSize = 500; // Firestore batch limit
+    let currentBatch = writeBatch(db);
+    let batchCount = 0;
+
+    for (const bank of newBanks) {
+      // Create new bank document
+      const bankDocRef = doc(banksRef);
+      currentBatch.set(bankDocRef, {
+        arabic: bank.arabic.trim(),
+        english: bank.english.trim(),
+        createdAt: serverTimestamp(),
+      });
+
+      created++;
+      batchCount++;
+
+      // Commit batch if it reaches the limit and create a new batch
+      if (batchCount >= batchSize) {
+        await currentBatch.commit();
+        currentBatch = writeBatch(db);
+        batchCount = 0;
+      }
+    }
+
+    // Commit remaining documents
+    if (batchCount > 0) {
+      await currentBatch.commit();
+    }
+
+    console.log(`✅ Uploaded ${created} banks, skipped ${skipped} duplicates`);
+    console.log("========================================\n");
+
+    return { created, skipped };
+  } catch (error: any) {
+    console.error("❌ Error uploading banks:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all banks from Firestore
+ * @returns Promise with array of banks
+ */
+export const fetchBanksFromFirestore = async (): Promise<
+  Array<{ id: string; arabic: string; english: string }>
+> => {
+  try {
+    const banksRef = collection(db, "banks");
+    const q = query(banksRef, orderBy("arabic", "asc"));
+    const querySnapshot = await getDocs(q);
+
+    const banks: Array<{ id: string; arabic: string; english: string }> = [];
+
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      banks.push({
+        id: doc.id,
+        arabic: data.arabic || "",
+        english: data.english || "",
+      });
+    });
+
+    return banks;
+  } catch (error: any) {
+    console.error("❌ Error fetching banks:", error);
+    throw error;
+  }
+};
+
+// ============================================================================
+// WALLET BANK ACCOUNTS MANAGEMENT
+// ============================================================================
+
+/**
+ * Fetch all bank accounts from Firestore wallet-bank-accounts collection
+ * @returns Promise with array of bank account objects
+ */
+export const fetchBankAccountsFromFirestore = async (): Promise<
+  Array<{
+    id: string;
+    bankName: { ar: string; en?: string };
+    accountNumber: string;
+    ibanNumber: string;
+    logoUrl: string;
+    order: number;
+    isActive: boolean;
+  }>
+> => {
+  try {
+    const bankAccountsRef = collection(db, "wallet-bank-accounts");
+    const q = query(bankAccountsRef, orderBy("order", "asc"));
+    const querySnapshot = await getDocs(q);
+
+    const bankAccounts: Array<{
+      id: string;
+      bankName: { ar: string; en?: string };
+      accountNumber: string;
+      ibanNumber: string;
+      logoUrl: string;
+      order: number;
+      isActive: boolean;
+    }> = [];
+
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      bankAccounts.push({
+        id: doc.id,
+        bankName: data.bankName || { ar: "", en: "" },
+        accountNumber: data.accountNumber || "",
+        ibanNumber: data.ibanNumber || "",
+        logoUrl: data.logoUrl || "",
+        order: data.order || 0,
+        isActive: data.isActive !== undefined ? data.isActive : true,
+      });
+    });
+
+    return bankAccounts;
+  } catch (error: any) {
+    console.error("❌ Error fetching bank accounts:", error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new bank account in Firestore wallet-bank-accounts collection
+ * @param bankAccountData - Bank account data to create
+ * @returns Promise with the created bank account document ID
+ */
+export const createBankAccount = async (bankAccountData: {
+  bankName: { ar: string; en?: string };
+  accountNumber: string;
+  ibanNumber: string;
+  logoUrl: string;
+  order: number;
+  isActive?: boolean;
+}): Promise<string> => {
+  try {
+    const currentUser = auth.currentUser;
+    const bankAccountsRef = collection(db, "wallet-bank-accounts");
+
+    const bankAccountDocument = {
+      bankName: bankAccountData.bankName,
+      accountNumber: bankAccountData.accountNumber,
+      ibanNumber: bankAccountData.ibanNumber,
+      logoUrl: bankAccountData.logoUrl,
+      order: bankAccountData.order,
+      isActive:
+        bankAccountData.isActive !== undefined
+          ? bankAccountData.isActive
+          : true,
+      createdDate: serverTimestamp(),
+      createdUserId: currentUser?.email || currentUser?.uid || null,
+    };
+
+    const docRef = await addDoc(bankAccountsRef, bankAccountDocument);
+    console.log("✅ Bank account created successfully with ID:", docRef.id);
+    return docRef.id;
+  } catch (error: any) {
+    console.error("❌ Error creating bank account:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update an existing bank account in Firestore wallet-bank-accounts collection
+ * @param bankAccountId - Bank account document ID
+ * @param bankAccountData - Updated bank account data
+ * @returns Promise<void>
+ */
+export const updateBankAccount = async (
+  bankAccountId: string,
+  bankAccountData: {
+    bankName?: { ar: string; en?: string };
+    accountNumber?: string;
+    ibanNumber?: string;
+    logoUrl?: string;
+    order?: number;
+    isActive?: boolean;
+  }
+): Promise<void> => {
+  try {
+    const bankAccountRef = doc(db, "wallet-bank-accounts", bankAccountId);
+    const updateData: any = {};
+
+    if (bankAccountData.bankName !== undefined) {
+      updateData.bankName = bankAccountData.bankName;
+    }
+    if (bankAccountData.accountNumber !== undefined) {
+      updateData.accountNumber = bankAccountData.accountNumber;
+    }
+    if (bankAccountData.ibanNumber !== undefined) {
+      updateData.ibanNumber = bankAccountData.ibanNumber;
+    }
+    if (bankAccountData.logoUrl !== undefined) {
+      updateData.logoUrl = bankAccountData.logoUrl;
+    }
+    if (bankAccountData.order !== undefined) {
+      updateData.order = bankAccountData.order;
+    }
+    if (bankAccountData.isActive !== undefined) {
+      updateData.isActive = bankAccountData.isActive;
+    }
+
+    await updateDoc(bankAccountRef, updateData);
+    console.log("✅ Bank account updated successfully:", bankAccountId);
+  } catch (error: any) {
+    console.error("❌ Error updating bank account:", error);
+    throw error;
+  }
+};
+
+// ============================================================================
+// PETROLIFE AGENTS MANAGEMENT
+// ============================================================================
+
+/**
+ * Check if a phone number already exists in petrolife-agents collection
+ * @param phone - Phone number to check
+ * @returns Promise with boolean indicating if phone exists
+ */
+export const checkAgentPhoneExists = async (
+  phone: string
+): Promise<boolean> => {
+  try {
+    const agentsRef = collection(db, "petrolife-agents");
+    const q = query(agentsRef, where("phone", "==", phone));
+    const querySnapshot = await getDocs(q);
+    return !querySnapshot.empty;
+  } catch (error) {
+    console.error("❌ Error checking agent phone:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add a new petrolife agent to Firestore
+ * @param agentData - Agent form data
+ * @returns Promise with the created agent document
+ */
+export const addPetrolifeAgent = async (agentData: AddPetrolifeAgentData) => {
+  try {
+    console.log("👤 Adding new petrolife agent...");
+    console.log("Agent data:", agentData);
+
+    // 1. Get current user (admin)
+    const currentUser = auth.currentUser;
+    if (!currentUser || !currentUser.email) {
+      throw new Error("No authenticated user found");
+    }
+    const adminEmail = currentUser.email;
+
+    // 2. Check phone uniqueness
+    const phoneExists = await checkAgentPhoneExists(agentData.phone);
+    if (phoneExists) {
+      throw new Error("رقم الهاتف مستخدم بالفعل. يرجى استخدام رقم آخر.");
+    }
+
+    // 3. Upload profile image if provided
+    let imageUrl = "";
+    if (agentData.imageFile) {
+      const fileName = `petrolife-agents/profiles/${Date.now()}_${
+        agentData.imageFile.name
+      }`;
+      const storageRef = ref(storage, fileName);
+      await uploadBytes(storageRef, agentData.imageFile);
+      imageUrl = await getDownloadURL(storageRef);
+      console.log("✅ Profile image uploaded:", imageUrl);
+    }
+
+    // 4. Generate unique agent code if not provided
+    let agentCode = agentData.agentCode?.trim() || "";
+    if (!agentCode) {
+      // Generate 8-digit code
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 10;
+
+      while (!isUnique && attempts < maxAttempts) {
+        const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+        agentCode = randomCode.toString();
+
+        const agentsRef = collection(db, "petrolife-agents");
+        const q = query(agentsRef, where("agentCode", "==", agentCode));
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !agentCode) {
+        throw new Error("فشل في إنشاء كود المندوب. يرجى المحاولة مرة أخرى.");
+      }
+    } else {
+      // Check if provided agent code is unique
+      const agentsRef = collection(db, "petrolife-agents");
+      const q = query(agentsRef, where("agentCode", "==", agentCode));
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        throw new Error("كود المندوب مستخدم بالفعل. يرجى استخدام كود آخر.");
+      }
+    }
+
+    console.log("✅ Generated unique agent code:", agentCode);
+
+    // 5. Prepare agent document
+    const agentDocument = {
+      name: agentData.name.trim(),
+      email: agentData.email.trim(),
+      phone: agentData.phone.trim(),
+      city: agentData.city,
+      address: agentData.address?.trim() || "",
+      agentCode: agentCode,
+      commissionValue: parseFloat(agentData.commissionValue) || 0,
+      imageUrl: imageUrl,
+      joinDate: serverTimestamp(),
+      isActive: true,
+      companies: [] as string[],
+      createdDate: serverTimestamp(),
+      createdUserId: adminEmail,
+    };
+
+    console.log("📄 Agent document prepared:", agentDocument);
+
+    // 6. Add document to Firestore
+    console.log("💾 Adding agent document to petrolife-agents collection...");
+    const agentsRef = collection(db, "petrolife-agents");
+    const docRef = await addDoc(agentsRef, agentDocument);
+    console.log("✅ Agent document added with ID:", docRef.id);
+
+    return {
+      id: docRef.id,
+      ...agentDocument,
+    };
+  } catch (error) {
+    console.error("❌ Error creating agent:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get all petrolife agents from Firestore
+ * @returns Promise with array of agents
+ */
+export const getAllPetrolifeAgents = async (): Promise<PetrolifeAgent[]> => {
+  try {
+    const agentsRef = collection(db, "petrolife-agents");
+    const q = query(agentsRef, orderBy("createdDate", "desc"));
+    const querySnapshot = await getDocs(q);
+
+    const agents: PetrolifeAgent[] = [];
+
+    querySnapshot.forEach((doc) => {
+      agents.push({
+        id: doc.id,
+        ...doc.data(),
+      } as PetrolifeAgent);
+    });
+
+    return agents;
+  } catch (error) {
+    console.error("❌ Error fetching petrolife agents:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get a single petrolife agent by ID
+ * @param agentId - Agent document ID
+ * @returns Promise with agent data including associated companies
+ */
+export const getPetrolifeAgentById = async (
+  agentId: string
+): Promise<PetrolifeAgent | null> => {
+  try {
+    const agentRef = doc(db, "petrolife-agents", agentId);
+    const agentSnap = await getDoc(agentRef);
+
+    if (!agentSnap.exists()) {
+      return null;
+    }
+
+    return {
+      id: agentSnap.id,
+      ...agentSnap.data(),
+    } as PetrolifeAgent;
+  } catch (error) {
+    console.error("❌ Error fetching agent by ID:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add a company to an agent's companies array
+ * @param agentId - Agent document ID
+ * @param companyId - Company document ID
+ * @returns Promise<void>
+ */
+export const addCompanyToAgent = async (
+  agentId: string,
+  companyId: string
+): Promise<void> => {
+  try {
+    const agentRef = doc(db, "petrolife-agents", agentId);
+
+    // Check if company already exists in agent's companies array
+    const agentSnap = await getDoc(agentRef);
+    if (!agentSnap.exists()) {
+      throw new Error("Agent not found");
+    }
+
+    const agentData = agentSnap.data();
+    const companies = agentData.companies || [];
+
+    if (companies.includes(companyId)) {
+      throw new Error("الشركة مضافة بالفعل لهذا المندوب");
+    }
+
+    await updateDoc(agentRef, {
+      companies: arrayUnion(companyId),
+    });
+
+    console.log("✅ Company added to agent:", companyId);
+  } catch (error) {
+    console.error("❌ Error adding company to agent:", error);
+    throw error;
+  }
+};
+
+/**
+ * Remove a company from an agent's companies array
+ * @param agentId - Agent document ID
+ * @param companyId - Company document ID
+ * @returns Promise<void>
+ */
+export const removeCompanyFromAgent = async (
+  agentId: string,
+  companyId: string
+): Promise<void> => {
+  try {
+    const agentRef = doc(db, "petrolife-agents", agentId);
+    await updateDoc(agentRef, {
+      companies: arrayRemove(companyId),
+    });
+
+    console.log("✅ Company removed from agent:", companyId);
+  } catch (error) {
+    console.error("❌ Error removing company from agent:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a petrolife agent from Firestore
+ * @param agentId - Agent document ID
+ * @returns Promise<void>
+ */
+export const deletePetrolifeAgent = async (agentId: string): Promise<void> => {
+  try {
+    const agentRef = doc(db, "petrolife-agents", agentId);
+    await deleteDoc(agentRef);
+    console.log("✅ Agent deleted:", agentId);
+  } catch (error) {
+    console.error("❌ Error deleting agent:", error);
     throw error;
   }
 };

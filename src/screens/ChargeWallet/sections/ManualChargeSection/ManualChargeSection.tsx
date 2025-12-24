@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Wallet,
   Copy,
@@ -10,8 +10,12 @@ import {
 } from "lucide-react";
 import { Input, Select } from "../../../../components/shared/Form";
 import { useNavigate } from "react-router-dom";
-import { submitWalletChargeRequest } from "../../../../services/firestore";
+import {
+  submitWalletChargeRequest,
+  fetchBanksFromFirestore,
+} from "../../../../services/firestore";
 import { useToast } from "../../../../hooks/useToast";
+import { BankAccountsSection } from "../BankAccountsSection";
 
 interface ManualChargeSectionProps {
   onTabChange: (tab: "automatic" | "manual") => void;
@@ -25,11 +29,47 @@ export const ManualChargeSection = ({
 
   const [formData, setFormData] = useState({
     accountNumber: "2145 2586 2456 3594",
-    bankName: "بنك الإتحاد الدولي",
-    transferAmount: 0,
+    bankName: "",
+    transferAmount: "",
     transferImage: null as File | null,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [banks, setBanks] = useState<
+    Array<{ id: string; arabic: string; english: string }>
+  >([]);
+  const [isLoadingBanks, setIsLoadingBanks] = useState(false);
+  const [bankOptions, setBankOptions] = useState<
+    Array<{ value: string; label: string }>
+  >([]);
+
+  // Fetch banks from Firestore on component mount
+  useEffect(() => {
+    const loadBanks = async () => {
+      setIsLoadingBanks(true);
+      try {
+        const banksData = await fetchBanksFromFirestore();
+        setBanks(banksData);
+        // Create options for Select dropdown (display Arabic name)
+        setBankOptions(
+          banksData.map((bank) => ({
+            value: bank.arabic,
+            label: bank.arabic,
+          }))
+        );
+      } catch (error: any) {
+        console.error("Error loading banks:", error);
+        addToast({
+          type: "error",
+          message: "فشل في تحميل قائمة البنوك",
+          duration: 3000,
+        });
+      } finally {
+        setIsLoadingBanks(false);
+      }
+    };
+
+    loadBanks();
+  }, [addToast]);
 
   const handleCopyAccount = () => {
     navigator.clipboard.writeText(formData.accountNumber);
@@ -41,10 +81,14 @@ export const ManualChargeSection = ({
   };
 
   const handleAmountChange = (increment: boolean) => {
-    setFormData((prev) => ({
-      ...prev,
-      transferAmount: Math.max(0, prev.transferAmount + (increment ? 1 : -1)),
-    }));
+    setFormData((prev) => {
+      const currentValue = parseFloat(prev.transferAmount.toString()) || 0;
+      const newValue = Math.max(0, currentValue + (increment ? 1 : -1));
+      return {
+        ...prev,
+        transferAmount: newValue > 0 ? newValue.toString() : "",
+      };
+    });
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -76,7 +120,8 @@ export const ManualChargeSection = ({
 
   const handleSubmit = async () => {
     // Validation
-    if (formData.transferAmount <= 0) {
+    const transferAmount = parseFloat(formData.transferAmount.toString()) || 0;
+    if (transferAmount <= 0) {
       addToast({
         type: "error",
         message: "يرجى إدخال قيمة تحويل صحيحة",
@@ -98,7 +143,7 @@ export const ManualChargeSection = ({
       setIsSubmitting(true);
 
       const requestId = await submitWalletChargeRequest({
-        transferAmount: formData.transferAmount,
+        transferAmount: transferAmount,
         bankName: formData.bankName,
         accountNumber: formData.accountNumber,
         transferImage: formData.transferImage || undefined,
@@ -114,7 +159,7 @@ export const ManualChargeSection = ({
       setFormData({
         accountNumber: "2145 2586 2456 3594",
         bankName: "",
-        transferAmount: 0,
+        transferAmount: "",
         transferImage: null,
       });
 
@@ -193,6 +238,9 @@ export const ManualChargeSection = ({
         </div>
       </div>
 
+      {/* Bank Accounts Section */}
+      <BankAccountsSection />
+
       {/* Form */}
       <form className="flex flex-col items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
         <div className="flex flex-col items-end gap-2.5 relative self-stretch w-full flex-[0_0_auto]">
@@ -218,7 +266,7 @@ export const ManualChargeSection = ({
                 }
               />
               <Input
-                label="رقم الحساب الثاني"
+                label="رقم الحساب المحول منه"
                 type="text"
                 name="secondAccount"
                 value="2145 2586 2456 3595"
@@ -239,14 +287,18 @@ export const ManualChargeSection = ({
 
             {/* Second Row: Bank Name, Transfer Amount, and Image Upload */}
             <div className="flex items-start gap-5 relative self-stretch w-full flex-[0_0_auto]">
-              <Input
+              <Select
                 label="اسم البنك المحول منه"
-                type="text"
-                name="bankName"
                 value={formData.bankName}
                 onChange={(value) =>
                   setFormData((prev) => ({ ...prev, bankName: value }))
                 }
+                options={bankOptions}
+                placeholder={
+                  isLoadingBanks ? "جاري التحميل..." : "اختر البنك"
+                }
+                disabled={isLoadingBanks}
+                required
               />
 
               <Input
@@ -257,7 +309,7 @@ export const ManualChargeSection = ({
                 onChange={(value) =>
                   setFormData((prev) => ({
                     ...prev,
-                    transferAmount: parseInt(value) || 0,
+                    transferAmount: value,
                   }))
                 }
               />
