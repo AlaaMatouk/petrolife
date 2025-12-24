@@ -114,9 +114,11 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     }
   };
 
-  const walletNumber = providerData?.id 
-    ? `SA-${providerData.id.slice(0, 4)}-${providerData.id.slice(4, 8)}-${providerData.id.slice(8, 12)}`
-    : providerData?.email?.slice(0, 12) || "غير محدد";
+  // Use stored wallet number from provider data if available
+  const walletNumber = (providerData as any)?.walletNumber || 
+    (providerData?.id 
+      ? `SA-${providerData.id.slice(0, 4)}-${providerData.id.slice(4, 8)}-${providerData.id.slice(8, 12)}`
+      : providerData?.email?.slice(0, 12) || "غير محدد");
 
   return createPortal(
     <>

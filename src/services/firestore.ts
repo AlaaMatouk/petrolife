@@ -3422,6 +3422,117 @@ export const updateStationsCompanyBalance = async (
 };
 
 /**
+ * Generate wallet number from provider ID or email
+ * Format: SA-XXXX-XXXX-XXXX (12 alphanumeric characters)
+ * @param providerId - Provider document ID
+ * @param providerEmail - Provider email (used as fallback)
+ * @returns Wallet number string
+ */
+const generateWalletNumber = (providerId: string, providerEmail?: string): string => {
+  if (providerId && providerId.length >= 12) {
+    return `SA-${providerId.slice(0, 4)}-${providerId.slice(4, 8)}-${providerId.slice(8, 12)}`;
+  } else if (providerId) {
+    // Pad ID if too short
+    const paddedId = providerId.padEnd(12, '0');
+    return `SA-${paddedId.slice(0, 4)}-${paddedId.slice(4, 8)}-${paddedId.slice(8, 12)}`;
+  } else if (providerEmail) {
+    const emailHash = providerEmail.slice(0, 12).toUpperCase().replace(/[^A-Z0-9]/g, '').padEnd(12, 'X');
+    return `SA-${emailHash.slice(0, 4)}-${emailHash.slice(4, 8)}-${emailHash.slice(8, 12)}`;
+  }
+  return "SA-XXXX-XXXX-XXXX";
+};
+
+/**
+ * Ensure wallet number exists in stationscompany document
+ * Generates and stores wallet number if it doesn't exist
+ * @param companyEmail - The stationscompany email
+ * @returns Promise with wallet number string
+ */
+export const ensureWalletNumber = async (companyEmail: string): Promise<string> => {
+  try {
+    const qRef = query(
+      collection(db, "stationscompany"),
+      where("email", "==", companyEmail.toLowerCase())
+    );
+    const snapshot = await getDocs(qRef);
+
+    if (snapshot.empty) {
+      console.warn(`⚠️ Stationscompany document not found for email: ${companyEmail}`);
+      // Generate wallet number from email as fallback
+      return generateWalletNumber("", companyEmail);
+    }
+
+    const docSnap = snapshot.docs[0];
+    const docData = docSnap.data();
+    const docRef = doc(db, "stationscompany", docSnap.id);
+
+    // If wallet number already exists, return it
+    if (docData.walletNumber) {
+      return docData.walletNumber;
+    }
+
+    // Generate wallet number if it doesn't exist
+    const walletNumber = generateWalletNumber(docSnap.id, companyEmail);
+
+    // Store it in the document
+    await updateDoc(docRef, {
+      walletNumber: walletNumber,
+    });
+
+    console.log(`✅ Generated and stored wallet number for ${companyEmail}: ${walletNumber}`);
+    return walletNumber;
+  } catch (error) {
+    console.error(`❌ Error ensuring wallet number for ${companyEmail}:`, error);
+    // Return generated wallet number even on error
+    return generateWalletNumber("", companyEmail);
+  }
+};
+
+/**
+ * Initialize wallet numbers for all existing stationscompany documents
+ * Can be called once to backfill existing data
+ * @returns Promise<void>
+ */
+export const initializeWalletNumbers = async (): Promise<void> => {
+  try {
+    console.log("🔄 Initializing wallet numbers for all stationscompany documents...");
+
+    const stationsCompanyRef = collection(db, "stationscompany");
+    const snapshot = await getDocs(stationsCompanyRef);
+
+    let updated = 0;
+    let skipped = 0;
+
+    for (const docSnap of snapshot.docs) {
+      const data = docSnap.data();
+      
+      // Skip if wallet number already exists
+      if (data.walletNumber) {
+        skipped++;
+        continue;
+      }
+
+      // Generate wallet number
+      const walletNumber = generateWalletNumber(docSnap.id, data.email);
+      
+      // Update document
+      const docRef = doc(db, "stationscompany", docSnap.id);
+      await updateDoc(docRef, {
+        walletNumber: walletNumber,
+      });
+
+      updated++;
+      console.log(`✅ Generated wallet number for ${data.email || docSnap.id}: ${walletNumber}`);
+    }
+
+    console.log(`✅ Wallet numbers initialization complete: ${updated} updated, ${skipped} skipped`);
+  } catch (error) {
+    console.error("❌ Error initializing wallet numbers:", error);
+    throw error;
+  }
+};
+
+/**
  * Initialize balance for all existing stationscompany documents
  * Can be called once to backfill existing data
  * @returns Promise<void>
@@ -15265,6 +15376,7 @@ export interface ServiceProviderData {
   stationsCount: number;
   ordersCount: number;
   uId?: string;
+  walletNumber?: string; // Wallet number stored in Firestore
 }
 
 /**
@@ -15307,11 +15419,11 @@ export const fetchStationsCompanyData = async (): Promise<
     // Process stations company data
     const serviceProvidersData: ServiceProviderData[] = [];
 
-    stationsCompanySnapshot.forEach((doc) => {
-      const data = doc.data();
+    stationsCompanySnapshot.forEach((docSnap) => {
+      const data = docSnap.data();
 
       // Get company UID for counting related data
-      const companyUid = data.uId || data.uid || doc.id;
+      const companyUid = data.uId || data.uid || docSnap.id;
 
       // Count related car stations by matching company email with createdUserId
       let stationsCount = 0;
@@ -15350,12 +15462,24 @@ export const fetchStationsCompanyData = async (): Promise<
       console.log(`📊 Total orders for ${data.name}: ${ordersCount}`);
 
       // Get createdDate from document (could be in data or metadata)
-      const createdDate = data.createdDate || data.createdAt || doc.metadata?.createdAt || null;
+      const createdDate = data.createdDate || data.createdAt || docSnap.metadata?.createdAt || null;
+
+      // Get or generate wallet number from stored field
+      let walletNumber = data.walletNumber;
+      if (!walletNumber) {
+        // Generate wallet number if it doesn't exist (will be stored asynchronously)
+        walletNumber = generateWalletNumber(docSnap.id, data.email);
+        // Store it asynchronously (non-blocking)
+        const docRef = doc(db, "stationscompany", docSnap.id);
+        updateDoc(docRef, { walletNumber }).catch((err) => {
+          console.warn(`⚠️ Failed to store wallet number for ${data.email}:`, err);
+        });
+      }
 
       // Create service provider data object
       const serviceProvider: ServiceProviderData & { createdDate?: any } = {
-        id: doc.id, // Always use Firestore document ID for consistency
-        clientCode: data.refid || data.id || data.uId || doc.id, // Use refid as primary source
+        id: docSnap.id, // Always use Firestore document ID for consistency
+        clientCode: data.refid || data.id || data.uId || docSnap.id, // Use refid as primary source
         providerName: data.name || "غير محدد",
         type: data.type || "غير محدد",
         phoneNumber: data.phoneNumber || data.phone || "-",
@@ -15370,6 +15494,7 @@ export const fetchStationsCompanyData = async (): Promise<
         stationsCount,
         ordersCount,
         uId: companyUid,
+        walletNumber, // Include wallet number from Firestore
         createdDate, // Store createdDate for sorting
       };
 
@@ -15869,9 +15994,20 @@ export const acceptStationsCompanyRequest = async (
     // Merge additional fields (excluding undefined values)
     const finalData = { ...stationsCompanyData, ...additionalFields };
 
+    // Generate wallet number for the new company (will be set after document is created)
+    // Note: We'll generate it after getting the document ID, so for now we'll generate a temporary one
+    // The wallet number will be properly set in the fetchStationsCompanyData function if missing
+
     // Add to stationscompany collection
     const stationsCompanyRef = collection(db, "stationscompany");
     const newCompanyDoc = await addDoc(stationsCompanyRef, finalData);
+    
+    // Generate and store wallet number after document is created (so we have the document ID)
+    const walletNumber = generateWalletNumber(newCompanyDoc.id, requestData.email || requestData.emailAddress || "");
+    await updateDoc(newCompanyDoc, {
+      walletNumber: walletNumber,
+    });
+    console.log(`✅ Generated wallet number for new company: ${walletNumber}`);
 
     console.log(
       `✅ Company added to stationscompany collection with ID: ${newCompanyDoc.id}`

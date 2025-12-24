@@ -589,18 +589,8 @@ export const MainWallet: React.FC = () => {
     // Get receipt image URL from transfer if available
     const receiptImageUrl = (recentTransfer as any)?.bankReceiptImageUrl;
     
-    // Generate wallet number (use provider ID or generate from email)
-    let walletNumber = "SA-XXXX-XXXX-XXXX";
-    if (provider.id && provider.id.length >= 12) {
-      walletNumber = `SA-${provider.id.slice(0, 4)}-${provider.id.slice(4, 8)}-${provider.id.slice(8, 12)}`;
-    } else if (provider.id) {
-      // Pad ID if too short
-      const paddedId = provider.id.padEnd(12, '0');
-      walletNumber = `SA-${paddedId.slice(0, 4)}-${paddedId.slice(4, 8)}-${paddedId.slice(8, 12)}`;
-    } else if (provider.email) {
-      const emailHash = provider.email.slice(0, 12).toUpperCase().replace(/[^A-Z0-9]/g, '').padEnd(12, 'X');
-      walletNumber = `SA-${emailHash.slice(0, 4)}-${emailHash.slice(4, 8)}-${emailHash.slice(8, 12)}`;
-    }
+    // Use stored wallet number from Firestore, fallback to generation if not available
+    const walletNumber = provider.walletNumber || "SA-XXXX-XXXX-XXXX";
     
     return {
       id: provider.id,
@@ -631,17 +621,21 @@ export const MainWallet: React.FC = () => {
       ? `#${transfer.transferNumber.replace('TRF-', 'TRX-')}`
       : `#TRX-${new Date(transferDate).getFullYear()}-${transfer.id.slice(0, 6).toUpperCase()}`;
 
-    let walletNumber = "SA-XXXX-XXXX-XXXX";
-    if (provider?.id) {
-      if (provider.id.length >= 12) {
-        walletNumber = `SA-${provider.id.slice(0, 4)}-${provider.id.slice(4, 8)}-${provider.id.slice(8, 12)}`;
-      } else {
-        const paddedId = provider.id.padEnd(12, '0');
-        walletNumber = `SA-${paddedId.slice(0, 4)}-${paddedId.slice(4, 8)}-${paddedId.slice(8, 12)}`;
+    // Use stored wallet number from provider if available, otherwise generate from transfer email
+    let walletNumber = provider?.walletNumber || "SA-XXXX-XXXX-XXXX";
+    if (!walletNumber || walletNumber === "SA-XXXX-XXXX-XXXX") {
+      // Fallback generation if wallet number not stored
+      if (provider?.id) {
+        if (provider.id.length >= 12) {
+          walletNumber = `SA-${provider.id.slice(0, 4)}-${provider.id.slice(4, 8)}-${provider.id.slice(8, 12)}`;
+        } else {
+          const paddedId = provider.id.padEnd(12, '0');
+          walletNumber = `SA-${paddedId.slice(0, 4)}-${paddedId.slice(4, 8)}-${paddedId.slice(8, 12)}`;
+        }
+      } else if (transfer.stationsCompanyEmail) {
+        const emailHash = transfer.stationsCompanyEmail.slice(0, 12).toUpperCase().replace(/[^A-Z0-9]/g, '').padEnd(12, 'X');
+        walletNumber = `SA-${emailHash.slice(0, 4)}-${emailHash.slice(4, 8)}-${emailHash.slice(8, 12)}`;
       }
-    } else if (transfer.stationsCompanyEmail) {
-      const emailHash = transfer.stationsCompanyEmail.slice(0, 12).toUpperCase().replace(/[^A-Z0-9]/g, '').padEnd(12, 'X');
-      walletNumber = `SA-${emailHash.slice(0, 4)}-${emailHash.slice(4, 8)}-${emailHash.slice(8, 12)}`;
     }
 
     return {
