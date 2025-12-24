@@ -207,6 +207,66 @@ const transformOrdersData = (orders: any[]) => {
   });
 };
 
+// Transform subscription payments data to match table structure
+const transformSubscriptionPaymentsData = (subscriptionPayments: any[]) => {
+  return subscriptionPayments.map((subscription) => {
+    // Extract date for sorting
+    const subscriptionDate = subscription.createdDate?.toDate 
+      ? subscription.createdDate.toDate() 
+      : subscription.paymentDate?.toDate 
+      ? subscription.paymentDate.toDate() 
+      : subscription.createdDate instanceof Date 
+      ? subscription.createdDate 
+      : subscription.paymentDate instanceof Date 
+      ? subscription.paymentDate 
+      : new Date(0); // Fallback to epoch if no date
+    
+    // Extract plan name
+    const planName = subscription.planName?.ar || 
+                     subscription.planName?.en || 
+                     subscription.planName || 
+                     'اشتراك';
+    
+    // Extract plan type
+    const planType = subscription.planType === 'monthly' 
+      ? 'اشتراك شهري' 
+      : subscription.planType === 'yearly' 
+      ? 'اشتراك سنوي' 
+      : 'اشتراك';
+    
+    // Extract client/company name
+    const clientName = extractText(subscription.company?.name) || 
+                       extractText(subscription.client?.name) ||
+                       extractText(subscription.user?.name) ||
+                       "-";
+    
+    // Extract amount/price
+    const amount = subscription.amount || 
+                   subscription.price || 
+                   subscription.totalAmount || 
+                   "-";
+    
+    return {
+      id: subscription.id,
+      refId: subscription.refid || subscription.refId || subscription.id,
+      clientName: clientName,
+      driverName: "-", // Subscriptions don't have drivers
+      carType: "-", // Subscriptions don't have cars
+      carNumber: "-", // Subscriptions don't have cars
+      productName: planName,
+      productNumber: String(subscription.planId || "-"),
+      quantity: "-", // Subscriptions don't have quantity
+      unit: "-", // Subscriptions don't have units
+      serviceFees: amount,
+      serviceProviderName: "-", // Subscriptions don't have service providers
+      productType: planType,
+      productNumberFromCategory: "-", // Subscriptions don't have category product numbers
+      // Add date field for sorting
+      _sortDate: subscriptionDate,
+    };
+  });
+};
+
 
 // Table columns configuration
 const tableColumns = [
