@@ -511,7 +511,18 @@ export const CompanyInfo = ({ companyData }: CompanyInfoProps): JSX.Element => {
             </div>
             <p className="text-red-700 text-sm [direction:rtl]">{statsError}</p>
             <button
-              onClick={() => window.location.reload()}
+              onClick={async () => {
+                setStatsError(null);
+                setIsLoadingStats(true);
+                try {
+                  const stats = await fetchCompanyStatistics(companyData.id);
+                  setCompanyStatistics(stats);
+                } catch (error: any) {
+                  setStatsError(error.message || "فشل في تحميل الإحصائيات");
+                } finally {
+                  setIsLoadingStats(false);
+                }
+              }}
               className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition-colors"
             >
               إعادة المحاولة

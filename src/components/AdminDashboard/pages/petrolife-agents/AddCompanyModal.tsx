@@ -63,23 +63,35 @@ export const AddCompanyModal = ({
           // Filter by email/document ID to ensure uniqueness and exclude already added companies
           // Note: In Firestore, companies use email as document ID, so company.id IS the email
           const seenEmails = new Set<string>();
+          const seenIds = new Set<string>();
           const filtered = allCompanies.filter((company: any) => {
-            // Use document ID (which is the email) as primary identifier
-            // Fall back to email field if ID doesn't exist
-            const companyEmail = (company.id || company.email || "").toLowerCase().trim();
+            // Use document ID as primary identifier
+            const companyId = company.id || "";
+            const companyEmail = (company.email || company.id || "").toLowerCase().trim();
             
             // Ensure company has a valid email/ID
-            if (!companyEmail) {
+            if (!companyEmail && !companyId) {
               console.warn("Company without email/ID found:", company.name || company.id);
               return false;
             }
             
+            // Check for duplicate IDs (most reliable)
+            if (companyId && seenIds.has(companyId)) {
+              console.warn("Duplicate company ID found:", companyId, company.name);
+              return false;
+            }
+            if (companyId) {
+              seenIds.add(companyId);
+            }
+            
             // Check for duplicate emails (use first occurrence)
-            if (seenEmails.has(companyEmail)) {
+            if (companyEmail && seenEmails.has(companyEmail)) {
               console.warn("Duplicate company email found:", companyEmail, company.name);
               return false;
             }
-            seenEmails.add(companyEmail);
+            if (companyEmail) {
+              seenEmails.add(companyEmail);
+            }
             
             // Check if excluded
             const isExcluded = excludedEmails.has(companyEmail);
@@ -321,6 +333,9 @@ export const AddCompanyModal = ({
                   "-";
                 const companyCode = company.refid || "-";
 
+                // Use document ID as primary key (should be unique), fallback to email+index for uniqueness
+                const uniqueKey = company.id || `${companyEmail}-${index}`;
+
                 const handleCompanyClick = (e: React.MouseEvent) => {
                   e.stopPropagation();
                   e.preventDefault();
@@ -340,7 +355,7 @@ export const AddCompanyModal = ({
 
                 return (
                   <div
-                    key={`company-${companyEmail || company.id || index}`}
+                    key={uniqueKey}
                     onClick={handleCompanyClick}
                     onMouseDown={(e) => e.preventDefault()}
                     className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-all ${

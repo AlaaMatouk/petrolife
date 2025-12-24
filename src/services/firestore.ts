@@ -147,22 +147,70 @@ export const fetchCompaniesDrivers = async () => {
 
 /**
  * Fetch all documents from the Firestore "drivers" collection
+ * Ordered by createdDate descending (newest first)
  * @returns Promise with the drivers data
  */
 export const fetchDrivers = async () => {
   try {
     const driversRef = collection(db, "drivers");
-    const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(
-      driversRef
-    );
+    
+    // Try to fetch with orderBy, fallback to unordered if field doesn't exist
+    let querySnapshot: QuerySnapshot<DocumentData>;
+    try {
+      const driversQuery = query(driversRef, orderBy("createdDate", "desc"));
+      querySnapshot = await getDocs(driversQuery);
+    } catch (orderError) {
+      // Fallback to unordered query if createdDate field doesn't exist on all documents
+      console.warn("⚠️ Could not order by createdDate, fetching without order");
+      querySnapshot = await getDocs(driversRef);
+    }
 
     const driversData: any[] = [];
 
     querySnapshot.forEach((doc) => {
+      const data = doc.data();
       driversData.push({
         docId: doc.id,
-        ...doc.data(),
+        ...data,
+        createdDate: data.createdDate || data.createdAt || null, // Store createdDate for sorting
       });
+    });
+
+    // Client-side sort by createdDate descending (newest first) as fallback
+    driversData.sort((a, b) => {
+      const dateA = a.createdDate;
+      const dateB = b.createdDate;
+      
+      // Convert Firestore Timestamp to Date if needed
+      let timeA = 0;
+      let timeB = 0;
+      
+      if (dateA) {
+        if (dateA.toDate && typeof dateA.toDate === "function") {
+          timeA = dateA.toDate().getTime();
+        } else if (dateA instanceof Date) {
+          timeA = dateA.getTime();
+        } else if (typeof dateA === "number") {
+          timeA = dateA;
+        } else {
+          timeA = new Date(dateA).getTime();
+        }
+      }
+      
+      if (dateB) {
+        if (dateB.toDate && typeof dateB.toDate === "function") {
+          timeB = dateB.toDate().getTime();
+        } else if (dateB instanceof Date) {
+          timeB = dateB.getTime();
+        } else if (typeof dateB === "number") {
+          timeB = dateB;
+        } else {
+          timeB = new Date(dateB).getTime();
+        }
+      }
+      
+      // Sort descending (newest first)
+      return timeB - timeA;
     });
 
     return driversData;
@@ -4824,13 +4872,57 @@ export const fetchUserSubscriptions = async (): Promise<any[]> => {
       companyEmail
     );
 
-    // Query by company.email (nested field)
-    const q = query(
-      subscriptionsCollection,
-      where("company.email", "==", companyEmail),
-      orderBy("createdDate", "desc")
-    );
-    const subscriptionsSnapshot = await getDocs(q);
+    let subscriptionsSnapshot;
+    
+    // Try query with orderBy first (requires composite index)
+    try {
+      const q = query(
+        subscriptionsCollection,
+        where("company.email", "==", companyEmail),
+        orderBy("createdDate", "desc")
+      );
+      subscriptionsSnapshot = await getDocs(q);
+    } catch (indexError: any) {
+      // If index is missing, fetch all and filter/sort in memory
+      if (indexError.code === "failed-precondition") {
+        console.warn(
+          "⚠️ Composite index not found. Fetching all subscriptions and filtering in memory..."
+        );
+        const allSubscriptionsSnapshot = await getDocs(subscriptionsCollection);
+        
+        // Filter by company email in memory
+        const filteredDocs = allSubscriptionsSnapshot.docs.filter((doc) => {
+          const data = doc.data();
+          const paymentCompanyEmail = data.company?.email?.toLowerCase();
+          return paymentCompanyEmail === companyEmail.toLowerCase();
+        });
+        
+        // Sort by createdDate in memory (descending)
+        filteredDocs.sort((a, b) => {
+          const dateA = a.data().createdDate?.toDate 
+            ? a.data().createdDate.toDate().getTime() 
+            : a.data().createdDate instanceof Date 
+            ? a.data().createdDate.getTime() 
+            : 0;
+          const dateB = b.data().createdDate?.toDate 
+            ? b.data().createdDate.toDate().getTime() 
+            : b.data().createdDate instanceof Date 
+            ? b.data().createdDate.getTime() 
+            : 0;
+          return dateB - dateA; // Descending order
+        });
+        
+        // Create a mock QuerySnapshot-like object
+        subscriptionsSnapshot = {
+          docs: filteredDocs,
+          empty: filteredDocs.length === 0,
+          size: filteredDocs.length,
+        } as any;
+      } else {
+        // Re-throw if it's a different error
+        throw indexError;
+      }
+    }
 
     console.log(
       "Total subscriptions found (filtered by company.email):",
@@ -5369,7 +5461,8 @@ export const deleteSubscription = async (
 };
 
 /**
- * Process subscription payment: deduct wallet balance, create subscription payment, order, and invoice
+ * Process subscription payment: deduct wallet balance, create subscription payment and invoice
+ * Note: Subscriptions are NOT added to orders collection
  * @param subscriptionData - Subscription payment data
  * @returns Promise with invoice ID and subscription payment ID
  */
@@ -5387,7 +5480,6 @@ export const processSubscriptionPayment = async (subscriptionData: {
 }): Promise<{
   invoiceId: string;
   subscriptionPaymentId: string;
-  orderId: string;
 }> => {
   try {
     const currentUser = auth.currentUser;
@@ -5561,47 +5653,7 @@ export const processSubscriptionPayment = async (subscriptionData: {
 
       transaction.set(subscriptionPaymentRef, subscriptionPaymentData);
 
-      // 3. Create order document
-      const orderRef = doc(collection(db, "orders"));
-      const orderData: any = {
-        companyUid: currentUser.uid,
-        createdUserId: currentUser.uid,
-        orderDate: serverTimestamp(),
-        createdDate: serverTimestamp(),
-        service: {
-          title: {
-            ar: "اشتراك",
-            en: "Subscription",
-          },
-          desc: {
-            ar: "اشتراك في باقة",
-            en: "Subscription package",
-          },
-        },
-        selectedOption: {
-          name: {
-            ar: subscription.title?.ar || subscription.title?.en || "اشتراك",
-            en:
-              subscription.title?.en ||
-              subscription.title?.ar ||
-              "Subscription",
-          },
-        },
-        totalPrice: totalWithVAT,
-        fuelCost: 0,
-        deliveryFees: 0,
-        status: "completed",
-        subscriptionPaymentId: subscriptionPaymentRef.id,
-      };
-
-      // Add coupon information to order if provided
-      if (couponCode) {
-        orderData.couponCode = couponCode;
-      }
-
-      transaction.set(orderRef, orderData);
-
-      // 4. Update company's balance, selectedSubscription, and maxCarNumber in one update
+      // 3. Update company's balance, selectedSubscription, and maxCarNumber in one update
       transaction.update(companyDocRef, {
         balance: newBalance,
         selectedSubscription: {
@@ -5622,7 +5674,6 @@ export const processSubscriptionPayment = async (subscriptionData: {
 
       return {
         subscriptionPaymentId: subscriptionPaymentRef.id,
-        orderId: orderRef.id,
       };
     });
 
@@ -5752,7 +5803,6 @@ export const processSubscriptionPayment = async (subscriptionData: {
       type: "Subscription",
       createdAt: Timestamp.fromDate(subscriptionStartDate),
       companyData: cleanCompanyData,
-      orderId: result.orderId,
       items: [invoiceItem],
       subtotal: totalWithoutVAT,
       vatAmount: vat,
@@ -5767,7 +5817,6 @@ export const processSubscriptionPayment = async (subscriptionData: {
     return {
       invoiceId: invoiceDocRef.id,
       subscriptionPaymentId: result.subscriptionPaymentId,
-      orderId: result.orderId,
     };
   } catch (error) {
     console.error("❌ Error processing subscription payment:", error);
@@ -6669,8 +6718,84 @@ export const fetchAdminWalletReports = async () => {
         });
     }
 
+    // Also fetch subscription payments
+    console.log("\n🔄 Fetching subscription payments for admin wallet reports...");
+    try {
+      const subscriptionPayments = await fetchAllSubscriptionPayments();
+      console.log(`✅ Fetched ${subscriptionPayments.length} subscription payments`);
+      
+      // Transform subscription payments to wallet report format
+      subscriptionPayments.forEach((subscription) => {
+        const formatDate = (timestamp: any): string => {
+          if (!timestamp) return "-";
+          try {
+            if (timestamp.toDate && typeof timestamp.toDate === "function") {
+              return new Date(timestamp.toDate()).toLocaleString("ar-EG", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              });
+            }
+            if (timestamp instanceof Date) {
+              return timestamp.toLocaleString("ar-EG", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              });
+            }
+            return new Date(timestamp).toLocaleString("ar-EG", {
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+          } catch (error) {
+            return String(timestamp);
+          }
+        };
+        
+        const planName = subscription.planName?.ar || subscription.planName?.en || subscription.planName || 'اشتراك';
+        const planType = subscription.planType === 'monthly' ? 'شهري' : subscription.planType === 'yearly' ? 'سنوي' : '';
+        const operationName = planType ? `${planName} ${planType}` : planName;
+        
+        const rawDate = subscription.createdDate || subscription.paymentDate;
+        
+        allRequestsData.push({
+          id: subscription.id,
+          date: formatDate(rawDate),
+          clientType: "شركة", // Subscriptions are for companies
+          clientName: subscription.companyName || subscription.company?.name || "-",
+          operationNumber: subscription.refid || subscription.id,
+          operationType: "اشتراك",
+          debit: subscription.amount || subscription.price || subscription.totalAmount || "-",
+          credit: "-",
+          balance: subscription.companyBalance || subscription.balance || "-",
+          rawDate: rawDate,
+        });
+      });
+    } catch (subscriptionError) {
+      console.warn("⚠️ Error fetching subscription payments for wallet reports:", subscriptionError);
+      // Continue without subscription payments if there's an error
+    }
+    
+    // Sort all data by date (descending - newest first)
+    allRequestsData.sort((a, b) => {
+      try {
+        const dateA = a.rawDate?.toDate ? a.rawDate.toDate() : new Date(a.rawDate || 0);
+        const dateB = b.rawDate?.toDate ? b.rawDate.toDate() : new Date(b.rawDate || 0);
+        return dateB.getTime() - dateA.getTime();
+      } catch (error) {
+        return 0;
+      }
+    });
+
     console.log(
-      `✅ Total admin wallet reports found: ${allRequestsData.length}`
+      `✅ Total admin wallet reports found: ${allRequestsData.length} (including ${allRequestsData.length - (querySnapshot.size)} subscription payments)`
     );
     return allRequestsData;
   } catch (error) {
@@ -7579,7 +7704,8 @@ export const getTotalClientsBalance = async (): Promise<number> => {
 
 /**
  * Fetch ALL orders from Firestore (for admin dashboard - no filtering)
- * @returns Promise with all orders data
+ * Excludes subscription orders (subscriptions are stored in subscriptions-payment collection)
+ * @returns Promise with all orders data (excluding subscriptions)
  */
 export const fetchAllOrders = async (): Promise<any[]> => {
   try {
@@ -7592,16 +7718,81 @@ export const fetchAllOrders = async (): Promise<any[]> => {
     const allOrdersData: any[] = [];
 
     querySnapshot.forEach((doc) => {
-      allOrdersData.push({
+      const orderData = doc.data();
+      // Filter out subscription orders (they have subscriptionPaymentId field)
+      if (!orderData.subscriptionPaymentId) {
+        allOrdersData.push({
+          id: doc.id,
+          ...orderData,
+        });
+      }
+    });
+
+    console.log(`✅ Fetched ${allOrdersData.length} orders (subscriptions excluded)`);
+    return allOrdersData;
+  } catch (error) {
+    console.error("❌ Error fetching all orders:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch ALL subscription payments from Firestore (for admin dashboard)
+ * @returns Promise with all subscription payment data
+ */
+export const fetchAllSubscriptionPayments = async (): Promise<any[]> => {
+  try {
+    console.log("\n📦 Fetching ALL subscription payments from Firestore...");
+
+    const subscriptionsPaymentRef = collection(db, "subscriptions-payment");
+    let querySnapshot;
+    
+    try {
+      const q = query(subscriptionsPaymentRef, orderBy("createdDate", "desc"));
+      querySnapshot = await getDocs(q);
+    } catch (orderByError: any) {
+      // If orderBy fails (no index or field doesn't exist), fetch without ordering
+      console.warn(
+        "⚠️ Could not order by createdDate, fetching subscription payments without order:",
+        orderByError
+      );
+      querySnapshot = await getDocs(subscriptionsPaymentRef);
+    }
+
+    const allSubscriptionPayments: any[] = [];
+
+    querySnapshot.forEach((doc) => {
+      allSubscriptionPayments.push({
         id: doc.id,
         ...doc.data(),
       });
     });
 
-    console.log(`✅ Fetched ${allOrdersData.length} orders`);
-    return allOrdersData;
+    // Sort in memory if orderBy failed
+    if (allSubscriptionPayments.length > 0 && !allSubscriptionPayments[0].createdDate) {
+      // If no createdDate, sort by document ID (newest first)
+      allSubscriptionPayments.sort((a, b) => b.id.localeCompare(a.id));
+    } else if (allSubscriptionPayments.length > 0) {
+      // Sort by createdDate in memory
+      allSubscriptionPayments.sort((a, b) => {
+        const dateA = a.createdDate?.toDate 
+          ? a.createdDate.toDate().getTime() 
+          : a.createdDate instanceof Date 
+          ? a.createdDate.getTime() 
+          : 0;
+        const dateB = b.createdDate?.toDate 
+          ? b.createdDate.toDate().getTime() 
+          : b.createdDate instanceof Date 
+          ? b.createdDate.getTime() 
+          : 0;
+        return dateB - dateA; // Descending order
+      });
+    }
+
+    console.log(`✅ Fetched ${allSubscriptionPayments.length} subscription payments`);
+    return allSubscriptionPayments;
   } catch (error) {
-    console.error("❌ Error fetching all orders:", error);
+    console.error("❌ Error fetching subscription payments:", error);
     throw error;
   }
 };
@@ -10052,7 +10243,12 @@ const getDayObject = (dayAr: string): { ar: string; en: string } => {
 /**
  * Convert Arabic plate letters to English
  */
-const convertPlateLettersToEnglish = (arabicLetters: string): string => {
+const convertPlateLettersToEnglish = (arabicLetters: string | undefined | null): string => {
+  // Handle undefined, null, or empty string
+  if (!arabicLetters || typeof arabicLetters !== 'string') {
+    return "";
+  }
+  
   const letterMap: { [key: string]: string } = {
     أ: "A",
     ب: "B",
@@ -10114,12 +10310,12 @@ export interface AddDriverData {
   address: string;
   city: string;
   selectedDays: string[];
-  vehicleStatus: string;
+  vehicleStatus?: string;
   driverAmount: string;
   driverLicense?: File | string;
-  plateLetters: string;
-  plateNumber: string;
-  vehicleCategory: string;
+  plateLetters?: string;
+  plateNumber?: string;
+  vehicleCategory?: string;
 }
 
 /**
@@ -10133,6 +10329,20 @@ export const addCompanyDriver = async (driverData: AddDriverData) => {
 
     if (!currentUser) {
       throw new Error("No user is currently logged in");
+    }
+
+    // Check if a driver with the same phone number already exists
+    if (driverData.phone) {
+      const driversRef = collection(db, "companies-drivers");
+      const phoneQuery = query(
+        driversRef,
+        where("phoneNumber", "==", driverData.phone)
+      );
+      const phoneSnapshot = await getDocs(phoneQuery);
+
+      if (!phoneSnapshot.empty) {
+        throw new Error("رقم الهاتف مستخدم بالفعل. يرجى استخدام رقم آخر.");
+      }
     }
 
     // console.log('Adding new driver to Firestore...');
@@ -10175,20 +10385,24 @@ export const addCompanyDriver = async (driverData: AddDriverData) => {
       image: imageUrl || "",
       licenceAttachment: licenseUrl || "",
 
-      // Plate number
+      // Plate number (handle optional fields)
       plateNumber: {
-        ar: `${driverData.plateNumber} ${driverData.plateLetters}`,
-        en: `${driverData.plateNumber} ${convertPlateLettersToEnglish(
-          driverData.plateLetters
-        )}`,
+        ar: driverData.plateNumber && driverData.plateLetters 
+          ? `${driverData.plateNumber} ${driverData.plateLetters}` 
+          : driverData.plateNumber || driverData.plateLetters || "",
+        en: driverData.plateNumber && driverData.plateLetters
+          ? `${driverData.plateNumber} ${convertPlateLettersToEnglish(
+              driverData.plateLetters
+            )}`
+          : driverData.plateNumber || convertPlateLettersToEnglish(driverData.plateLetters) || "",
       },
 
-      // Car size
-      size: convertCarSizeToEnglish(driverData.vehicleCategory),
+      // Car size (default to "صغيرة" if not provided)
+      size: convertCarSizeToEnglish(driverData.vehicleCategory || "صغيرة"),
 
       // Plan details
       plan: {
-        carSize: convertCarSizeToEnglish(driverData.vehicleCategory),
+        carSize: convertCarSizeToEnglish(driverData.vehicleCategory || "صغيرة"),
         dailyTrans: driverData.driverAmount,
         exceptionDays: driverData.selectedDays.map((day) => getDayObject(day)),
         createdDate: Date.now(),
@@ -10239,8 +10453,8 @@ export const addCompanyDriver = async (driverData: AddDriverData) => {
       // Empty arrays for future use
       driverIds: [],
 
-      // Additional info (if needed)
-      vehicleStatus: driverData.vehicleStatus,
+      // Additional info (if needed) - default to "عادية" if not provided
+      vehicleStatus: driverData.vehicleStatus || "عادية",
     };
 
     // console.log('Prepared driver document:', driverDocument);
@@ -13140,9 +13354,30 @@ export const fetchUserFuelStations = async (): Promise<FuelStation[]> => {
 
     // Query with filter at Firestore level
     const carStationsRef = collection(db, "carstations");
-    const q = query(carStationsRef, where("createdUserId", "==", userEmail));
-
-    const querySnapshot = await getDocs(q);
+    
+    let querySnapshot;
+    try {
+      // Try query with orderBy (requires composite index)
+      const q = query(
+        carStationsRef, 
+        where("createdUserId", "==", userEmail),
+        orderBy("createdDate", "desc")
+      );
+      querySnapshot = await getDocs(q);
+    } catch (indexError: any) {
+      // If index is missing, fetch without orderBy and sort in memory
+      if (indexError.code === "failed-precondition") {
+        console.warn(
+          "⚠️ Composite index not found. Fetching stations and sorting in memory..."
+        );
+        const q = query(carStationsRef, where("createdUserId", "==", userEmail));
+        querySnapshot = await getDocs(q);
+      } else {
+        // Re-throw if it's a different error
+        throw indexError;
+      }
+    }
+    
     const fuelStations: FuelStation[] = [];
 
     querySnapshot.forEach((doc) => {
@@ -13196,8 +13431,25 @@ export const fetchUserFuelStations = async (): Promise<FuelStation[]> => {
       }
     });
 
+    // Sort in memory if orderBy failed (or as a fallback)
+    if (fuelStations.length > 0) {
+      fuelStations.sort((a, b) => {
+        const dateA = a.createdDate?.toDate 
+          ? a.createdDate.toDate().getTime() 
+          : a.createdDate instanceof Date 
+          ? a.createdDate.getTime() 
+          : 0;
+        const dateB = b.createdDate?.toDate 
+          ? b.createdDate.toDate().getTime() 
+          : b.createdDate instanceof Date 
+          ? b.createdDate.getTime() 
+          : 0;
+        return dateB - dateA; // Descending order (newest first)
+      });
+    }
+
     console.log(
-      `✅ Fetched ${fuelStations.length} fuel stations for user ${userEmail}`
+      `✅ Fetched ${fuelStations.length} fuel stations for user ${userEmail} (sorted by createdDate desc)`
     );
 
     return fuelStations;
@@ -14783,9 +15035,20 @@ export const fetchStationsCompanyData = async (): Promise<
     console.log("🏢 Fetching stations company data with related counts...");
 
     // Fetch all collections in parallel for better performance
+    // Order stationscompany by createdDate descending
+    const stationsCompanyRef = collection(db, "stationscompany");
+    const stationsCompanyQuery = query(
+      stationsCompanyRef,
+      orderBy("createdDate", "desc")
+    );
+    
     const [stationsCompanySnapshot, carStationsSnapshot, ordersSnapshot] =
       await Promise.all([
-        getDocs(collection(db, "stationscompany")),
+        getDocs(stationsCompanyQuery).catch(() => {
+          // Fallback to unordered query if createdDate field doesn't exist on all documents
+          console.warn("⚠️ Could not order by createdDate, fetching without order");
+          return getDocs(stationsCompanyRef);
+        }),
         getDocs(collection(db, "carstations")),
         getDocs(collection(db, "stationscompany-orders")),
       ]);
@@ -14843,8 +15106,11 @@ export const fetchStationsCompanyData = async (): Promise<
       });
       console.log(`📊 Total orders for ${data.name}: ${ordersCount}`);
 
+      // Get createdDate from document (could be in data or metadata)
+      const createdDate = data.createdDate || data.createdAt || doc.metadata?.createdAt || null;
+
       // Create service provider data object
-      const serviceProvider: ServiceProviderData = {
+      const serviceProvider: ServiceProviderData & { createdDate?: any } = {
         id: doc.id, // Always use Firestore document ID for consistency
         clientCode: data.refid || data.id || data.uId || doc.id, // Use refid as primary source
         providerName: data.name || "غير محدد",
@@ -14861,6 +15127,7 @@ export const fetchStationsCompanyData = async (): Promise<
         stationsCount,
         ordersCount,
         uId: companyUid,
+        createdDate, // Store createdDate for sorting
       };
 
       serviceProvidersData.push(serviceProvider);
@@ -14872,10 +15139,40 @@ export const fetchStationsCompanyData = async (): Promise<
 
     // Sort by creation date descending (newest first)
     serviceProvidersData.sort((a, b) => {
-      // Try to get created date from metadata or fallback to 0
-      const dateA = (a as any).createdAt?.toDate?.() || new Date(0);
-      const dateB = (b as any).createdAt?.toDate?.() || new Date(0);
-      return dateB.getTime() - dateA.getTime();
+      // Get createdDate from the data
+      const dateA = (a as any).createdDate;
+      const dateB = (b as any).createdDate;
+      
+      // Convert Firestore Timestamp to Date if needed
+      let timeA = 0;
+      let timeB = 0;
+      
+      if (dateA) {
+        if (dateA.toDate && typeof dateA.toDate === "function") {
+          timeA = dateA.toDate().getTime();
+        } else if (dateA instanceof Date) {
+          timeA = dateA.getTime();
+        } else if (typeof dateA === "number") {
+          timeA = dateA;
+        } else {
+          timeA = new Date(dateA).getTime();
+        }
+      }
+      
+      if (dateB) {
+        if (dateB.toDate && typeof dateB.toDate === "function") {
+          timeB = dateB.toDate().getTime();
+        } else if (dateB instanceof Date) {
+          timeB = dateB.getTime();
+        } else if (typeof dateB === "number") {
+          timeB = dateB;
+        } else {
+          timeB = new Date(dateB).getTime();
+        }
+      }
+      
+      // Sort descending (newest first)
+      return timeB - timeA;
     });
 
     return serviceProvidersData;
@@ -19103,7 +19400,25 @@ export const rejectWalletChargeRequest = async (
 const generateUniqueWithdrawalRefid = async (): Promise<string> => {
   const maxAttempts = 20;
   for (let i = 0; i < maxAttempts; i++) {
-    const refid = Math.floor(10000000 + Math.random() * 90000000).toString();
+    // Generate 8-digit refid based on current timestamp
+    // Use last 8 digits of timestamp, ensuring it's always 8 digits
+    const timestamp = Date.now();
+    // Get last 8 digits: timestamp % 100000000, then pad to ensure 8 digits
+    let refid = (timestamp % 100000000).toString();
+    
+    // If the result is less than 8 digits (shouldn't happen with current timestamps, but safety check)
+    // or if we need to add randomness for uniqueness, add a small random component
+    if (refid.length < 8) {
+      // Pad with zeros if needed (shouldn't happen with current timestamps)
+      refid = refid.padStart(8, '0');
+    }
+    
+    // If this is a retry (i > 0), add a small random component to ensure uniqueness
+    if (i > 0) {
+      const randomSuffix = Math.floor(Math.random() * 100).toString().padStart(2, '0');
+      // Replace last 2 digits with random suffix to ensure uniqueness
+      refid = refid.slice(0, 6) + randomSuffix;
+    }
 
     // Check uniqueness in companies-wallets-withdrawals collection
     const requestsRef = collection(db, "companies-wallets-withdrawals");
@@ -19237,6 +19552,107 @@ export const submitWalletWithdrawalRequest = async (requestData: {
     return docRef.id;
   } catch (error: any) {
     console.error("❌ Error submitting wallet withdrawal request:", error);
+    throw error;
+  }
+};
+
+/**
+ * Add 8-digit refid to existing withdrawal requests that don't have one
+ * Uses createdDate timestamp to generate refid
+ * @returns Promise with number of updated requests
+ */
+export const addRefidToExistingWithdrawalRequests = async (): Promise<number> => {
+  try {
+    console.log(
+      "🔄 Starting migration: Adding refid to existing withdrawal requests..."
+    );
+    const requestsRef = collection(db, "companies-wallets-withdrawals");
+    const requestsSnapshot = await getDocs(requestsRef);
+    console.log(`📦 Found ${requestsSnapshot.size} withdrawal requests`);
+
+    let updatedCount = 0;
+    const requestsToUpdate: Array<{ docRef: any; refid: string }> = [];
+
+    for (const requestDoc of requestsSnapshot.docs) {
+      const requestData = requestDoc.data();
+      if (requestData.refid) {
+        console.log(
+          `⏭️  Request ${requestDoc.id} already has refid: ${requestData.refid}`
+        );
+        continue;
+      }
+
+      // Generate refid from createdDate timestamp
+      let refid: string = "";
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Get createdDate timestamp
+        const createdDate = requestData.createdDate?.toDate 
+          ? requestData.createdDate.toDate() 
+          : requestData.createdDate instanceof Date 
+          ? requestData.createdDate 
+          : new Date();
+        const timestamp = createdDate.getTime();
+        
+        // Generate 8-digit refid from timestamp
+        let baseRefid = (timestamp % 100000000).toString().padStart(8, '0');
+        
+        // If retrying, add random suffix to ensure uniqueness
+        if (attempts > 0) {
+          const randomSuffix = Math.floor(Math.random() * 100).toString().padStart(2, '0');
+          baseRefid = baseRefid.slice(0, 6) + randomSuffix;
+        }
+        
+        refid = baseRefid;
+        
+        // Check uniqueness
+        const requestsRefCheck = collection(db, "companies-wallets-withdrawals");
+        const qCheck = query(requestsRefCheck, where("refid", "==", refid));
+        const querySnapshot = await getDocs(qCheck);
+        const isInPendingUpdates = requestsToUpdate.some(
+          (item) => item.refid === refid
+        );
+
+        if (querySnapshot.empty && !isInPendingUpdates) {
+          isUnique = true;
+        } else {
+          attempts++;
+        }
+      }
+
+      if (!isUnique || !refid) {
+        console.error(
+          `❌ Failed to generate unique refid for request ${requestDoc.id} after ${maxAttempts} attempts`
+        );
+        continue;
+      }
+
+      requestsToUpdate.push({
+        docRef: doc(db, "companies-wallets-withdrawals", requestDoc.id),
+        refid: refid,
+      });
+      console.log(`✅ Generated refid ${refid} for request ${requestDoc.id}`);
+    }
+
+    console.log(`📝 Updating ${requestsToUpdate.length} requests with refid...`);
+    for (const { docRef, refid } of requestsToUpdate) {
+      try {
+        await updateDoc(docRef, { refid: refid });
+        updatedCount++;
+        console.log(`✅ Updated request ${docRef.id} with refid: ${refid}`);
+      } catch (error) {
+        console.error(`❌ Error updating request ${docRef.id}:`, error);
+      }
+    }
+    console.log(
+      `✅ Migration completed: ${updatedCount} withdrawal requests updated with refid`
+    );
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Error in migration:", error);
     throw error;
   }
 };
@@ -19725,7 +20141,8 @@ export const fetchUserWithdrawalRequests = async () => {
   try {
     const currentUser = auth.currentUser;
     if (!currentUser) {
-      throw new Error("User not authenticated");
+      console.warn("⚠️ User not authenticated, returning empty array");
+      return [];
     }
 
     console.log("\n🔄 Fetching user withdrawal requests...");

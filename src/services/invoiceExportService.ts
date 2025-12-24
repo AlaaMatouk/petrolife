@@ -17,7 +17,7 @@ const generateFuelInvoiceHTML = (invoice: Invoice, qrCodeBase64: string | null =
   const formattedDate = `${invoiceDate.getDate()}-${String(invoiceDate.getMonth() + 1).padStart(2, "0")}-${invoiceDate.getFullYear()}`;
 
   const companyData = invoice.companyData || {};
-  const customerData = invoice.clientData || invoice.companyData || {};
+  const customerData = invoice.clientData || invoice.companyData || invoice.serviceDistributerData || {};
 
   // Get refId
   let refId = "غير محدد";
@@ -28,6 +28,16 @@ const generateFuelInvoiceHTML = (invoice: Invoice, qrCodeBase64: string | null =
       customerData.clientRefId ||
       customerData.id ||
       customerData.uid ||
+      "غير محدد";
+  } else if (invoice.type === "Service Distributer Monthly Invoice" || invoice.type === "Service Distributer Commission Invoice") {
+    // For service distributer invoices, get refId from serviceDistributerData
+    refId =
+      invoice.serviceDistributerData?.refId ||
+      invoice.serviceDistributerData?.refid ||
+      invoice.serviceDistributerData?.email ||
+      invoice.serviceDistributerData?.uid ||
+      invoice.refId ||
+      invoice.invoiceNumber ||
       "غير محدد";
   } else if (invoice.orders && invoice.orders.length > 0) {
     refId = invoice.orders[0]?.refId || invoice.orders[0]?.refid || "غير محدد";
@@ -616,7 +626,10 @@ export const exportInvoiceToPDF = async (invoice: Invoice): Promise<void> => {
     // Determine invoice type
     const isSubscription = invoice.type === "Subscription";
     const isFuelInvoice =
-      invoice.type === "Client" || invoice.type === "Company Monthly Invoice";
+      invoice.type === "Client" || 
+      invoice.type === "Company Monthly Invoice" ||
+      invoice.type === "Service Distributer Monthly Invoice" ||
+      invoice.type === "Service Distributer Commission Invoice";
 
     if (!isFuelInvoice && !isSubscription) {
       throw new Error("نوع الفاتورة غير مدعوم");

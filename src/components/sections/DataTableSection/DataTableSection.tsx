@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { Table } from "../../shared/Table/Table";
 import { Pagination } from "../../shared/Pagination/Pagination";
 import { useNavigate } from "react-router-dom";
@@ -64,6 +64,7 @@ export interface DataTableSectionProps<T> {
   showFuelDeliveryButton?: boolean; // New prop to show fuel delivery requests button
   showModifyButton?: boolean; // New prop to show Modify button instead of action menu
   refreshTrigger?: number; // New prop to trigger data refresh when changed
+  onRefresh?: () => void; // Callback to trigger refresh after actions
   customExportHandler?: (
     data: any[],
     filters: Record<string, string>,
@@ -84,6 +85,7 @@ interface ActionMenuProps<
   onApprove?: (id: number | string) => void; // New: For wallet request approval
   onReject?: (id: number | string) => void; // New: For wallet request rejection
   processingId?: string | null; // New: For showing loading state
+  onRefresh?: () => void; // Callback to trigger refresh after actions
 }
 
 const ActionMenu = <
@@ -102,6 +104,7 @@ const ActionMenu = <
   onApprove,
   onReject,
   processingId,
+  onRefresh,
 }: ActionMenuProps<T>) => {
   const [isOpen, setIsOpen] = useState(false);
   const [buttonRef, setButtonRef] = useState<HTMLButtonElement | null>(null);
@@ -151,8 +154,10 @@ const ActionMenu = <
           message: "تم قبول طلب الانضمام بنجاح",
           duration: 3000,
         });
-        // Refresh the page to update the data
-        window.location.reload();
+        // Trigger refresh instead of reloading page
+        if (onRefresh) {
+          onRefresh();
+        }
       } else {
         addToast({
           type: "error",
@@ -188,8 +193,10 @@ const ActionMenu = <
           message: "تم رفض طلب الانضمام",
           duration: 3000,
         });
-        // Refresh the page to update the data
-        window.location.reload();
+        // Trigger refresh instead of reloading page
+        if (onRefresh) {
+          onRefresh();
+        }
       } else {
         addToast({
           type: "error",
@@ -679,6 +686,7 @@ export const DataTableSection = <
   onReject,
   processingId,
   refreshTrigger = 0,
+  onRefresh,
   customExportHandler,
 }: DataTableSectionProps<T>): JSX.Element => {
   const navigate = useNavigate();
@@ -750,34 +758,44 @@ export const DataTableSection = <
     }));
   };
 
+  // Function to load data
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      console.log(`Loading ${entityNamePlural} data...`);
+      const fetchedData = await fetchDataRef.current();
+      setData(fetchedData);
+    } catch (err) {
+      console.error(`Error loading ${entityNamePlural}:`, err);
+      setError(errorMessage || `فشل في تحميل بيانات ${entityNamePlural}`);
+      // Try to load data anyway as fallback
+      try {
+        const fallbackData = await fetchDataRef.current();
+        setData(fallbackData);
+      } catch {
+        // If fallback also fails, keep empty data
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [entityNamePlural, errorMessage]);
+
   // Fetch data on component mount or when refreshTrigger changes
   useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      setError(null);
-
-      try {
-        console.log(`Loading ${entityNamePlural} data...`);
-        const fetchedData = await fetchDataRef.current();
-        setData(fetchedData);
-      } catch (err) {
-        console.error(`Error loading ${entityNamePlural}:`, err);
-        setError(errorMessage || `فشل في تحميل بيانات ${entityNamePlural}`);
-        // Try to load data anyway as fallback
-        try {
-          const fallbackData = await fetchDataRef.current();
-          setData(fallbackData);
-        } catch {
-          // If fallback also fails, keep empty data
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     loadData();
     // Refresh when refreshTrigger changes or on initial mount
-  }, [refreshTrigger, entityNamePlural, errorMessage]);
+  }, [refreshTrigger, loadData]);
+
+  // Internal refresh function that can be called by ActionMenu
+  const handleInternalRefresh = useCallback(() => {
+    loadData();
+    // Also call parent's onRefresh if provided
+    if (onRefresh) {
+      onRefresh();
+    }
+  }, [loadData, onRefresh]);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -958,6 +976,7 @@ export const DataTableSection = <
               onApprove={onApprove}
               onReject={onReject}
               processingId={processingId}
+              onRefresh={handleInternalRefresh}
             />
           ),
         };
@@ -1039,6 +1058,7 @@ export const DataTableSection = <
     onApprove,
     onReject,
     processingId,
+    onRefresh,
   ]);
 
   return (

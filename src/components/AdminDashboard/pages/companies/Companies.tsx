@@ -288,8 +288,7 @@ export const Companies = () => {
         companyName: "",
       });
 
-      // Reload the page to refresh the table
-      window.location.reload();
+      // Data already refreshed above, no need to reload
     } catch (error: any) {
       console.error("Error deleting company:", error);
       addToast({

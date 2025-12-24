@@ -17,6 +17,7 @@ import {
   fetchCompaniesDrivers,
   addDriverToCar,
   addCompanyDriver,
+  fetchCarById,
 } from "../../../../services/firestore";
 import { useToast } from "../../../../context/ToastContext";
 import { createPortal } from "react-dom";
@@ -96,88 +97,93 @@ export const CarDriversSection = ({
     return String(value);
   };
 
+  // Function to load drivers from car data
+  const loadDriversFromCarData = async (carDataToUse: any) => {
+    console.log("=== LOADING CAR DRIVERS ===");
+    console.log("Car Data:", carDataToUse);
+
+    if (!carDataToUse) {
+      console.log("No car data available");
+      setDrivers([]);
+      setIsLoading(false);
+      return;
+    }
+
+    // Check for different possible driver ID field names
+    const rawDriverIds =
+      carDataToUse.driverIds || carDataToUse.drivers || carDataToUse.driverList || [];
+    console.log("Raw Driver IDs found:", rawDriverIds);
+
+    // Filter out null, undefined, and invalid IDs
+    const driverIds = Array.isArray(rawDriverIds)
+      ? rawDriverIds.filter(
+          (id) => id && typeof id === "string" && id.trim() !== ""
+        )
+      : [];
+
+    console.log("Valid Driver IDs after filtering:", driverIds);
+
+    if (!driverIds || driverIds.length === 0) {
+      console.log("No valid drivers assigned to this car");
+      setDrivers([]);
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      console.log("=== FETCHING DRIVERS FROM COMPANIES-DRIVERS COLLECTION ===");
+      console.log("Car ID:", carDataToUse.id);
+      console.log("Driver IDs to fetch:", driverIds);
+
+      const fetchedDrivers = await fetchDriversByIds(driverIds);
+      console.log("Raw fetched drivers:", fetchedDrivers);
+
+      // Deduplicate drivers by ID first to prevent duplicate keys
+      const uniqueFetchedDrivers = fetchedDrivers.reduce((acc: any[], driver: any) => {
+        if (!driver.id) {
+          return acc;
+        }
+        const existingDriver = acc.find((d) => d.id === driver.id);
+        if (!existingDriver) {
+          acc.push(driver);
+        }
+        return acc;
+      }, []);
+
+      // Convert Firestore driver data to table format
+      const convertedDrivers: Driver[] = uniqueFetchedDrivers.map((driver: any) => {
+        console.log("Converting driver:", driver);
+        return {
+          id: driver.id,
+          driverCode: getValueOrDash(driver.id),
+          driverName: getValueOrDash(driver.name || driver.driverName),
+          phoneNumber: getValueOrDash(driver.phone || driver.email),
+          address: getValueOrDash(
+            driver.city?.name?.ar || driver.location || driver.address
+          ),
+          financialValue: getValueOrDash(
+            driver.balance || driver.financialValue
+          ),
+          limit: getValueOrDash(driver.plan?.dailyTrans || driver.limit),
+          accountStatus: driver.isActive ? "active" : "inactive",
+        };
+      });
+
+      console.log("Converted car drivers:", convertedDrivers);
+      setDrivers(convertedDrivers);
+    } catch (error) {
+      console.error("Error fetching car drivers:", error);
+      setDrivers([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Fetch drivers assigned to this car
   useEffect(() => {
-    const loadCarDrivers = async () => {
-      console.log("=== LOADING CAR DRIVERS (CORRECT APPROACH) ===");
-      console.log("Car Data:", carData);
-      console.log(
-        "Car Data Keys:",
-        carData ? Object.keys(carData) : "No car data"
-      );
-
-      if (!carData) {
-        console.log("No car data available");
-        setDrivers([]);
-        return;
-      }
-
-      // Check for different possible driver ID field names
-      const rawDriverIds =
-        carData.driverIds || carData.drivers || carData.driverList || [];
-      console.log("Raw Driver IDs found:", rawDriverIds);
-      console.log("Driver IDs type:", typeof rawDriverIds);
-      console.log(
-        "Driver IDs length:",
-        Array.isArray(rawDriverIds) ? rawDriverIds.length : "Not an array"
-      );
-
-      // Filter out null, undefined, and invalid IDs
-      const driverIds = Array.isArray(rawDriverIds)
-        ? rawDriverIds.filter(
-            (id) => id && typeof id === "string" && id.trim() !== ""
-          )
-        : [];
-
-      console.log("Valid Driver IDs after filtering:", driverIds);
-
-      if (!driverIds || driverIds.length === 0) {
-        console.log("No valid drivers assigned to this car");
-        setDrivers([]);
-        return;
-      }
-
-      try {
-        setIsLoading(true);
-        console.log(
-          "=== FETCHING DRIVERS FROM COMPANIES-DRIVERS COLLECTION ==="
-        );
-        console.log("Car ID:", carData.id);
-        console.log("Driver IDs to fetch:", driverIds);
-
-        const fetchedDrivers = await fetchDriversByIds(driverIds);
-        console.log("Raw fetched drivers:", fetchedDrivers);
-
-        // Convert Firestore driver data to table format
-        const convertedDrivers: Driver[] = fetchedDrivers.map((driver: any) => {
-          console.log("Converting driver:", driver);
-          return {
-            id: driver.id,
-            driverCode: getValueOrDash(driver.id),
-            driverName: getValueOrDash(driver.name || driver.driverName),
-            phoneNumber: getValueOrDash(driver.phone || driver.email),
-            address: getValueOrDash(
-              driver.city?.name?.ar || driver.location || driver.address
-            ),
-            financialValue: getValueOrDash(
-              driver.balance || driver.financialValue
-            ),
-            limit: getValueOrDash(driver.plan?.dailyTrans || driver.limit),
-            accountStatus: driver.isActive ? "active" : "inactive",
-          };
-        });
-
-        console.log("Converted car drivers:", convertedDrivers);
-        setDrivers(convertedDrivers);
-      } catch (error) {
-        console.error("Error fetching car drivers:", error);
-        setDrivers([]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadCarDrivers();
+    loadDriversFromCarData(carData);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carData]);
 
   const handleContextMenu = (e: React.MouseEvent, driverId: string) => {
@@ -204,7 +210,7 @@ export const CarDriversSection = ({
   };
 
   // Load available drivers for selection
-  const loadAvailableDrivers = async () => {
+  const loadAvailableDrivers = async (carDataToUse?: any) => {
     try {
       console.log("=== LOADING AVAILABLE DRIVERS ===");
       console.log("Loading available drivers...");
@@ -212,9 +218,12 @@ export const CarDriversSection = ({
       console.log("All company drivers fetched:", allDrivers);
       console.log("Number of drivers fetched:", allDrivers.length);
 
+      // Use provided car data or fall back to prop
+      const currentCarData = carDataToUse || carData;
+
       // Filter out drivers already assigned to this car
       const rawCurrentDriverIds =
-        carData.driverIds || carData.drivers || carData.driverList || [];
+        currentCarData?.driverIds || currentCarData?.drivers || currentCarData?.driverList || [];
       console.log("Raw current driver IDs for this car:", rawCurrentDriverIds);
 
       // Filter out null, undefined, and invalid IDs
@@ -233,9 +242,23 @@ export const CarDriversSection = ({
         (driver: any) => !currentDriverIds.includes(driver.id)
       );
 
-      console.log("Available unassigned drivers:", unassignedDrivers);
-      console.log("Number of unassigned drivers:", unassignedDrivers.length);
-      setAvailableDrivers(unassignedDrivers);
+      // Deduplicate drivers by ID to prevent duplicate keys
+      const uniqueDrivers = unassignedDrivers.reduce((acc: any[], driver: any) => {
+        // Skip drivers with null/undefined IDs
+        if (!driver.id) {
+          return acc;
+        }
+        // Check if driver with this ID already exists
+        const existingDriver = acc.find((d) => d.id === driver.id);
+        if (!existingDriver) {
+          acc.push(driver);
+        }
+        return acc;
+      }, []);
+
+      console.log("Available unassigned drivers:", uniqueDrivers);
+      console.log("Number of unassigned drivers:", uniqueDrivers.length);
+      setAvailableDrivers(uniqueDrivers);
     } catch (error) {
       console.error("Error loading available drivers:", error);
       addToast({
@@ -331,41 +354,15 @@ export const CarDriversSection = ({
         type: "success",
       });
 
-      // Reload drivers for this car
-      const rawCurrentDriverIds =
-        carData.driverIds || carData.drivers || carData.driverList || [];
-      const currentDriverIds = Array.isArray(rawCurrentDriverIds)
-        ? rawCurrentDriverIds.filter(
-            (id) => id && typeof id === "string" && id.trim() !== ""
-          )
-        : [];
-      const updatedDriverIds = [...currentDriverIds, result.id];
-      console.log(
-        "Updated driver IDs after creating new driver:",
-        updatedDriverIds
-      );
+      // Fetch updated car data from Firestore to get the latest driverIds
+      const updatedCarData = await fetchCarById(carData.id);
+      console.log("Updated car data after adding driver:", updatedCarData);
+      
+      // Reload drivers using the updated car data
+      await loadDriversFromCarData(updatedCarData);
 
-      const fetchedDrivers = await fetchDriversByIds(updatedDriverIds);
-      console.log("Fetched drivers after creating new driver:", fetchedDrivers);
-
-      const convertedDrivers: Driver[] = fetchedDrivers.map((driver: any) => ({
-        id: driver.id,
-        driverCode: getValueOrDash(driver.id),
-        driverName: getValueOrDash(driver.name || driver.driverName),
-        phoneNumber: getValueOrDash(driver.phone || driver.email),
-        address: getValueOrDash(
-          driver.city?.name?.ar || driver.location || driver.address
-        ),
-        financialValue: getValueOrDash(driver.balance || driver.financialValue),
-        limit: getValueOrDash(driver.plan?.dailyTrans || driver.limit),
-        accountStatus: driver.isActive ? "active" : "inactive",
-      }));
-
-      console.log(
-        "Converted drivers after creating new driver:",
-        convertedDrivers
-      );
-      setDrivers(convertedDrivers);
+      // Also reload available drivers list with updated car data
+      await loadAvailableDrivers(updatedCarData);
 
       handleCloseAddDriverModal();
     } catch (error: any) {
@@ -396,35 +393,15 @@ export const CarDriversSection = ({
         type: "success",
       });
 
-      // Reload drivers for this car
-      const rawCurrentDriverIds =
-        carData.driverIds || carData.drivers || carData.driverList || [];
-      const currentDriverIds = Array.isArray(rawCurrentDriverIds)
-        ? rawCurrentDriverIds.filter(
-            (id) => id && typeof id === "string" && id.trim() !== ""
-          )
-        : [];
-      const updatedDriverIds = [...currentDriverIds, driverId];
-      console.log("Updated driver IDs:", updatedDriverIds);
+      // Fetch updated car data from Firestore to get the latest driverIds
+      const updatedCarData = await fetchCarById(carData.id);
+      console.log("Updated car data after adding driver:", updatedCarData);
+      
+      // Reload drivers using the updated car data
+      await loadDriversFromCarData(updatedCarData);
 
-      const fetchedDrivers = await fetchDriversByIds(updatedDriverIds);
-      console.log("Fetched drivers after adding:", fetchedDrivers);
-
-      const convertedDrivers: Driver[] = fetchedDrivers.map((driver: any) => ({
-        id: driver.id,
-        driverCode: getValueOrDash(driver.id),
-        driverName: getValueOrDash(driver.name || driver.driverName),
-        phoneNumber: getValueOrDash(driver.phone || driver.email),
-        address: getValueOrDash(
-          driver.city?.name?.ar || driver.location || driver.address
-        ),
-        financialValue: getValueOrDash(driver.balance || driver.financialValue),
-        limit: getValueOrDash(driver.plan?.dailyTrans || driver.limit),
-        accountStatus: driver.isActive ? "active" : "inactive",
-      }));
-
-      console.log("Converted drivers after adding:", convertedDrivers);
-      setDrivers(convertedDrivers);
+      // Also reload available drivers list with updated car data
+      await loadAvailableDrivers(updatedCarData);
 
       handleCloseAddDriverModal();
     } catch (error: any) {
@@ -977,9 +954,9 @@ export const CarDriversSection = ({
                       </div>
                     ) : (
                       <div className="flex flex-col gap-[var(--corner-radius-medium)]">
-                        {filteredAvailableDrivers.map((driver: any) => (
+                        {filteredAvailableDrivers.map((driver: any, index: number) => (
                           <div
-                            key={driver.id}
+                            key={driver.id || `driver-${index}-${Date.now()}`}
                             className="flex items-center justify-between p-[var(--corner-radius-medium)] border-[0.5px] border-solid border-color-mode-text-icons-t-placeholder rounded-[var(--corner-radius-medium)] hover:bg-color-mode-surface-bg-icon-gray transition-colors"
                           >
                             <button

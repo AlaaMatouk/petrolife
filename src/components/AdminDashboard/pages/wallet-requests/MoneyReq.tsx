@@ -7,8 +7,9 @@ import {
   approveWalletWithdrawalRequest,
   rejectWalletWithdrawalRequest,
 } from "../../../../services/firestore";
-import { auth } from "../../../../config/firebase";
+import { auth, db } from "../../../../config/firebase";
 import { useToast } from "../../../../hooks/useToast";
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
 
 type MoneyRefundRequest = {
   id: string;
@@ -70,8 +71,29 @@ export const MoneyReq = () => {
     return transformedData; // Return transformed for display
   }, []);
 
+  // Set up real-time listener for withdrawal requests
   useEffect(() => {
+    // Listen to companies-wallets-withdrawals
+    const withdrawalsRef = collection(db, "companies-wallets-withdrawals");
+    const withdrawalsQuery = query(withdrawalsRef, orderBy("createdDate", "desc"));
+    const unsubscribe = onSnapshot(
+      withdrawalsQuery,
+      () => {
+        // When data changes, refresh the formatted data
+        fetchDataWithState();
+      },
+      (error) => {
+        console.error("Error listening to companies-wallets-withdrawals:", error);
+      }
+    );
+
+    // Initial load
     fetchDataWithState();
+
+    // Cleanup
+    return () => {
+      unsubscribe();
+    };
   }, [fetchDataWithState]);
 
   // Handle approve

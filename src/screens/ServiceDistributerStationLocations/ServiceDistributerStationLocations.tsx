@@ -63,8 +63,23 @@ function ServiceDistributerStationLocations() {
       // Fetch user's fuel stations from Firestore (same as map)
       const fuelStations = await fetchUserFuelStations();
       
+      // Ensure stations are sorted by createdDate (descending - newest first)
+      const sortedStations = [...fuelStations].sort((a, b) => {
+        const dateA = a.createdDate?.toDate 
+          ? a.createdDate.toDate().getTime() 
+          : a.createdDate instanceof Date 
+          ? a.createdDate.getTime() 
+          : 0;
+        const dateB = b.createdDate?.toDate 
+          ? b.createdDate.toDate().getTime() 
+          : b.createdDate instanceof Date 
+          ? b.createdDate.getTime() 
+          : 0;
+        return dateB - dateA; // Descending order (newest first)
+      });
+      
       // Transform FuelStation data to Station interface format
-      return fuelStations.map((station: FuelStation) => {
+      return sortedStations.map((station: FuelStation) => {
         // Use Firestore document ID directly (same as Stations.tsx)
         // Generate station code from document ID (first 8 characters, uppercase)
         const stationCode = station.id.substring(0, 8).toUpperCase();

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -108,42 +108,43 @@ function StationLocationsMap({ title = "مواقع محطات بترولايف",
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Load fuel stations function
+  const loadFuelStations = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Use fetchUserFuelStations if filterByUser is true, otherwise use fetchFuelStations
+      const data = filterByUser 
+        ? await fetchUserFuelStations()
+        : await fetchFuelStations();
+      
+      // Remove duplicate stations based on coordinates
+      const uniqueStations = data.reduce((acc: FuelStation[], current) => {
+        const isDuplicate = acc.some(
+          (station) =>
+            station.latitude === current.latitude &&
+            station.longitude === current.longitude
+        );
+        if (!isDuplicate) {
+          acc.push(current);
+        }
+        return acc;
+      }, []);
+      
+      setStations(uniqueStations);
+    } catch (err) {
+      console.error('Error loading fuel stations:', err);
+      setError('فشل تحميل بيانات المحطات');
+    } finally {
+      setLoading(false);
+    }
+  }, [filterByUser]);
+
   // Fetch fuel stations from Firestore
   useEffect(() => {
-    const loadFuelStations = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        // Use fetchUserFuelStations if filterByUser is true, otherwise use fetchFuelStations
-        const data = filterByUser 
-          ? await fetchUserFuelStations()
-          : await fetchFuelStations();
-        
-        // Remove duplicate stations based on coordinates
-        const uniqueStations = data.reduce((acc: FuelStation[], current) => {
-          const isDuplicate = acc.some(
-            (station) =>
-              station.latitude === current.latitude &&
-              station.longitude === current.longitude
-          );
-          if (!isDuplicate) {
-            acc.push(current);
-          }
-          return acc;
-        }, []);
-        
-        setStations(uniqueStations);
-      } catch (err) {
-        console.error('Error loading fuel stations:', err);
-        setError('فشل تحميل بيانات المحطات');
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadFuelStations();
-  }, [filterByUser]);
+  }, [loadFuelStations]);
 
   // Create icon instances
   const redPinIcon = createRedPinIcon();
@@ -179,7 +180,7 @@ function StationLocationsMap({ title = "مواقع محطات بترولايف",
             <div className="text-center">
               <p className="text-red-600 mb-2">{error}</p>
               <button
-                onClick={() => window.location.reload()}
+                onClick={loadFuelStations}
                 className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
               >
                 إعادة المحاولة

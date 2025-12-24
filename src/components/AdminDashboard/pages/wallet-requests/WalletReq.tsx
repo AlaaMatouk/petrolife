@@ -10,7 +10,8 @@ import {
 } from "../../../../services/firestore";
 import { useToast } from "../../../../context/ToastContext";
 import { useState, useCallback, useEffect } from "react";
-import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import { useLocation, useNavigate } from "react-router-dom";
+import { collection, getDocs, query, orderBy, onSnapshot } from "firebase/firestore";
 import { db, auth } from "../../../../config/firebase";
 import { ConfirmDialog } from "../../../shared/ConfirmDialog/ConfirmDialog";
 
@@ -101,12 +102,15 @@ const fetchCompanyTransfersData = async (): Promise<CompanyTransfer[]> => {
 
 export const WalletReq = () => {
   const { addToast } = useToast();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [isMigrating, setIsMigrating] = useState(false);
   const [rawWalletRequestsData, setRawWalletRequestsData] = useState<any[]>([]);
   const [needsMigration, setNeedsMigration] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [transferRefreshTrigger, setTransferRefreshTrigger] = useState(0);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [deleteConfirm, setDeleteConfirm] = useState<{
     isOpen: boolean;
     requestId: string | null;
@@ -188,10 +192,61 @@ export const WalletReq = () => {
     return data;
   }, []);
 
-  // Check migration status on mount
+  // Set up real-time listeners for wallet requests
   useEffect(() => {
+    // Listen to companies-wallets-requests
+    const companiesRef = collection(db, "companies-wallets-requests");
+    const companiesQuery = query(companiesRef, orderBy("createdDate", "desc"));
+    const unsubscribeCompanies = onSnapshot(
+      companiesQuery,
+      () => {
+        // When data changes, refresh the formatted data
+        fetchDataWithState();
+      },
+      (error) => {
+        console.error("Error listening to companies-wallets-requests:", error);
+      }
+    );
+
+    // Listen to wallets-requests
+    let unsubscribeWallets: (() => void) | null = null;
+    try {
+      const walletsRef = collection(db, "wallets-requests");
+      const walletsQuery = query(walletsRef, orderBy("createdDate", "desc"));
+      unsubscribeWallets = onSnapshot(
+        walletsQuery,
+        () => {
+          // When data changes, refresh the formatted data
+          fetchDataWithState();
+        },
+        (error) => {
+          console.warn("Error listening to wallets-requests:", error);
+        }
+      );
+    } catch (error) {
+      console.warn("wallets-requests collection may not exist:", error);
+    }
+
+    // Initial load
     fetchDataWithState();
+
+    // Cleanup
+    return () => {
+      unsubscribeCompanies();
+      if (unsubscribeWallets) {
+        unsubscribeWallets();
+      }
+    };
   }, [fetchDataWithState]);
+
+  // Handle refresh from navigation state
+  useEffect(() => {
+    if (location.state?.refresh) {
+      fetchDataWithState();
+      // Clear refresh flag
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, fetchDataWithState, navigate, location.pathname]);
 
   const handleAddRefidToExisting = async () => {
     try {
@@ -256,8 +311,9 @@ export const WalletReq = () => {
         requestNumber: "",
       });
 
-      // Refresh the data
+      // Refresh the data and trigger table refresh
       await fetchDataWithState();
+      setRefreshTrigger(prev => prev + 1);
     } catch (error: any) {
       console.error("Error deleting wallet request:", error);
       addToast({
@@ -333,8 +389,9 @@ export const WalletReq = () => {
         duration: 4000,
       });
 
-      // Refresh data
+      // Refresh data and trigger table refresh
       await fetchDataWithState();
+      setRefreshTrigger(prev => prev + 1);
     } catch (error: any) {
       console.error("Error approving request:", error);
       addToast({
@@ -425,8 +482,9 @@ export const WalletReq = () => {
         requestNumber: "",
       });
 
-      // Refresh data
+      // Refresh data and trigger table refresh
       await fetchDataWithState();
+      setRefreshTrigger(prev => prev + 1);
     } catch (error: any) {
       console.error("Error rejecting request:", error);
       addToast({
@@ -478,6 +536,7 @@ export const WalletReq = () => {
         itemsPerPage={10}
         showTimeFilter={false}
         showMoneyRefundButton={true}
+        refreshTrigger={refreshTrigger}
       />
 
       {/* Company Transfer Requests Section */}

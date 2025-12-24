@@ -16,6 +16,7 @@ import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../hooks/useGlobalState";
 import { ROUTES } from "../../constants/routes";
 import { fetchInvoices } from "../../services/invoiceService";
+import { fetchAllSubscriptionPayments } from "../../services/firestore";
 import { Invoice } from "../../types/invoice";
 
 // Helper function to format number with thousands separator
@@ -56,11 +57,126 @@ export const Invoices = (): JSX.Element => {
           return;
         }
 
-        // Fetch only invoices for this company
-        const fetchedInvoices = await fetchInvoices({
-          companyUid: companyIdentifier,
+        // Fetch both invoices and subscription payments for this company
+        const [fetchedInvoices, subscriptionPayments] = await Promise.all([
+          fetchInvoices({
+            companyUid: companyIdentifier,
+          }),
+          fetchAllSubscriptionPayments()
+        ]);
+        
+        console.log("📄 Invoices - Fetched invoices:", fetchedInvoices.length);
+        console.log("📄 Invoices - Fetched subscription payments:", subscriptionPayments.length);
+        
+        // Filter subscription payments by company
+        const companyEmail = company.email?.toLowerCase();
+        const companyUid = company.uid;
+        
+        const filteredSubscriptionPayments = subscriptionPayments.filter((payment) => {
+          const paymentCompanyEmail = payment.companyEmail?.toLowerCase() || payment.company?.email?.toLowerCase();
+          const paymentCompanyUid = payment.companyUid || payment.company?.uid;
+          
+          return (
+            (companyEmail && paymentCompanyEmail && paymentCompanyEmail === companyEmail) ||
+            (companyUid && paymentCompanyUid && paymentCompanyUid === companyUid) ||
+            (companyIdentifier && (paymentCompanyEmail === companyIdentifier.toLowerCase() || paymentCompanyUid === companyIdentifier))
+          );
         });
-        setInvoices(fetchedInvoices);
+        
+        console.log("📄 Invoices - Filtered subscription payments for company:", filteredSubscriptionPayments.length);
+        
+        // Get subscription payment IDs that already have invoices in the invoices collection
+        const subscriptionPaymentIdsWithInvoices = new Set(
+          fetchedInvoices
+            .filter(inv => inv.type === "Subscription" && inv.subscriptionPaymentId)
+            .map(inv => inv.subscriptionPaymentId)
+        );
+        
+        // Helper function to extract text from language objects
+        const extractText = (value: any): string => {
+          if (!value) return "-";
+          if (typeof value === "string") return value;
+          if (typeof value === "object") {
+            if (value.ar && value.ar.trim() !== "") return value.ar;
+            if (value.en && value.en.trim() !== "") return value.en;
+            if (value.name) {
+              if (typeof value.name === "string" && value.name.trim() !== "") return value.name;
+              if (value.name.ar && value.name.ar.trim() !== "") return value.name.ar;
+              if (value.name.en && value.name.en.trim() !== "") return value.name.en;
+            }
+            return "-";
+          }
+          return String(value);
+        };
+        
+        // Transform subscription payments to invoice format (only those without existing invoices)
+        const subscriptionInvoices: Invoice[] = filteredSubscriptionPayments
+          .filter(payment => !subscriptionPaymentIdsWithInvoices.has(payment.id))
+          .map((payment) => {
+            const createdAt = payment.createdDate?.toDate 
+              ? payment.createdDate.toDate() 
+              : payment.createdDate instanceof Date 
+              ? payment.createdDate 
+              : new Date();
+            
+            return {
+              id: payment.id,
+              type: "Subscription",
+              createdAt,
+              companyData: payment.company || {},
+              clientData: null,
+              items: [{
+                product: extractText(payment.selectedSubscription?.title) || "اشتراك",
+                packageName: extractText(payment.selectedSubscription?.title) || "اشتراك",
+                period: extractText(payment.selectedSubscription?.periodName) || "شهري",
+                periodValueInDays: payment.selectedSubscription?.periodValueInDays || 30,
+                startDate: payment.subscriptionStartDate?.toDate 
+                  ? payment.subscriptionStartDate.toDate().toLocaleDateString('ar-SA')
+                  : payment.subscriptionStartDate instanceof Date
+                  ? payment.subscriptionStartDate.toLocaleDateString('ar-SA')
+                  : "",
+                endDate: payment.subscriptionEndDate?.toDate 
+                  ? payment.subscriptionEndDate.toDate().toLocaleDateString('ar-SA')
+                  : payment.subscriptionEndDate instanceof Date
+                  ? payment.subscriptionEndDate.toLocaleDateString('ar-SA')
+                  : "",
+                description: extractText(payment.selectedSubscription?.description) || "اشتراك نظام إدارة الأسطول",
+              }],
+              subtotal: (payment.totalPrice || 0) - (payment.vat || 0),
+              vatAmount: payment.vat || 0,
+              total: payment.totalPrice || 0,
+              subscriptionPaymentId: payment.id,
+              invoiceNumber: `SUB-${payment.id.substring(0, 8)}`,
+              refId: payment.id,
+            } as Invoice;
+          });
+        
+        // Combine invoices and subscription invoices
+        const allInvoices = [...fetchedInvoices, ...subscriptionInvoices];
+        
+        // Sort by date (descending - newest first)
+        allInvoices.sort((a, b) => {
+          const dateA = a.createdAt instanceof Date 
+            ? a.createdAt.getTime() 
+            : a.createdAt?.toDate 
+            ? a.createdAt.toDate().getTime() 
+            : typeof a.createdAt === "string" 
+            ? new Date(a.createdAt).getTime() 
+            : 0;
+          const dateB = b.createdAt instanceof Date 
+            ? b.createdAt.getTime() 
+            : b.createdAt?.toDate 
+            ? b.createdAt.toDate().getTime() 
+            : typeof b.createdAt === "string" 
+            ? new Date(b.createdAt).getTime() 
+            : 0;
+          return dateB - dateA; // Descending order (newest first)
+        });
+        
+        console.log("📄 Total invoices (including subscriptions, sorted by date desc):", allInvoices.length);
+        console.log("📄 Subscription invoices added:", subscriptionInvoices.length);
+        
+        setInvoices(allInvoices);
       } catch (error) {
         console.error("Error loading invoices:", error);
         addToast({
@@ -311,9 +427,13 @@ export const Invoices = (): JSX.Element => {
                     onClick={() => {
                       // Determine route based on invoice type
                       if (invoice.type === "Subscription") {
-                        navigate(`/subscription-invoice/${invoice.id}`);
+                        navigate(`/subscription-invoice/${invoice.id}`, { 
+                          state: { from: "/invoices" } 
+                        });
                       } else {
-                        navigate(`/fuel-invoice/${invoice.id}`);
+                        navigate(`/fuel-invoice/${invoice.id}`, { 
+                          state: { from: "/invoices" } 
+                        });
                       }
                       setIsOpen(false);
                     }}
