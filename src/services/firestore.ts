@@ -7505,6 +7505,72 @@ export const fetchCurrentCompany = async (): Promise<any> => {
 };
 
 /**
+ * Fetch current logged-in client data
+ * @returns Promise with client data or null
+ */
+export const fetchCurrentClient = async (): Promise<any> => {
+  try {
+    const currentUser = auth.currentUser;
+
+    if (!currentUser) {
+      return null;
+    }
+
+    const clientsRef = collection(db, "clients");
+
+    // Try to find client by UID first
+    let qByUid = query(clientsRef, where("uid", "==", currentUser.uid));
+    let querySnapshot = await getDocs(qByUid);
+
+    // If not found by UID, try by email
+    if (querySnapshot.empty && currentUser.email) {
+      const qByEmail = query(
+        clientsRef,
+        where("email", "==", currentUser.email)
+      );
+      querySnapshot = await getDocs(qByEmail);
+    }
+
+    // If not found by email, try by id field
+    if (querySnapshot.empty && currentUser.uid) {
+      const qById = query(
+        clientsRef,
+        where("id", "==", currentUser.uid)
+      );
+      querySnapshot = await getDocs(qById);
+    }
+
+    // Try direct document lookup
+    if (querySnapshot.empty && currentUser.uid) {
+      const clientDocRef = doc(db, "clients", currentUser.uid);
+      const clientDoc = await getDoc(clientDocRef);
+      if (clientDoc.exists()) {
+        return {
+          id: clientDoc.id,
+          ...clientDoc.data(),
+        } as any;
+      }
+    }
+
+    if (querySnapshot.empty) {
+      return null;
+    }
+
+    // Get the first matching document
+    const clientDoc = querySnapshot.docs[0];
+    const clientData = {
+      id: clientDoc.id,
+      ...clientDoc.data(),
+    } as any;
+
+    return clientData;
+  } catch (error) {
+    console.error("❌ Error fetching current client:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetch ALL clients from Firestore (for admin dashboard)
  * @returns Promise with all clients data
  */
@@ -7574,6 +7640,101 @@ export const getTotalClientsBalance = async (): Promise<number> => {
   } catch (error) {
     console.error("❌ Error calculating total clients balance:", error);
     return 0;
+  }
+};
+
+/**
+ * MIGRATION: Add balance field to clients that don't have it
+ * This fixes clients created before the balance field was added
+ * @returns Promise with migration results
+ */
+export const migrateClientBalances = async (): Promise<{
+  success: boolean;
+  updated: number;
+  skipped: number;
+  errors: number;
+  total: number;
+  message: string;
+}> => {
+  try {
+    console.log("\n🔄 ========================================");
+    console.log("MIGRATING CLIENT BALANCES");
+    console.log("========================================");
+
+    const clientsRef = collection(db, "clients");
+    const snapshot = await getDocs(clientsRef);
+
+    console.log(`📊 Total clients found: ${snapshot.size}`);
+
+    let updatedCount = 0;
+    let skippedCount = 0;
+    let errorCount = 0;
+    const clientsToUpdate: { id: string; name: string }[] = [];
+
+    // Identify clients without balance field
+    snapshot.forEach((docSnapshot) => {
+      const data = docSnapshot.data();
+      if (data.balance === undefined) {
+        clientsToUpdate.push({
+          id: docSnapshot.id,
+          name: data.name || "Unknown",
+        });
+      } else {
+        skippedCount++;
+      }
+    });
+
+    console.log(`\n📋 Clients needing balance: ${clientsToUpdate.length}`);
+    console.log(`✅ Clients with balance: ${skippedCount}`);
+
+    if (clientsToUpdate.length === 0) {
+      const message = "All clients already have balance field!";
+      console.log(`\n✨ ${message}`);
+      return {
+        success: true,
+        updated: 0,
+        skipped: skippedCount,
+        errors: 0,
+        total: snapshot.size,
+        message,
+      };
+    }
+
+    // Update clients with missing balance
+    for (const client of clientsToUpdate) {
+      try {
+        const clientDocRef = doc(db, "clients", client.id);
+        await updateDoc(clientDocRef, {
+          balance: 0,
+        });
+        updatedCount++;
+        console.log(`✅ Updated: ${client.name} (${client.id})`);
+      } catch (error) {
+        errorCount++;
+        console.error(`❌ Failed to update ${client.id}:`, error);
+      }
+    }
+
+    console.log("\n========================================");
+    console.log("📊 MIGRATION SUMMARY:");
+    console.log(`✅ Updated: ${updatedCount}`);
+    console.log(`⏭️  Skipped: ${skippedCount}`);
+    console.log(`❌ Errors: ${errorCount}`);
+    console.log(`📊 Total: ${snapshot.size}`);
+    console.log("========================================\n");
+
+    const message = `Successfully updated ${updatedCount} clients. ${skippedCount} already had balance. ${errorCount} errors.`;
+    return {
+      success: errorCount === 0,
+      updated: updatedCount,
+      skipped: skippedCount,
+      errors: errorCount,
+      total: snapshot.size,
+      message,
+    };
+  } catch (error) {
+    console.error("❌ Fatal error during migration:", error);
+    throw error;
   }
 };
 
@@ -19178,16 +19339,36 @@ export const submitWalletWithdrawalRequest = async (requestData: {
     }
     console.log("💵 Withdrawal Amount:", requestData.withdrawalAmount);
 
-    // Get current company data
-    const company = await fetchCurrentCompany();
-    if (!company) {
-      throw new Error("Company not found");
+    // Try to get company data first
+    let company = await fetchCurrentCompany();
+    let client = null;
+    let isClientRequest = false;
+    let userId: string;
+    let userName: string;
+    let currentBalance: number;
+
+    if (company) {
+      // User is a company
+      console.log("🏢 Company:", company.name);
+      console.log("💰 Current Balance:", company.balance || 0);
+      userId = company.id;
+      userName = company.name;
+      currentBalance = company.balance || 0;
+    } else {
+      // Try to get client data
+      client = await fetchCurrentClient();
+      if (!client) {
+        throw new Error("User not found. Neither company nor client data exists.");
+      }
+      isClientRequest = true;
+      console.log("👤 Client:", client.name);
+      console.log("💰 Current Balance:", client.balance || 0);
+      userId = client.id;
+      userName = client.name;
+      currentBalance = client.balance || 0;
     }
-    console.log("🏢 Company:", company.name);
-    console.log("💰 Current Balance:", company.balance || 0);
 
     // Check sufficient balance (pre-validation)
-    const currentBalance = company.balance || 0;
     if (currentBalance < requestData.withdrawalAmount) {
       throw new Error(`رصيد غير كافٍ. الرصيد الحالي: ${currentBalance} ر.س`);
     }
@@ -19204,15 +19385,18 @@ export const submitWalletWithdrawalRequest = async (requestData: {
       );
     }
 
-    // Create withdrawal request document
+    // Create withdrawal request document in the same collection for both types
+    // The approval function already handles both companies and clients
     const requestsRef = collection(db, "companies-wallets-withdrawals");
     const newRequest = {
       refid,
-      companyId: company.id, // Store company document ID for easy lookup
+      companyId: isClientRequest ? undefined : userId, // Store company ID if company, undefined if client
+      clientId: isClientRequest ? userId : undefined, // Store client ID if client, undefined if company
+      userType: isClientRequest ? "client" : "company", // Track user type for clarity
       requestedUser: {
         uid: currentUser.uid,
         email: currentUser.email!,
-        name: company.name,
+        name: userName,
         balance: currentBalance, // Current balance at time of request
       },
       accountNumber: requestData.accountNumber,
@@ -19232,6 +19416,7 @@ export const submitWalletWithdrawalRequest = async (requestData: {
     console.log("✅ Wallet withdrawal request created successfully");
     console.log("📋 Request ID:", docRef.id);
     console.log("🔢 Refid:", refid);
+    console.log("👤 User Type:", isClientRequest ? "Client" : "Company");
     console.log("========================================\n");
 
     return docRef.id;
@@ -19297,9 +19482,24 @@ export const approveWalletWithdrawalRequest = async (
     let userDocRef: any;
     let isClientRequest = false;
 
-    // First, try to find in companies collection
-    if (requestData.companyId) {
-      // New requests: Use stored company ID
+    // Check if clientId is stored (new client requests)
+    if (requestData.clientId) {
+      console.log("👤 Using stored Client ID:", requestData.clientId);
+      const clientDocRef = doc(db, "clients", requestData.clientId);
+      const clientDoc = await getDoc(clientDocRef);
+      if (clientDoc.exists()) {
+        userDocId = requestData.clientId;
+        userCollection = "clients";
+        userDocRef = clientDocRef;
+        isClientRequest = true;
+        console.log("✓ Verified client exists with stored ID");
+      } else {
+        console.warn("⚠️ Stored clientId doesn't exist, searching...");
+        // Continue to search below
+      }
+    }
+    // Check if companyId is stored (new company requests)
+    else if (requestData.companyId) {
       console.log("🏢 Using stored Company ID:", requestData.companyId);
       const companyDocRef = doc(db, "companies", requestData.companyId);
       const companyDoc = await getDoc(companyDocRef);
